@@ -11,6 +11,8 @@ struct DiffView<HunkActions: View>: View {
   let content: LoadedDiff
   @Binding var selection: Set<Int>
   var changesOnly = true
+  /// Draws each hunk as a rounded card, inset from the edges (lay `content` out with a hunk gap).
+  var cards = false
   @ViewBuilder var hunkActions: (DiffHunk) -> HunkActions
 
   @State private var anchor: Int?
@@ -31,6 +33,8 @@ struct DiffView<HunkActions: View>: View {
   }
 
   private var numberWidth: CGFloat { CGFloat(content.numberDigits) * Self.characterWidth + 12 }
+  private var inset: CGFloat { cards ? 20 : 0 }
+  private static var cardRadius: CGFloat { 10 }
   private var gutterWidth: CGFloat { numberWidth * 2 + 20 }
 
   var body: some View {
@@ -45,17 +49,20 @@ struct DiffView<HunkActions: View>: View {
     } else {
       GeometryReader { proxy in
         ScrollView([.vertical, .horizontal]) {
+          let visible = proxy.size.width - inset * 2
           let width = max(
-            proxy.size.width,
-            gutterWidth + CGFloat(content.maxColumns) * Self.characterWidth + 24)
+            visible, gutterWidth + CGFloat(content.maxColumns) * Self.characterWidth + 24)
           LazyVStack(alignment: .leading, spacing: 0) {
             ForEach(content.rows) { row in
-              rowView(row, width: width)
+              rowView(row, width: width, visibleWidth: visible)
             }
           }
           .frame(width: width, alignment: .topLeading)
           .contentShape(Rectangle())
           .gesture(selectionGesture)
+          .padding(.horizontal, inset)
+          .padding(.vertical, cards ? 16 : 0)
+          .padding(.bottom, cards ? 80 : 0)
         }
       }
       .background(Color(nsColor: .textBackgroundColor))
@@ -79,23 +86,37 @@ struct DiffView<HunkActions: View>: View {
   // MARK: Rows
 
   @ViewBuilder
-  private func rowView(_ row: LoadedDiff.Row, width: CGFloat) -> some View {
+  private func rowView(_ row: LoadedDiff.Row, width: CGFloat, visibleWidth: CGFloat) -> some View {
     switch row {
     case .hunk(let hunk):
-      HStack(spacing: 8) {
-        Text(hunk.header)
-          .font(.system(size: 11, design: .monospaced))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .padding(.leading, 8)
-        Spacer(minLength: 8)
-        hunkActions(hunk)
-          .controlSize(.small)
-          .buttonStyle(.bordered)
-          .padding(.trailing, 8)
+      // The buttons stay within the visible width, not at the end of the longest line.
+      VStack(spacing: 0) {
+        if cards, hunk.id != content.diff.hunks.first?.id {
+          Color.clear.frame(height: content.hunkGap)
+        }
+        HStack(spacing: 8) {
+          Text(hunk.header)
+            .font(.system(size: 11.5, design: .monospaced))
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
+            .padding(.leading, 12)
+          Spacer(minLength: 8)
+          hunkActions(hunk)
+            .controlSize(.small)
+            .buttonStyle(.borderless)
+            .padding(.trailing, 10)
+        }
+        .frame(width: visibleWidth, height: LoadedDiff.hunkHeight, alignment: .leading)
+        .frame(width: width, alignment: .leading)
+        .background(Color.secondary.opacity(cards ? 0.07 : 0.1))
+        .clipShape(cards ? AnyShape(UnevenRoundedRectangle(topLeadingRadius: Self.cardRadius, topTrailingRadius: Self.cardRadius)) : AnyShape(Rectangle()))
+        .overlay {
+          if cards {
+            UnevenRoundedRectangle(topLeadingRadius: Self.cardRadius, topTrailingRadius: Self.cardRadius)
+              .strokeBorder(.separator)
+          }
+        }
       }
-      .frame(width: width, height: LoadedDiff.hunkHeight, alignment: .leading)
-      .background(Color.secondary.opacity(0.1))
     case .line(let line, _):
       let isSelected = selection.contains(line.id)
       HStack(spacing: 0) {
@@ -119,6 +140,7 @@ struct DiffView<HunkActions: View>: View {
       }
       .frame(width: width, height: LoadedDiff.lineHeight, alignment: .leading)
       .background(background(line, isSelected: isSelected))
+      .modifier(CardSides(isOn: cards, isLast: content.lastLines.contains(line.id), radius: Self.cardRadius))
     }
   }
 
@@ -217,6 +239,36 @@ struct DiffView<HunkActions: View>: View {
   private func copy() {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(selectedText, forType: .string)
+  }
+}
+
+/// The left, right and (for a hunk's last line) bottom edges of a hunk card.
+private struct CardSides: ViewModifier {
+  let isOn: Bool
+  let isLast: Bool
+  let radius: CGFloat
+
+  func body(content: Content) -> some View {
+    if isOn {
+      let shape = UnevenRoundedRectangle(
+        bottomLeadingRadius: isLast ? radius : 0, bottomTrailingRadius: isLast ? radius : 0)
+      content
+        .clipShape(shape)
+        .overlay {
+          if isLast {
+            shape.strokeBorder(.separator)
+              .mask(alignment: .bottom) { Rectangle().padding(.top, 1) }
+          } else {
+            HStack {
+              Rectangle().fill(.separator).frame(width: 1)
+              Spacer()
+              Rectangle().fill(.separator).frame(width: 1)
+            }
+          }
+        }
+    } else {
+      content
+    }
   }
 }
 

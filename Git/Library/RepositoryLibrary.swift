@@ -3,15 +3,35 @@ import GitKit
 import SwiftData
 import SwiftUI
 
-/// What the window shows for a repository.
+/// What the window shows for a repository: the Workspace items in the sidebar.
 enum RepositoryMode: String, CaseIterable, Identifiable {
-  case changes, history
+  case changes, history, stashes
   var id: Self { self }
-  var title: String { self == .changes ? "Changes" : "History" }
+  var title: String {
+    switch self {
+    case .changes: "Changes"
+    case .history: "History"
+    case .stashes: "Stashes"
+    }
+  }
+  var systemImage: String {
+    switch self {
+    case .changes: "pencil"
+    case .history: "clock"
+    case .stashes: "archivebox"
+    }
+  }
 }
 
-/// Per-repository UI state that survives switching repositories: selections and the commit
-/// message draft.
+/// A merge, rebase, cherry-pick or revert that just finished, for the completion screen.
+struct CompletedOperation: Equatable {
+  var operation: RepositoryOperation
+  var source: String?
+  var branch: String?
+}
+
+/// Per-repository UI state that survives switching repositories: selections, the commit
+/// message draft and conflict choices that aren't written yet.
 @Observable final class RepositoryViewState {
   var mode: RepositoryMode = .changes
   var selectedChanges: Set<FileChange.ID> = []
@@ -20,6 +40,26 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
   var summary = ""
   var details = ""
   var amend = false
+  /// The commit just made, for the toast with Undo and Push.
+  var lastCommit: String?
+
+  // Conflicts: choices are kept here and written when the operation continues.
+  /// Every path that was conflicted during the current operation, in order.
+  var conflictPaths: [String] = []
+  /// The number of conflict blocks each path had, for progress after it is resolved.
+  var conflictBlockCounts: [String: Int] = [:]
+  var conflictChoices: [String: [Int: ConflictResolution]] = [:]
+  var wholeFileChoices: [String: ConflictSide] = [:]
+  var selectedConflict: String?
+  var completedOperation: CompletedOperation?
+
+  func resetConflicts() {
+    conflictPaths = []
+    conflictBlockCounts = [:]
+    conflictChoices = [:]
+    wholeFileChoices = [:]
+    selectedConflict = nil
+  }
 }
 
 /// The app's repositories: one session and view state per repository, sidebar summaries, and
@@ -30,10 +70,18 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
   private(set) var summaries: [String: RepositorySummary] = [:]
   private(set) var isImporting = false
   var isImporterPresented = false
+  var isClonePresented = false
+  /// Asks the window to run New Repository (it needs the window's model context).
+  var isCreateRequested = false
+  /// A repository to select in the window (set by `open`).
+  var requestedSelection: String?
   /// Shown after an import that found nothing.
   var importMessage: String?
 
   private weak var activeSession: RepositorySession?
+  private var summaryWatcher: RepositoryWatcher?
+  private var watchedPaths: [String] = []
+  private var pendingSummaries: [String: Task<Void, Never>] = [:]
 
   func session(for path: String) -> RepositorySession {
     if let session = sessions[path] { return session }
@@ -49,8 +97,15 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
     return state
   }
 
-  /// Watches only the repository on screen.
-  func activate(_ path: String?) async {
+  /// Watches only the repository on screen, and remembers when it was opened for the Welcome
+  /// window's Recent list.
+  func activate(_ path: String?, context: ModelContext? = nil) async {
+    if let path, let context {
+      let saved = try? context.fetch(
+        FetchDescriptor<SavedRepository>(predicate: #Predicate { $0.path == path }))
+      saved?.first?.lastOpenedAt = .now
+      try? context.save()
+    }
     let session = path.map(session(for:))
     if activeSession !== session {
       activeSession?.deactivate()
@@ -63,6 +118,49 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
   func updateSummary(_ path: String, from session: RepositorySession) {
     guard let status = session.status else { return }
     summaries[path] = RepositorySummary(status)
+  }
+
+  /// Keeps every repository's sidebar summary current without opening it: one FSEvents stream
+  /// over all of them refreshes a repository's summary shortly after its files or refs change.
+  func watchSummaries(of paths: [String]) {
+    guard paths != watchedPaths else { return }
+    watchedPaths = paths
+    summaryWatcher?.stop()
+    summaryWatcher = nil
+    guard !paths.isEmpty else { return }
+    let roots = paths
+    let watcher = RepositoryWatcher(
+      paths: paths.map { URL(fileURLWithPath: $0, isDirectory: true) }, latency: 1
+    ) { [weak self] changed in
+      // The innermost repository containing each path, for repositories nested in others.
+      let touched = Set(
+        changed.compactMap { path in
+          roots.filter { path == $0 || path.hasPrefix($0 + "/") }.max { $0.count < $1.count }
+        })
+      Task { @MainActor in self?.scheduleSummaryRefresh(touched) }
+    }
+    watcher.start()
+    summaryWatcher = watcher
+  }
+
+  /// Reloads every watched repository's summary, e.g. when the app becomes active.
+  func refreshAllSummaries() async {
+    await refreshSummaries(watchedPaths)
+  }
+
+  private func scheduleSummaryRefresh(_ paths: Set<String>) {
+    for path in paths {
+      // The open repository keeps its own summary current.
+      if activeSession?.repository.url.path == path { continue }
+      pendingSummaries[path]?.cancel()
+      pendingSummaries[path] = Task {
+        // Let a burst of writes (a build, a checkout) settle first.
+        try? await Task.sleep(for: .seconds(2))
+        guard !Task.isCancelled else { return }
+        pendingSummaries[path] = nil
+        await refreshSummaries([path])
+      }
+    }
   }
 
   /// Reloads branch and change counts for the sidebar, a few repositories at a time.
@@ -117,6 +215,42 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
     }
     await refreshSummaries(added)
     return added
+  }
+
+  /// Shows `url` (a repository or worktree), adding it to the sidebar first if needed.
+  func open(_ url: URL, into context: ModelContext) {
+    let path = url.standardizedFileURL.path
+    let existing = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
+    if existing.contains(where: { $0.path == path }) {
+      requestedSelection = path
+      return
+    }
+    // Worktrees join the group of the repository they belong to, when it is in the sidebar.
+    let group =
+      existing.first { (path as NSString).deletingLastPathComponent.appending("/").hasPrefix($0.path + "/") }?
+      .group
+      ?? url.deletingLastPathComponent().path
+    context.insert(SavedRepository(path: path, group: group))
+    try? context.save()
+    requestedSelection = path
+    Task { await refreshSummaries([path]) }
+  }
+
+  /// Asks where to create a repository, runs `git init` there and adds it.
+  func createRepository(into context: ModelContext) async {
+    let panel = NSSavePanel()
+    panel.title = "New Repository"
+    panel.prompt = "Create"
+    panel.nameFieldLabel = "Name:"
+    panel.nameFieldStringValue = "New Repository"
+    panel.canCreateDirectories = true
+    guard panel.runModal() == .OK, let url = panel.url else { return }
+    do {
+      let repository = try await Repository.initialize(at: url)
+      open(repository.url, into: context)
+    } catch {
+      importMessage = (error as? GitError)?.message ?? error.localizedDescription
+    }
   }
 
   func remove(_ repositories: [SavedRepository], from context: ModelContext) {

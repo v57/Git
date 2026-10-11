@@ -1,8 +1,30 @@
 import GitKit
 import SwiftUI
 
-/// Conflicted, staged and unstaged files with the commit composer below.
-struct ChangesView: View {
+/// Changes: staged and unstaged files with the commit composer below them, and the selected
+/// file's diff on the right.
+struct ChangesScreen: View {
+  let session: RepositorySession
+  @Bindable var state: RepositoryViewState
+
+  var body: some View {
+    HStack(spacing: 0) {
+      VStack(spacing: 0) {
+        ChangeList(session: session, state: state)
+          .frame(maxHeight: .infinity)
+        Divider()
+        CommitComposer(session: session, state: state)
+      }
+      .frame(width: 360)
+      Divider()
+      ChangeDetailView(session: session, state: state)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+  }
+}
+
+/// "Staged · 2" and "Unstaged · 3", each with its rows and Stage All / Unstage All.
+private struct ChangeList: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
   @State private var pendingDiscard: [FileChange] = []
@@ -10,27 +32,59 @@ struct ChangesView: View {
   private var status: WorkingTreeStatus? { session.status }
 
   var body: some View {
-    VStack(spacing: 0) {
-      if let operation = status?.operation {
-        OperationBanner(session: session, operation: operation)
-        Divider()
+    ScrollView {
+      VStack(alignment: .leading, spacing: 0) {
+        if let status {
+          sectionHeader("Staged", count: status.staged.count, action: "Unstage All") {
+            Task { await session.unstageAll() }
+          }
+          if status.staged.isEmpty, !status.isClean {
+            Text("Tick a file below to include it in the next commit.")
+              .font(.system(size: 12))
+              .foregroundStyle(.secondary)
+              .frame(maxWidth: .infinity, alignment: .leading)
+              .padding(12)
+              .overlay(
+                RoundedRectangle(cornerRadius: 8).strokeBorder(
+                  .separator, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+              )
+              .padding(.horizontal, 8)
+              .padding(.bottom, 6)
+          }
+          ForEach(status.staged) { change in
+            row(change).transition(.opacity.combined(with: .move(edge: .bottom)))
+          }
+          sectionHeader("Unstaged", count: status.unstaged.count, action: "Stage All") {
+            Task { await session.stageAll() }
+          }
+          .padding(.top, 10)
+          ForEach(status.unstaged) { change in
+            row(change).transition(.opacity.combined(with: .move(edge: .top)))
+          }
+        } else {
+          ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+        }
       }
-      if let status, !status.isClean {
-        list(status)
-      } else if status != nil {
-        ContentUnavailableView(
-          "No Changes", systemImage: "checkmark.circle",
-          description: Text("The working tree matches HEAD."))
-      } else {
-        ProgressView()
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .padding(.horizontal, 10)
+      .padding(.vertical, 6)
+      .animation(.app, value: status)
+    }
+    .onChange(of: status, initial: true) { _, status in
+      guard let status else { return }
+      let all = status.staged + status.unstaged
+      let ids = Set(all.map(\.id))
+      var kept = state.selectedChanges.intersection(ids)
+      if kept.isEmpty, let previous = state.selectedChanges.first {
+        // Follow a file that moved between Staged and Unstaged.
+        let path = previous.split(separator: ":", maxSplits: 1).last.map(String.init) ?? ""
+        if let moved = all.first(where: { $0.path == path }) { kept = [moved.id] }
       }
-      Divider()
-      CommitComposer(session: session, state: state)
+      if kept.isEmpty, let first = all.first { kept = [first.id] }
+      if kept != state.selectedChanges { state.selectedChanges = kept }
     }
     .confirmationDialog(
-      discardTitle, isPresented: .init(
-        get: { !pendingDiscard.isEmpty }, set: { if !$0 { pendingDiscard = [] } }),
+      discardTitle,
+      isPresented: .init(get: { !pendingDiscard.isEmpty }, set: { if !$0 { pendingDiscard = [] } }),
       titleVisibility: .visible
     ) {
       Button("Discard Changes", role: .destructive) {
@@ -38,7 +92,7 @@ struct ChangesView: View {
         Task { await session.discard(changes) }
       }
     } message: {
-      Text("Changes to tracked files are lost. Untracked files are moved to the Trash.")
+      Text("Changes to tracked files are lost. New files are moved to the Trash.")
     }
   }
 
@@ -48,203 +102,105 @@ struct ChangesView: View {
       : "Discard changes to \(pendingDiscard.count) files?"
   }
 
-  private func list(_ status: WorkingTreeStatus) -> some View {
-    List(selection: $state.selectedChanges) {
-      if !status.conflicted.isEmpty {
-        Section("Conflicts") {
-          ForEach(status.conflicted) { change in
-            ChangeRow(change: change) {
-              Task { await session.stage([change]) }
-            }
-          }
-        }
-      }
-      if !status.staged.isEmpty {
-        Section {
-          ForEach(status.staged) { change in
-            ChangeRow(change: change) { Task { await session.unstage([change]) } }
-          }
-        } header: {
-          SectionHeader(title: "Staged", count: status.staged.count, action: "Unstage All") {
-            Task { await session.unstageAll() }
-          }
-        }
-      }
-      if !status.unstaged.isEmpty {
-        Section {
-          ForEach(status.unstaged) { change in
-            ChangeRow(change: change) { Task { await session.stage([change]) } }
-          }
-        } header: {
-          SectionHeader(title: "Changes", count: status.unstaged.count, action: "Stage All") {
-            Task { await session.stageAll() }
-          }
-        }
+  private func sectionHeader(
+    _ title: String, count: Int, action: String, perform: @escaping () -> Void
+  ) -> some View {
+    HStack {
+      Text("\(title) · \(count)")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.secondary)
+        .contentTransition(.numericText(value: Double(count)))
+        .animation(.app, value: count)
+      Spacer()
+      if count > 0 {
+        Button(action, action: perform)
+          .buttonStyle(.borderless)
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(Color.accentColor)
+          .disabled(session.isBusy)
       }
     }
-    .contextMenu(forSelectionType: FileChange.ID.self) { ids in
-      contextMenu(for: changes(ids, in: status))
-    } primaryAction: { ids in
-      // Double-click toggles staging.
-      let selected = changes(ids, in: status)
-      Task {
-        await session.stage(selected.filter { $0.area != .staged })
-        await session.unstage(selected.filter { $0.area == .staged })
-      }
-    }
-    .onChange(of: status) { _, status in
-      // Drop selections for files that are gone; follow a file that moved between areas.
-      let ids = Set((status.staged + status.unstaged + status.conflicted).map(\.id))
-      let kept = state.selectedChanges.intersection(ids)
-      if kept.isEmpty, let previous = state.selectedChanges.first {
-        let path = previous.split(separator: ":", maxSplits: 1).last.map(String.init)
-        if let moved = ids.first(where: { $0.hasSuffix(":" + (path ?? "")) }) {
-          state.selectedChanges = [moved]
-          return
-        }
-      }
-      if kept != state.selectedChanges { state.selectedChanges = kept }
-    }
+    .padding(.horizontal, 8)
+    .frame(height: 32)
   }
 
-  private func changes(_ ids: Set<FileChange.ID>, in status: WorkingTreeStatus) -> [FileChange] {
-    (status.conflicted + status.staged + status.unstaged).filter { ids.contains($0.id) }
+  private func row(_ change: FileChange) -> some View {
+    ChangeRow(
+      change: change, lines: session.lineCounts[change.id],
+      isSelected: state.selectedChanges.contains(change.id)
+    ) {
+      Task {
+        if change.area == .staged {
+          await session.unstage([change])
+        } else {
+          await session.stage([change])
+        }
+      }
+    } select: {
+      state.selectedChanges = [change.id]
+    }
+    .contextMenu { contextMenu(for: change) }
   }
 
   @ViewBuilder
-  private func contextMenu(for changes: [FileChange]) -> some View {
-    let staged = changes.filter { $0.area == .staged }
-    let unstaged = changes.filter { $0.area != .staged }
-    if !unstaged.isEmpty {
-      Button(changes.contains { $0.area == .conflicted } ? "Mark as Resolved" : "Stage") {
-        Task { await session.stage(unstaged) }
-      }
+  private func contextMenu(for change: FileChange) -> some View {
+    if change.area == .staged {
+      Button("Unstage") { Task { await session.unstage([change]) } }
+    } else {
+      Button("Stage") { Task { await session.stage([change]) } }
+      Button("Discard Changes…", role: .destructive) { pendingDiscard = [change] }
     }
-    if !staged.isEmpty {
-      Button("Unstage") { Task { await session.unstage(staged) } }
-    }
-    let discardable = changes.filter { $0.area == .unstaged }
-    if !discardable.isEmpty {
-      Button("Discard Changes…", role: .destructive) { pendingDiscard = discardable }
-    }
-    if changes.count == 1, let change = changes.first {
-      Divider()
-      let url = session.repository.url.appendingPathComponent(change.path)
-      Button("Open") { NSWorkspace.shared.open(url) }
-      Button("Show in Finder") { RepositoryLibrary.reveal(url) }
-      Button("Copy Path") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(change.path, forType: .string)
-      }
-    }
+    Divider()
+    let url = session.repository.url.appendingPathComponent(change.path)
+    Button("Open") { NSWorkspace.shared.open(url) }
+    Button("Show in Finder") { RepositoryLibrary.reveal(url) }
+    Button("Copy Path") { copyToPasteboard(change.path) }
   }
 }
 
-private struct SectionHeader: View {
-  let title: String
-  let count: Int
-  let action: String
-  let perform: () -> Void
-
-  var body: some View {
-    HStack {
-      Text("\(title) (\(count))")
-      Spacer()
-      Button(action, action: perform)
-        .buttonStyle(.borderless)
-        .font(.caption)
-    }
-  }
-}
-
-/// A changed file with a checkbox that stages or unstages it.
-struct ChangeRow: View {
+/// A changed file: checkbox, status, name over folder, and line counts.
+private struct ChangeRow: View {
   let change: FileChange
+  let lines: LineCounts?
+  let isSelected: Bool
   let toggle: () -> Void
+  let select: () -> Void
 
   var body: some View {
-    HStack(spacing: 6) {
-      if change.area != .conflicted {
-        Toggle(
-          "", isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })
-        )
+    HStack(spacing: 10) {
+      Toggle("", isOn: .init(get: { change.area == .staged }, set: { _ in toggle() }))
         .toggleStyle(.checkbox)
         .labelsHidden()
-        .help(change.area == .staged ? "Unstage" : "Stage")
-      }
-      ChangeKindBadge(kind: change.kind)
-      VStack(alignment: .leading, spacing: 0) {
-        Text(change.fileName)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        if let original = change.originalPath {
-          Text("from \(original)")
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.middle)
-        } else if !change.directory.isEmpty {
-          Text(change.directory)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .truncationMode(.head)
+        .accessibilityLabel((change.area == .staged ? "Unstage " : "Stage ") + change.fileName)
+      Button(action: select) {
+        HStack(spacing: 8) {
+          ChangeKindBadge(kind: change.kind)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(change.fileName)
+              .fontWeight(.medium)
+              .lineLimit(1)
+              .truncationMode(.middle)
+            Text(change.originalPath.map { "from \($0)" } ?? change.directory)
+              .font(.system(size: 11))
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+              .truncationMode(.head)
+          }
+          Spacer(minLength: 4)
+          LineCountText(counts: lines)
         }
+        .frame(height: 36)
+        .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
+      .accessibilityAddTraits(isSelected ? .isSelected : [])
     }
+    .padding(.horizontal, 8)
+    .background(
+      isSelected ? Color.accentColor.opacity(0.14) : .clear,
+      in: .rect(cornerRadius: 7, style: .continuous)
+    )
+    .animation(.app, value: isSelected)
     .help(change.path)
-  }
-}
-
-struct ChangeKindBadge: View {
-  let kind: ChangeKind
-
-  var body: some View {
-    Text(kind.letter)
-      .font(.system(size: 10, weight: .bold, design: .monospaced))
-      .foregroundStyle(.white)
-      .frame(width: 16, height: 16)
-      .background(color, in: .rect(cornerRadius: 4))
-      .help(kind.rawValue.capitalized)
-  }
-
-  private var color: Color {
-    switch kind {
-    case .added, .untracked: .green
-    case .modified, .typeChanged: .orange
-    case .deleted: .red
-    case .renamed, .copied: .blue
-    case .conflicted: .purple
-    }
-  }
-}
-
-/// Shown while a merge, rebase, cherry-pick or revert waits to be continued or aborted.
-private struct OperationBanner: View {
-  let session: RepositorySession
-  let operation: RepositoryOperation
-
-  var body: some View {
-    HStack {
-      Image(systemName: "exclamationmark.triangle.fill")
-        .foregroundStyle(.orange)
-      VStack(alignment: .leading) {
-        Text(operation.title).bold()
-        Text(
-          session.status?.conflicted.isEmpty == false
-            ? "Resolve the conflicts and stage the files, then continue."
-            : "Ready to continue."
-        )
-        .font(.caption)
-        .foregroundStyle(.secondary)
-      }
-      Spacer()
-      Button("Abort") { Task { await session.abortOperation() } }
-      Button("Continue") { Task { await session.continueOperation() } }
-        .disabled(session.status?.conflicted.isEmpty == false)
-    }
-    .controlSize(.small)
-    .padding(10)
-    .background(.orange.opacity(0.1))
   }
 }

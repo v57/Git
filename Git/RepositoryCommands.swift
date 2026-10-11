@@ -3,6 +3,7 @@ import SwiftUI
 
 extension FocusedValues {
   @Entry var repositorySession: RepositorySession?
+  @Entry var repositoryViewState: RepositoryViewState?
 }
 
 struct RepositoryCommands: Commands {
@@ -11,8 +12,17 @@ struct RepositoryCommands: Commands {
 
   var body: some Commands {
     CommandGroup(after: .newItem) {
+      Button("Clone Repository…") { library.isClonePresented = true }
+        .keyboardShortcut("c", modifiers: [.command, .shift])
+      Button("New Repository…") { library.isCreateRequested = true }
+        .keyboardShortcut("n", modifiers: [.command, .option])
+      Button("Open Repository…") { library.isImporterPresented = true }
+        .keyboardShortcut("o", modifiers: .command)
       Button("Add Folder…") { library.isImporterPresented = true }
         .keyboardShortcut("o", modifiers: [.command, .shift])
+    }
+    CommandGroup(after: .toolbar) {
+      HideWhitespaceToggle()
     }
     CommandMenu("Repository") {
       Button("Refresh") { run { await $0.refresh() } }
@@ -43,5 +53,14 @@ struct RepositoryCommands: Commands {
   private func run(_ action: @escaping (RepositorySession) async -> Void) {
     guard let session, !session.isBusy else { return }
     Task { await action(session) }
+  }
+}
+
+/// View › Hide Whitespace Changes, for every diff.
+private struct HideWhitespaceToggle: View {
+  @AppStorage(DiffOptions.hideWhitespaceKey) private var hideWhitespace = false
+
+  var body: some View {
+    Toggle("Hide Whitespace Changes", isOn: $hideWhitespace)
   }
 }

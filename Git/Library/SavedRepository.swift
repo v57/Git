@@ -8,6 +8,8 @@ import SwiftData
   /// The folder it was imported from; the sidebar groups by it.
   var group: String = ""
   var addedAt: Date = Date()
+  /// When it was last shown in the window, for the Welcome window's Recent list.
+  var lastOpenedAt: Date?
 
   init(path: String, group: String, addedAt: Date = .now) {
     self.path = path

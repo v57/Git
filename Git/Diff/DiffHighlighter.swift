@@ -18,8 +18,17 @@ nonisolated enum DiffHighlighter {
     return url.pathExtension.isEmpty || Language.detect(url: url) != nil
   }
 
-  /// Display text for every line in `diff`, keyed by line id, colored when the language is known.
+  /// Display text for every line in `diff`, keyed by line id: colored when the language is known,
+  /// with the changed part of each removed/added line pair emphasized.
   static func render(
+    _ diff: FileDiff, oldText: String?, newText: String?, isDark: Bool
+  ) -> [Int: AttributedString] {
+    var result = colored(diff, oldText: oldText, newText: newText, isDark: isDark)
+    emphasizeChanges(in: diff, &result)
+    return result
+  }
+
+  private static func colored(
     _ diff: FileDiff, oldText: String?, newText: String?, isDark: Bool
   ) -> [Int: AttributedString] {
     let lines = diff.lines
@@ -38,6 +47,62 @@ nonisolated enum DiffHighlighter {
       result[line.id] = colored(line.text, tokens: tokens ?? [], scheme: scheme)
     }
     return result
+  }
+
+  /// Pairs the n-th removed and n-th added line of each block of changes and gives the part
+  /// between their common prefix and suffix a stronger background, so an edit inside a line
+  /// stands out (GitHub-style). Lines with nothing in common are left alone.
+  private static func emphasizeChanges(in diff: FileDiff, _ result: inout [Int: AttributedString]) {
+    for hunk in diff.hunks {
+      let lines = hunk.lines
+      var index = 0
+      while index < lines.count {
+        guard lines[index].kind == .removed else {
+          index += 1
+          continue
+        }
+        var removed: [DiffLine] = []
+        while index < lines.count, lines[index].kind == .removed {
+          removed.append(lines[index])
+          index += 1
+        }
+        var added: [DiffLine] = []
+        while index < lines.count, lines[index].kind == .added {
+          added.append(lines[index])
+          index += 1
+        }
+        for (old, new) in zip(removed, added) {
+          let a = Array(display(old.text))
+          let b = Array(display(new.text))
+          var prefix = 0
+          while prefix < min(a.count, b.count), a[prefix] == b[prefix] { prefix += 1 }
+          var suffix = 0
+          while suffix < min(a.count, b.count) - prefix,
+            a[a.count - 1 - suffix] == b[b.count - 1 - suffix]
+          {
+            suffix += 1
+          }
+          // Only worth it when a good part of the line is shared.
+          let shared = prefix + suffix
+          guard shared >= 3, Double(shared) >= 0.25 * Double(min(a.count, b.count)) else { continue }
+          emphasize(&result[old.id], from: prefix, to: a.count - suffix, color: .red)
+          emphasize(&result[new.id], from: prefix, to: b.count - suffix, color: .green)
+        }
+      }
+    }
+  }
+
+  private static func emphasize(
+    _ text: inout AttributedString?, from start: Int, to end: Int, color: Color
+  ) {
+    guard var string = text, start < end else { return }
+    let characters = string.characters
+    guard
+      let lower = characters.index(characters.startIndex, offsetBy: start, limitedBy: characters.endIndex),
+      let upper = characters.index(characters.startIndex, offsetBy: end, limitedBy: characters.endIndex)
+    else { return }
+    string[lower..<upper].backgroundColor = color.opacity(0.35)
+    text = string
   }
 
   /// Tokens for each of `lines` (by line id, ranges relative to the line), from the whole file

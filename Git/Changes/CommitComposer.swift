@@ -1,7 +1,8 @@
 import GitKit
 import SwiftUI
 
-/// Summary, description, Amend, and Commit / Commit & Push.
+/// The commit form: summary with a character count, description, Amend, then Commit & Push and
+/// "Commit N Files to branch".
 struct CommitComposer: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
@@ -17,56 +18,93 @@ struct CommitComposer: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      TextField("Summary", text: $state.summary)
-        .textFieldStyle(.roundedBorder)
-        .focused($focusedField, equals: .summary)
-        .onSubmit { focusedField = .details }
-      TextEditor(text: $state.details)
-        .font(.body)
-        .focused($focusedField, equals: .details)
-        .frame(minHeight: 44, maxHeight: 90)
-        .scrollContentBackground(.hidden)
-        .padding(4)
-        .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: 6))
-        .overlay {
-          RoundedRectangle(cornerRadius: 6).strokeBorder(.separator)
-        }
-        .overlay(alignment: .topLeading) {
-          if state.details.isEmpty {
-            Text("Description")
-              .foregroundStyle(.placeholder)
-              .padding(.horizontal, 9)
-              .padding(.vertical, 4)
-              .allowsHitTesting(false)
+    VStack(alignment: .leading, spacing: 10) {
+      VStack(spacing: 0) {
+        HStack(spacing: 8) {
+          TextField("Summary (required)", text: $state.summary)
+            .textFieldStyle(.plain)
+            .fontWeight(.semibold)
+            .focused($focusedField, equals: .summary)
+            .onSubmit { focusedField = .details }
+          if !state.summary.isEmpty {
+            // Logs and tools cut summaries longer than about 50 characters.
+            Text("\(state.summary.count)/50")
+              .font(.system(size: 11).monospacedDigit())
+              .foregroundStyle(state.summary.count > 50 ? Color.orange : .secondary)
+              .contentTransition(.numericText(value: Double(state.summary.count)))
+              .animation(.app, value: state.summary.count)
+              .transition(.opacity)
+              .help("Keep the summary to 50 characters so it isn't cut off in logs")
           }
         }
-      HStack {
-        Toggle("Amend", isOn: $state.amend)
-          .toggleStyle(.checkbox)
-          .disabled(session.status?.isUnborn ?? true)
-          .help("Replace the last commit")
-          .onChange(of: state.amend) { _, amend in
-            if amend { Task { await prefillAmendMessage() } }
+        .padding(.horizontal, 12)
+        .frame(height: 38)
+        .animation(.app, value: state.summary.isEmpty)
+        Divider().padding(.horizontal, 12)
+        TextEditor(text: $state.details)
+          .font(.body)
+          .focused($focusedField, equals: .details)
+          .scrollContentBackground(.hidden)
+          .padding(.horizontal, 7)
+          .padding(.vertical, 8)
+          .frame(height: 88)
+          .overlay(alignment: .topLeading) {
+            if state.details.isEmpty {
+              Text("Description — why this change?")
+                .foregroundStyle(.placeholder)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
+                .allowsHitTesting(false)
+            }
           }
-        Spacer()
+      }
+      .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: 10))
+      .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+      Toggle("Amend last commit", isOn: $state.amend)
+        .toggleStyle(.checkbox)
+        .font(.system(size: 12))
+        .disabled(session.status?.isUnborn ?? true)
+        .help("Replace the last commit with the staged changes and this message")
+        .onChange(of: state.amend) { _, amend in
+          if amend { Task { await prefillAmendMessage() } }
+        }
+      HStack(spacing: 8) {
         Button("Commit & Push") { Task { await commit(push: true) } }
-          .disabled(!canCommit)
-        Button(state.amend ? "Amend" : "Commit") { Task { await commit(push: false) } }
-          .keyboardShortcut(.return, modifiers: .command)
-          .help(commitHelp)
-          .buttonStyle(.borderedProminent)
-          .disabled(!canCommit)
+          .buttonStyle(.design(size: .large))
+          .keyboardShortcut(.return, modifiers: [.command, .shift])
+          .disabled(!canCommit || session.remotes.isEmpty)
+        Button {
+          Task { await commit(push: false) }
+        } label: {
+          HStack(spacing: 8) {
+            Text(commitTitle)
+              .lineLimit(1)
+              .truncationMode(.middle)
+              .contentTransition(.numericText(value: Double(stagedCount)))
+              .animation(.app, value: commitTitle)
+            Text("⌘↩")
+              .font(.system(size: 11))
+              .opacity(0.85)
+          }
+          .frame(maxWidth: .infinity)
+        }
+        .buttonStyle(.design(.primary, size: .large))
+        .keyboardShortcut(.return, modifiers: .command)
+        .disabled(!canCommit)
       }
     }
-    .padding(10)
+    .padding(.horizontal, 16)
+    .padding(.top, 14)
+    .padding(.bottom, 16)
+    .background(Color.primary.opacity(0.015))
   }
 
-  private var commitHelp: String {
-    if state.amend { return "Replace the last commit (⌘↩)" }
-    let files = stagedCount == 1 ? "1 staged file" : "\(stagedCount) staged files"
-    let branch = session.status?.branch.map { " to \($0)" } ?? ""
-    return "Commit \(files)\(branch) (⌘↩)"
+  private var commitTitle: String {
+    let branch = session.status?.branch ?? "HEAD"
+    if state.amend { return "Amend Last Commit" }
+    if stagedCount == 0 { return "Commit to \(branch)" }
+    let files = stagedCount == 1 ? "1 File" : "\(stagedCount) Files"
+    return "Commit \(files) to \(branch)"
   }
 
   private func prefillAmendMessage() async {
@@ -75,8 +113,7 @@ struct CommitComposer: View {
     else { return }
     let parts = message.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
     state.summary = parts.first.map(String.init) ?? ""
-    state.details =
-      parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+    state.details = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
   }
 
   private func commit(push: Bool) async {
@@ -84,10 +121,19 @@ struct CommitComposer: View {
     let summary = state.summary.trimmingCharacters(in: .whitespacesAndNewlines)
     let details = state.details.trimmingCharacters(in: .whitespacesAndNewlines)
     let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
+    let branch = session.status?.branch ?? "HEAD"
     guard await session.commit(message: message, amend: state.amend) else { return }
     state.summary = ""
     state.details = ""
     state.amend = false
-    if push { await session.push(force: false) }
+    if push {
+      if await session.push(force: false) {
+        state.lastCommit = "Committed and pushed “\(summary)” to \(session.status?.upstream ?? branch)"
+      } else {
+        state.lastCommit = "Committed “\(summary)” to \(branch)"
+      }
+    } else {
+      state.lastCommit = "Committed “\(summary)” to \(branch)"
+    }
   }
 }

@@ -1,121 +1,254 @@
 import GitKit
+import SwiftData
 import SwiftUI
 
-/// Branch picker, Fetch / Pull / Push, Stash, and activity.
+/// The window toolbar for a repository, as in the design: Fetch, Pull and Push (with the number
+/// of commits to push), then Branch, Merge and Stash. While conflicts are being resolved it shows
+/// the keyboard shortcuts instead.
 struct RepositoryToolbar: ToolbarContent {
   let session: RepositorySession
+  let screen: RepositoryScreenKind
 
   var body: some ToolbarContent {
-    ToolbarItem(placement: .navigation) {
-      BranchMenu(session: session)
-    }
-    ToolbarItemGroup(placement: .primaryAction) {
-      if let activity = session.activity {
-        HStack(spacing: 6) {
-          ProgressView().controlSize(.small)
-          Text(session.progress ?? activity.title)
-            .font(.caption)
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .frame(maxWidth: 220, alignment: .leading)
+    if screen == .conflicts {
+      ToolbarItem(placement: .primaryAction) {
+        Text("⌥⌘← Use Current · ⌥⌘→ Use Incoming")
+          .font(.system(size: 12))
+          .foregroundStyle(.secondary)
+          .padding(.horizontal, 8)
+      }
+    } else {
+      ToolbarItemGroup(placement: .primaryAction) {
+        SyncButtons(session: session)
+      }
+      // Sets Fetch, Pull and Push apart from Branch, Merge and Stash.
+      if #available(macOS 26, *) {
+        ToolbarSpacer(.fixed, placement: .primaryAction)
+      }
+      ToolbarItemGroup(placement: .primaryAction) {
+        BranchToolbarButton(session: session)
+        if screen == .history {
+          MergeMenu(session: session)
         }
+        StashMenu(session: session)
       }
-      StashMenu(session: session)
-      Button {
-        Task { await session.fetch() }
-      } label: {
-        Label("Fetch", systemImage: "arrow.triangle.2.circlepath")
-      }
-      .help("Fetch all remotes")
-      .disabled(session.isBusy || session.remotes.isEmpty)
-      Button {
-        Task { await session.pull() }
-      } label: {
-        CountLabel(title: "Pull", systemImage: "arrow.down", count: session.status?.behind ?? 0)
-      }
-      .help("Pull from \(session.status?.upstream ?? "the upstream branch")")
-      .disabled(session.isBusy || session.status?.upstream == nil)
-      Button {
-        Task { await session.push() }
-      } label: {
-        CountLabel(title: "Push", systemImage: "arrow.up", count: session.status?.ahead ?? 0)
-      }
-      .help(
-        session.status?.upstream.map { "Push to \($0)" }
-          ?? "Publish this branch to \(session.remotes.first ?? "a remote")")
-      .disabled(session.isBusy || session.remotes.isEmpty || session.status?.branch == nil)
     }
   }
 }
 
-/// A toolbar label with a count next to the icon.
-private struct CountLabel: View {
-  let title: String
-  let systemImage: String
-  let count: Int
-
-  var body: some View {
-    Label {
-      Text(title)
-    } icon: {
-      HStack(spacing: 2) {
-        Image(systemName: systemImage)
-        if count > 0 {
-          Text("\(count)")
-            .font(.caption.monospacedDigit())
-        }
-      }
-    }
-    .labelStyle(.titleAndIcon)
-  }
+/// Which screen the detail area shows; the toolbar and title follow it.
+enum RepositoryScreenKind: Equatable {
+  case changes, history, stashes, conflicts
 }
 
-private struct BranchMenu: View {
+/// Fetch, Pull and Push.
+private struct SyncButtons: View {
   let session: RepositorySession
-  @State private var isCreating = false
-  @State private var pendingDelete: Branch?
+  @State private var confirmForcePush = false
 
-  private var title: String {
-    guard let status = session.status else { return "—" }
-    if let branch = status.branch { return branch }
-    return status.headOID.map { "Detached at \($0.prefix(7))" } ?? "No Commits"
-  }
+  private var ahead: Int { session.status?.ahead ?? 0 }
+  private var hasUpstream: Bool { session.status?.upstream != nil }
 
   var body: some View {
+    Button {
+      Task { await session.fetch() }
+    } label: {
+      Label(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise")
+        .labelStyle(.titleAndIcon)
+        .contentTransition(.interpolate)
+        .symbolEffect(.rotate, isActive: session.activity == .fetching)
+    }
+    .disabled(session.remotes.isEmpty || session.isBusy)
+    .help(fetchHelp)
+    Button {
+      Task { await session.pull() }
+    } label: {
+      Label(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line")
+        .labelStyle(.titleAndIcon)
+        .contentTransition(.interpolate)
+        .symbolEffect(.pulse, isActive: session.activity == .pulling)
+    }
+    .disabled(!hasUpstream || session.isBusy)
+    .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
+    Button {
+      Task { await session.push() }
+    } label: {
+      HStack(spacing: 6) {
+        Image(systemName: "arrow.up.to.line")
+          .symbolEffect(.pulse, isActive: session.activity == .pushing)
+        Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
+          .contentTransition(.interpolate)
+        if ahead > 0 {
+          Text("\(ahead)")
+            .font(.system(size: 11, weight: .bold).monospacedDigit())
+            .contentTransition(.numericText(value: Double(ahead)))
+            .transition(.scale.combined(with: .opacity))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .frame(minWidth: 18, minHeight: 18)
+            .background(Color.accentColor, in: .capsule)
+        }
+      }
+      .fontWeight(ahead > 0 ? .semibold : .regular)
+      .animation(.app, value: ahead)
+      .animation(.app, value: session.activity)
+    }
+    .disabled(session.remotes.isEmpty || session.status?.branch == nil || session.isBusy)
+    .help(ahead > 0 ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Push")
+    .contextMenu {
+      Button("Force Push…") { confirmForcePush = true }
+        .disabled(!hasUpstream)
+    }
+    .confirmationDialog(
+      "Force push \(session.status?.branch ?? "")?", isPresented: $confirmForcePush,
+      titleVisibility: .visible
+    ) {
+      Button("Force Push", role: .destructive) { Task { await session.push(force: true) } }
+    } message: {
+      Text(
+        "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
+          + "if someone else pushed since your last fetch.")
+    }
+  }
+
+  private var fetchHelp: String {
+    if let progress = session.progress { return progress }
+    if session.remotes.isEmpty { return "This repository has no remote" }
+    guard let date = session.lastFetched else { return "Never fetched" }
+    return "Last fetched \(date.formatted(.relative(presentation: .named)))"
+  }
+}
+
+/// Branch: switch, create, merge or delete branches in a popover.
+private struct BranchToolbarButton: View {
+  let session: RepositorySession
+  @State private var isPresented = launchArgument("--show-branches")
+
+  var body: some View {
+    Button {
+      isPresented.toggle()
+    } label: {
+      Label("Branch", systemImage: "arrow.triangle.branch")
+        .labelStyle(.titleAndIcon)
+    }
+    .help("Switch or create a branch")
+    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
+      BranchPopover(session: session, isPresented: $isPresented)
+    }
+  }
+}
+
+/// Merge: a branch into the current one.
+private struct MergeMenu: View {
+  let session: RepositorySession
+
+  var body: some View {
+    let current = session.currentBranch?.name ?? "HEAD"
+    let candidates = session.localBranches.filter { !$0.isCurrent }
     Menu {
-      Button("New Branch…") { isCreating = true }
-      Divider()
-      Section("Branches") {
-        ForEach(session.localBranches) { branch in
-          Button {
-            Task { await session.switchTo(branch) }
-          } label: {
-            branchLabel(branch)
-          }
-          .disabled(branch.isCurrent)
+      Section("Merge into \(current)") {
+        ForEach(candidates) { branch in
+          Button(branch.name) { Task { await session.merge(branch) } }
+            .disabled((branch.aheadOfHead ?? 1) == 0)
         }
       }
-      if !session.remoteBranches.isEmpty {
-        Menu("Remote Branches") {
-          ForEach(session.remoteBranches) { branch in
-            Button(branch.name) { Task { await session.switchTo(branch) } }
-          }
-        }
-      }
-      let deletable = session.localBranches.filter { !$0.isCurrent }
-      if !deletable.isEmpty {
-        Menu("Delete Branch") {
-          ForEach(deletable) { branch in
-            Button(branch.name) { pendingDelete = branch }
+      let remotes = session.remoteBranches
+      if !remotes.isEmpty {
+        Section("Remote Branches") {
+          ForEach(remotes) { branch in
+            Button(branch.name) { Task { await session.merge(branch) } }
           }
         }
       }
     } label: {
-      Label(title, systemImage: "arrow.triangle.branch")
+      Label("Merge", systemImage: "arrow.triangle.merge")
         .labelStyle(.titleAndIcon)
     }
-    .help("Switch or create a branch")
-    .disabled(session.isBusy)
+    .menuIndicator(.hidden)
+    .disabled(session.isBusy || session.status?.branch == nil)
+    .help("Merge a branch into \(current)")
+  }
+}
+
+/// Debug builds open a popover at launch with `--show-branches`, for screenshots.
+private func launchArgument(_ name: String) -> Bool {
+  #if DEBUG
+    ProcessInfo.processInfo.arguments.contains(name)
+  #else
+    false
+  #endif
+}
+
+/// "3 ahead of main", "2 behind main" or "3 ahead, 2 behind main"; `nil` when level.
+func divergenceText(ahead: Int?, behind: Int?, base: String) -> String? {
+  let ahead = ahead ?? 0
+  let behind = behind ?? 0
+  switch (ahead > 0, behind > 0) {
+  case (true, true): return "\(ahead) ahead, \(behind) behind \(base)"
+  case (true, false): return "\(ahead) ahead of \(base)"
+  case (false, true): return "\(behind) behind \(base)"
+  case (false, false): return nil
+  }
+}
+
+// MARK: - Branch popover
+
+struct BranchPopover: View {
+  let session: RepositorySession
+  @Binding var isPresented: Bool
+  @Environment(RepositoryLibrary.self) private var library
+  @Environment(\.modelContext) private var context
+  @State private var filter = ""
+  @State private var isCreating = false
+  @State private var pendingDelete: Branch?
+
+  private var current: String { session.currentBranch?.name ?? "HEAD" }
+
+  private func matches(_ branch: Branch) -> Bool {
+    filter.isEmpty || branch.name.localizedCaseInsensitiveContains(filter)
+  }
+
+  private var localBranches: [Branch] {
+    // Current first, then branches ahead of it, then the rest by name.
+    session.localBranches.filter(matches).sorted { lhs, rhs in
+      if lhs.isCurrent != rhs.isCurrent { return lhs.isCurrent }
+      let lhsAhead = (lhs.aheadOfHead ?? 0) > 0
+      let rhsAhead = (rhs.aheadOfHead ?? 0) > 0
+      if lhsAhead != rhsAhead { return lhsAhead }
+      return lhs.name.localizedStandardCompare(rhs.name) == .orderedAscending
+    }
+  }
+
+  private var remoteBranches: [Branch] {
+    let local = Set(session.localBranches.map(\.name))
+    return session.remoteBranches.filter { matches($0) && !local.contains($0.localName) }
+  }
+
+  var body: some View {
+    VStack(spacing: 0) {
+      HStack {
+        FilterField(text: $filter, prompt: "Filter branches")
+        Button("New Branch…") { isCreating = true }
+      }
+      .padding(10)
+      Divider()
+      List {
+        Section("Branches") {
+          ForEach(localBranches) { branch in
+            row(branch)
+          }
+        }
+        if !remoteBranches.isEmpty {
+          Section("Remote Branches") {
+            ForEach(remoteBranches) { branch in
+              row(branch)
+            }
+          }
+        }
+      }
+      .listStyle(.inset)
+    }
+    .frame(width: 400, height: 440)
     .sheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
@@ -135,17 +268,92 @@ private struct BranchMenu: View {
     }
   }
 
-  private func branchLabel(_ branch: Branch) -> some View {
-    var text = branch.name
-    if branch.ahead > 0 { text += "  ↑\(branch.ahead)" }
-    if branch.behind > 0 { text += "  ↓\(branch.behind)" }
-    if branch.isUpstreamGone { text += "  (upstream gone)" }
-    return Label(text, systemImage: branch.isCurrent ? "checkmark" : "")
-      .labelStyle(.titleAndIcon)
+  private func row(_ branch: Branch) -> some View {
+    let worktree = session.worktree(for: branch)
+    let divergence = divergenceText(
+      ahead: branch.aheadOfHead, behind: branch.behindHead, base: current)
+    return Button {
+      if let worktree {
+        // A branch checked out in another worktree can't be checked out here; open that one.
+        library.open(worktree.url, into: context)
+      } else if !branch.isCurrent {
+        Task { await session.switchTo(branch) }
+      }
+      isPresented = false
+    } label: {
+      HStack(spacing: 8) {
+        Image(systemName: branch.isCurrent ? "checkmark" : worktree != nil ? "folder" : "arrow.triangle.branch")
+          .foregroundStyle(branch.isCurrent ? Color.accentColor : .secondary)
+          .frame(width: 16)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(branch.name).lineLimit(1).truncationMode(.middle)
+          HStack(spacing: 6) {
+            if branch.isCurrent {
+              Text("Current")
+            } else if let divergence {
+              Text(divergence)
+                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? Color.orange : .secondary)
+            } else if branch.aheadOfHead == 0 {
+              Text("Merged into \(current)")
+            }
+            if let worktree { Text("· in \(worktree.name)") }
+          }
+          .font(.caption)
+          .foregroundStyle(.secondary)
+        }
+        Spacer(minLength: 4)
+        UpstreamBadge(branch: branch)
+        if let date = branch.date {
+          Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+            .font(.caption)
+            .foregroundStyle(.tertiary)
+        }
+      }
+      .contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+    .contextMenu {
+      if !branch.isCurrent, !branch.isRemote {
+        Button("Merge into \(current)") {
+          Task { await session.merge(branch) }
+          isPresented = false
+        }
+        .disabled((branch.aheadOfHead ?? 1) == 0)
+        Button("Delete…", role: .destructive) { pendingDelete = branch }
+          .disabled(worktree != nil)
+      }
+      Button("Copy Name") {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(branch.name, forType: .string)
+      }
+    }
   }
 }
 
-private struct StashMenu: View {
+/// ↑/↓ against the branch's own upstream.
+private struct UpstreamBadge: View {
+  let branch: Branch
+
+  var body: some View {
+    if branch.isUpstreamGone {
+      Image(systemName: "icloud.slash")
+        .foregroundStyle(.secondary)
+        .help("The upstream branch was deleted")
+    } else if branch.ahead > 0 || branch.behind > 0 {
+      HStack(spacing: 3) {
+        if branch.behind > 0 { Text("↓\(branch.behind)") }
+        if branch.ahead > 0 { Text("↑\(branch.ahead)") }
+      }
+      .font(.caption.monospacedDigit())
+      .foregroundStyle(.secondary)
+      .help("Against \(branch.upstream ?? "its upstream")")
+    }
+  }
+}
+
+// MARK: - Stash
+
+struct StashMenu: View {
   let session: RepositorySession
   @State private var isStashing = false
   @State private var pendingDrop: Stash?
@@ -169,8 +377,10 @@ private struct StashMenu: View {
         }
       }
     } label: {
-      CountLabel(title: "Stash", systemImage: "tray.and.arrow.down", count: session.stashes.count)
+      Label("Stash", systemImage: "archivebox")
+        .labelStyle(.titleAndIcon)
     }
+    .menuIndicator(.hidden)
     .help("Stash changes")
     .disabled(session.isBusy)
     .sheet(isPresented: $isStashing) {
@@ -220,6 +430,8 @@ private struct StashSheet: View {
   }
 }
 
+// MARK: - Sheets
+
 /// Creates a branch at HEAD or `startPoint` and checks it out.
 struct NewBranchSheet: View {
   let session: RepositorySession
@@ -232,11 +444,8 @@ struct NewBranchSheet: View {
   var body: some View {
     Form {
       TextField("Name", text: $name, prompt: Text("feature/my-change"))
-      if let startPoint {
-        LabeledContent("From", value: String(startPoint.prefix(7)))
-      } else {
-        LabeledContent("From", value: session.status?.branch ?? "HEAD")
-      }
+      LabeledContent(
+        "From", value: startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")
       Toggle("Switch to the new branch", isOn: $checkout)
     }
     .formStyle(.grouped)
@@ -244,7 +453,8 @@ struct NewBranchSheet: View {
     .navigationTitle("New Branch")
     .task(id: name) {
       let trimmed = name.trimmingCharacters(in: .whitespaces)
-      isValid = await session.repository.isValidBranchName(trimmed)
+      isValid =
+        await session.repository.isValidBranchName(trimmed)
         && !session.localBranches.contains { $0.name == trimmed }
     }
     .toolbar {
@@ -264,17 +474,70 @@ struct NewBranchSheet: View {
   }
 }
 
-/// Opens `NewBranchSheet` from a menu (e.g. a commit's context menu).
-struct NewBranchButton: View {
+/// Creates a tag at a commit, annotated when a message is given.
+struct NewTagSheet: View {
   let session: RepositorySession
-  let startPoint: String
-  let title: String
-  @State private var isPresented = false
+  let commit: Commit
+  @Environment(\.dismiss) private var dismiss
+  @State private var name = ""
+  @State private var message = ""
+  @State private var isValid = false
 
   var body: some View {
-    Button(title) { isPresented = true }
-      .sheet(isPresented: $isPresented) {
-        NewBranchSheet(session: session, startPoint: startPoint)
+    Form {
+      TextField("Name", text: $name, prompt: Text("v1.0.0"))
+      TextField("Message", text: $message, prompt: Text("Optional, makes an annotated tag"))
+      LabeledContent("Commit", value: "\(commit.shortID) \(commit.subject)")
+    }
+    .formStyle(.grouped)
+    .frame(width: 420)
+    .navigationTitle("New Tag")
+    .task(id: name) {
+      let trimmed = name.trimmingCharacters(in: .whitespaces)
+      isValid = await session.repository.isValidTagName(trimmed)
+    }
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel") { dismiss() }
       }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Create") {
+          let name = name.trimmingCharacters(in: .whitespaces)
+          let message = message
+          Task { await session.createTag(name, at: commit, message: message) }
+          dismiss()
+        }
+        .disabled(!isValid)
+      }
+    }
+  }
+}
+
+// MARK: - Shared controls
+
+/// A rounded filter field with a clear button.
+struct FilterField: View {
+  @Binding var text: String
+  let prompt: String
+
+  var body: some View {
+    HStack(spacing: 5) {
+      Image(systemName: "line.3.horizontal.decrease")
+        .foregroundStyle(.secondary)
+      TextField(prompt, text: $text)
+        .textFieldStyle(.plain)
+      if !text.isEmpty {
+        Button {
+          text = ""
+        } label: {
+          Image(systemName: "xmark.circle.fill")
+        }
+        .buttonStyle(.borderless)
+        .foregroundStyle(.secondary)
+      }
+    }
+    .padding(.horizontal, 7)
+    .padding(.vertical, 5)
+    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 6))
   }
 }

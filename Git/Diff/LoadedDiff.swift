@@ -16,8 +16,8 @@ nonisolated struct LoadedDiff: Sendable {
     }
   }
 
-  static let lineHeight: CGFloat = 18
-  static let hunkHeight: CGFloat = 28
+  static let lineHeight: CGFloat = 21
+  static let hunkHeight: CGFloat = 34
 
   let target: DiffTarget
   let diff: FileDiff
@@ -28,20 +28,26 @@ nonisolated struct LoadedDiff: Sendable {
   /// The longest line, in characters (tabs expanded).
   let maxColumns: Int
   let numberDigits: Int
+  /// Space above every hunk but the first, for hunks drawn as separate cards.
+  let hunkGap: CGFloat
+  /// The last line of each hunk, which closes its card.
+  let lastLines: Set<Int>
 
-  init(target: DiffTarget, diff: FileDiff, rendered: [Int: AttributedString]) {
+  init(target: DiffTarget, diff: FileDiff, rendered: [Int: AttributedString], hunkGap: CGFloat = 0) {
     self.target = target
     self.diff = diff
     self.rendered = rendered
+    self.hunkGap = hunkGap
+    self.lastLines = Set(diff.hunks.compactMap { $0.lines.last?.id })
     var rows: [Row] = []
     var offsets: [CGFloat] = []
     var y: CGFloat = 0
     var maxColumns = 0
     var maxNumber = 0
-    for hunk in diff.hunks {
+    for (index, hunk) in diff.hunks.enumerated() {
       rows.append(.hunk(hunk))
       offsets.append(y)
-      y += Self.hunkHeight
+      y += Self.hunkHeight + (index > 0 ? hunkGap : 0)
       for line in hunk.lines {
         rows.append(.line(line, hunkID: hunk.id))
         offsets.append(y)
@@ -59,6 +65,11 @@ nonisolated struct LoadedDiff: Sendable {
 
   var totalHeight: CGFloat { offsets.last ?? 0 }
 
+  /// The same diff laid out with `gap` between hunks.
+  func spaced(by gap: CGFloat) -> LoadedDiff {
+    LoadedDiff(target: target, diff: diff, rendered: rendered, hunkGap: gap)
+  }
+
   /// The row at `y`, clamped to the rows.
   func rowIndex(at y: CGFloat) -> Int? {
     guard !rows.isEmpty else { return nil }
@@ -72,10 +83,11 @@ nonisolated struct LoadedDiff: Sendable {
   }
 
   /// Loads the diff for `target` and highlights it with the file contents on both sides.
-  @concurrent static func load(_ target: DiffTarget, repository: Repository, isDark: Bool) async throws
-    -> LoadedDiff?
-  {
-    guard let diff = try await repository.diff(target) else { return nil }
+  @concurrent static func load(
+    _ target: DiffTarget, repository: Repository, isDark: Bool, ignoreWhitespace: Bool = false
+  ) async throws -> LoadedDiff? {
+    guard let diff = try await repository.diff(target, ignoreWhitespace: ignoreWhitespace)
+    else { return nil }
     var oldText: String?
     var newText: String?
     if !diff.isBinary, DiffHighlighter.mayHighlight(diff.path) {
