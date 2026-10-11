@@ -11,6 +11,9 @@ struct GitApp: App {
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
   }
 
+  /// The saved repositories, in `RepositoryStore.url` (or in memory with `--in-memory`).
+  private static let modelContainer = RepositoryStore.makeContainer()
+
   var body: some Scene {
     WindowGroup("Git") {
       ContentView()
@@ -18,7 +21,7 @@ struct GitApp: App {
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
     }
     .defaultSize(width: 1280, height: 800)
-    .modelContainer(for: SavedRepository.self)
+    .modelContainer(Self.modelContainer)
     .commands {
       RepositoryCommands(library: library)
     }
