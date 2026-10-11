@@ -1,22 +1,21 @@
+import CodeKit
 import Foundation
 import GitKit
-import Md
 import SwiftUI
 
-/// Syntax-colors diff lines with Markdown's code highlighter. This is the only file that imports
-/// `Md`; a dedicated code library will replace it.
+/// Syntax-colors diff lines with CodeKit (`../Code`). This is the only file that imports it.
 ///
-/// The scanner carries state across lines (block comments, multi-line strings), so each side is
-/// tokenized as a whole file when its text is available, and the tokens are mapped onto diff
+/// Highlighting carries state across lines (block comments, multi-line strings), so each side is
+/// highlighted as a whole file when its text is available, and the tokens are mapped onto diff
 /// lines by line number. Without the file, the side is rebuilt from the hunks.
 nonisolated enum DiffHighlighter {
   static let maxFileSize = 1_000_000
 
-  /// The language name the highlighter knows for `path`, or `nil`.
-  static func language(for path: String) -> String? {
-    let ext = (path as NSString).pathExtension.lowercased()
-    guard !ext.isEmpty, CodeHighlighter.spec(forLanguage: ext) != nil else { return nil }
-    return ext
+  /// Whether `path` may be highlightable: a known name or extension, or no extension (a `#!`
+  /// line may decide once the contents are read).
+  static func mayHighlight(_ path: String) -> Bool {
+    let url = URL(fileURLWithPath: path)
+    return url.pathExtension.isEmpty || Language.detect(url: url) != nil
   }
 
   /// Display text for every line in `diff`, keyed by line id, colored when the language is known.
@@ -24,14 +23,14 @@ nonisolated enum DiffHighlighter {
     _ diff: FileDiff, oldText: String?, newText: String?, isDark: Bool
   ) -> [Int: AttributedString] {
     let lines = diff.lines
-    guard let language = language(for: diff.path) else {
+    let firstLine = (newText ?? oldText).map { String($0.prefix { $0 != "\n" }) }
+    guard let spec = Language.detect(url: URL(fileURLWithPath: diff.path), firstLine: firstLine)
+    else {
       return Dictionary(uniqueKeysWithValues: lines.map { ($0.id, plain($0.text)) })
     }
     let scheme = CodeColorScheme.systemAware(isDark: isDark)
-
-    // Tokens per side, keyed by 1-based line number (or by line id for rebuilt sides).
-    let old = side(lines.filter { $0.kind != .added }, number: \.oldLine, text: oldText, language: language)
-    let new = side(lines.filter { $0.kind != .removed }, number: \.newLine, text: newText, language: language)
+    let old = side(lines.filter { $0.kind != .added }, number: \.oldLine, text: oldText, spec: spec)
+    let new = side(lines.filter { $0.kind != .removed }, number: \.newLine, text: newText, spec: spec)
 
     var result: [Int: AttributedString] = [:]
     for line in lines {
@@ -41,96 +40,62 @@ nonisolated enum DiffHighlighter {
     return result
   }
 
-  typealias LineTokens = [(range: NSRange, kind: SyntaxKind)]
-
-  /// Tokens for each of `lines` (by line id), from the whole file when it is available and
-  /// matches, else from the lines themselves.
+  /// Tokens for each of `lines` (by line id, ranges relative to the line), from the whole file
+  /// when it is available and matches the diff, else from the lines themselves.
   private static func side(
-    _ lines: [DiffLine], number: KeyPath<DiffLine, Int?>, text: String?, language: String
-  ) -> [Int: LineTokens] {
+    _ lines: [DiffLine], number: KeyPath<DiffLine, Int?>, text: String?, spec: LanguageSpec
+  ) -> [Int: [CodeToken]] {
     if let text, text.utf16.count <= maxFileSize {
-      let fileLines = tokensByLine(text, language: language)
-      // Use the file only if it matches the diff (it may have changed since the diff was read).
+      let ns = text as NSString
+      let highlighter = SyntaxHighlighter(text: ns, spec: spec)
+      // The file may have changed since the diff was read; use it only if it still matches.
       let matches = lines.allSatisfy { line in
-        guard let n = line[keyPath: number], n - 1 < fileLines.count else { return false }
-        return fileLines[n - 1].text == line.text
+        guard let n = line[keyPath: number], n - 1 < highlighter.lines.count else { return false }
+        let content = ns.substring(with: highlighter.lines.contentRange(ofLine: n - 1, in: ns))
+        return content == withoutCarriageReturn(line.text)
       }
       if matches {
-        var result: [Int: LineTokens] = [:]
+        var result: [Int: [CodeToken]] = [:]
         for line in lines {
-          if let n = line[keyPath: number] { result[line.id] = fileLines[n - 1].tokens }
+          guard let n = line[keyPath: number] else { continue }
+          result[line.id] = relative(highlighter, line: n - 1)
         }
         return result
       }
     }
-    let rebuilt = lines.map(\.text).joined(separator: "\n")
-    let fileLines = tokensByLine(rebuilt, language: language)
-    var result: [Int: LineTokens] = [:]
-    for (index, line) in lines.enumerated() where index < fileLines.count {
-      result[line.id] = fileLines[index].tokens
+    let rebuilt = lines.map { withoutCarriageReturn($0.text) }.joined(separator: "\n") as NSString
+    let highlighter = SyntaxHighlighter(text: rebuilt, spec: spec)
+    var result: [Int: [CodeToken]] = [:]
+    for (index, line) in lines.enumerated() where index < highlighter.lines.count {
+      result[line.id] = relative(highlighter, line: index)
     }
     return result
   }
 
-  /// Splits `text` into lines and assigns each token (or the part of it on that line) to its
-  /// line, with ranges relative to the line.
-  private static func tokensByLine(_ text: String, language: String)
-    -> [(text: String, tokens: LineTokens)]
-  {
-    let ns = text as NSString
-    var starts: [Int] = [0]
-    var location = 0
-    while location < ns.length {
-      let range = ns.range(of: "\n", range: NSRange(location: location, length: ns.length - location))
-      if range.location == NSNotFound { break }
-      starts.append(range.location + 1)
-      location = range.location + 1
+  /// The tokens of `line` with ranges relative to the line start.
+  private static func relative(_ highlighter: SyntaxHighlighter, line: Int) -> [CodeToken] {
+    let start = highlighter.lines.starts[line]
+    return highlighter.tokens(ofLine: line).map {
+      CodeToken(
+        range: NSRange(location: $0.range.location - start, length: $0.range.length),
+        kind: $0.kind)
     }
-    var lines: [(text: String, tokens: LineTokens)] = starts.enumerated().map { index, start in
-      let end = index + 1 < starts.count ? starts[index + 1] - 1 : ns.length
-      return (ns.substring(with: NSRange(location: start, length: end - start)), [])
-    }
-    for token in CodeHighlighter.tokens(in: text, language: language) {
-      var lineIndex = lineIndex(of: token.range.location, in: starts)
-      var remaining = token.range
-      while remaining.length > 0, lineIndex < lines.count {
-        let lineStart = starts[lineIndex]
-        let lineLength = (lines[lineIndex].text as NSString).length
-        let localStart = remaining.location - lineStart
-        let localLength = min(remaining.length, lineLength - localStart)
-        if localLength > 0 {
-          lines[lineIndex].tokens.append(
-            (NSRange(location: localStart, length: localLength), token.kind))
-        }
-        let consumed = max(localLength, 0) + 1  // the newline
-        remaining = NSRange(
-          location: remaining.location + consumed, length: max(remaining.length - consumed, 0))
-        lineIndex += 1
-      }
-    }
-    return lines
   }
 
-  private static func lineIndex(of offset: Int, in starts: [Int]) -> Int {
-    var low = 0
-    var high = starts.count - 1
-    while low < high {
-      let mid = (low + high + 1) / 2
-      if starts[mid] <= offset { low = mid } else { high = mid - 1 }
-    }
-    return low
+  private static func withoutCarriageReturn(_ text: String) -> String {
+    text.hasSuffix("\r") ? String(text.dropLast()) : text
   }
 
   /// The line with tabs expanded and a trailing `\r` removed, colored by `tokens` (later tokens
   /// win where they overlap).
-  private static func colored(_ text: String, tokens: LineTokens, scheme: CodeColorScheme)
+  private static func colored(_ text: String, tokens: [CodeToken], scheme: CodeColorScheme)
     -> AttributedString
   {
-    let ns = text as NSString
+    let ns = withoutCarriageReturn(text) as NSString
     var colors = [UInt32?](repeating: nil, count: ns.length)
     for token in tokens {
       let end = min(token.range.location + token.range.length, ns.length)
-      guard token.range.location < end else { continue }
+      guard token.range.location >= 0, token.range.location < end else { continue }
       for index in token.range.location..<end { colors[index] = scheme.color(for: token.kind) }
     }
     var result = AttributedString()
@@ -138,7 +103,8 @@ nonisolated enum DiffHighlighter {
     while start < ns.length {
       var end = start + 1
       while end < ns.length, colors[end] == colors[start] { end += 1 }
-      var piece = AttributedString(display(ns.substring(with: NSRange(location: start, length: end - start))))
+      var piece = AttributedString(
+        display(ns.substring(with: NSRange(location: start, length: end - start))))
       if let rgb = colors[start] { piece.foregroundColor = Color(rgb: rgb) }
       result += piece
       start = end
@@ -152,9 +118,7 @@ nonisolated enum DiffHighlighter {
 
   /// Tabs as four spaces (so the column width can be computed) and no carriage return.
   static func display(_ text: String) -> String {
-    var text = text
-    if text.hasSuffix("\r") { text.removeLast() }
-    return text.replacingOccurrences(of: "\t", with: "    ")
+    withoutCarriageReturn(text).replacingOccurrences(of: "\t", with: "    ")
   }
 }
 

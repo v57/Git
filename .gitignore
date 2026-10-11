@@ -14,3 +14,7 @@ CLAUDE.md
 
 # Finder metadata
 .DS_Store
+
+# Xcode and SwiftPM per-machine state
+xcuserdata/
+.swiftpm/

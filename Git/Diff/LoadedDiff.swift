@@ -78,7 +78,7 @@ nonisolated struct LoadedDiff: Sendable {
     guard let diff = try await repository.diff(target) else { return nil }
     var oldText: String?
     var newText: String?
-    if !diff.isBinary, DiffHighlighter.language(for: diff.path) != nil {
+    if !diff.isBinary, DiffHighlighter.mayHighlight(diff.path) {
       let oldPath = diff.oldPath ?? target.path
       let newPath = diff.newPath ?? target.path
       let sides: (FileRevision?, FileRevision?)

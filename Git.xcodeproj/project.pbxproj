@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* GitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GitKit */; };
-		A10000000000000000000002 /* Md in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* Md */; };
+		A10000000000000000000002 /* CodeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* CodeKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -28,7 +28,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				A10000000000000000000001 /* GitKit in Frameworks */,
-				A10000000000000000000002 /* Md in Frameworks */,
+				A10000000000000000000002 /* CodeKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -69,7 +69,7 @@
 			name = Git;
 			packageProductDependencies = (
 				A10000000000000000000011 /* GitKit */,
-				A10000000000000000000012 /* Md */,
+				A10000000000000000000012 /* CodeKit */,
 			);
 			productName = Git;
 			productReference = 000000000000000000000120 /* Git.app */;
@@ -101,7 +101,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */,
-				A10000000000000000000022 /* XCLocalSwiftPackageReference "../Markdown" */,
+				A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -352,9 +352,9 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Git;
 		};
-		A10000000000000000000022 /* XCLocalSwiftPackageReference "../Markdown" */ = {
+		A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Markdown;
+			relativePath = ../Code;
 		};
 /* End XCLocalSwiftPackageReference section */
 
@@ -364,10 +364,10 @@
 			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */;
 			productName = GitKit;
 		};
-		A10000000000000000000012 /* Md */ = {
+		A10000000000000000000012 /* CodeKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000022 /* XCLocalSwiftPackageReference "../Markdown" */;
-			productName = Md;
+			package = A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */;
+			productName = CodeKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

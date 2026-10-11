@@ -18,13 +18,13 @@ switch and create branches, and stash. Drop a folder on the sidebar and every Gi
       Discovery/  RepoDiscovery: finds repositories inside a folder
       Session/    RepositorySession (@Observable state + actions), RepositoryWatcher (FSEvents)
       Repository.swift   every git operation, as async methods on a Sendable struct
-    Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Markdown (Md)
+    Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeKit)
     Git/                          app sources
       Library/    SavedRepository (SwiftData), RepositoryLibrary (sessions, summaries, import)
       Sidebar/    repositories grouped by import folder; drop or Add Folder (⇧⌘O)
       Changes/    file list, commit composer, diff with hunk/line actions
       History/    paged history with search, commit detail
-      Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing Md), LoadedDiff
+      Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing CodeKit), LoadedDiff
       Toolbar/    branch menu, fetch/pull/push, stash
 
 ## How it works
@@ -42,6 +42,8 @@ switch and create branches, and stash. Drop a folder on the sidebar and every Gi
 - **Discarding is recoverable for new files.** Untracked files are moved to the Trash rather than deleted.
 - **Live updates.** `RepositorySession` watches the working tree and `.git` with FSEvents. It ignores objects,
   logs and lock files, and refreshes status, branches, stashes and, when refs move, history.
+- **Syntax colors.** They come from CodeKit (`../Code`), which detects the language from the file name,
+  extension or `#!` line. Each side of a diff is highlighted as a whole file and mapped onto the diff lines.
 - **Not sandboxed.** The app is distributed with Developer ID and the hardened runtime, because it runs git and
   your hooks on arbitrary folders.
 
@@ -71,5 +73,3 @@ In the diff view:
 - No in-app prompts for SSH passphrases or HTTPS credentials. Keys in the SSH agent or Keychain and git
   credential helpers work.
 - No conflict editor. Resolve in an editor, then use Mark as Resolved.
-- Syntax highlighting comes from Markdown's `Md` code highlighter for now. A dedicated code library will replace
-  `Git/Diff/DiffHighlighter.swift`.
