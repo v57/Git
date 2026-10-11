@@ -1,0 +1,16 @@
+# Xcode build products (DerivedData path used by CLI builds)
+build/
+
+# Command Code session files
+.commandcode/
+.build/
+.hermes/
+
+# Xcode user state (scheme selection, breakpoints) — machine-local
+.swiftpm/xcode/xcuserdata/
+Git.xcodeproj/xcuserdata/
+CLAUDE.md
+/.claude
+
+# Finder metadata
+.DS_Store
