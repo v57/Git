@@ -16,11 +16,16 @@ public struct Branch: Sendable, Hashable, Identifiable {
   public var isUpstreamGone: Bool
   public var date: Date?
   public var subject: String
+  /// Commits on this branch that HEAD doesn't have (`nil` when unknown, e.g. before the first
+  /// commit).
+  public var aheadOfHead: Int?
+  /// Commits on HEAD that this branch doesn't have.
+  public var behindHead: Int?
 
   public init(
     refName: String, name: String, isRemote: Bool, isCurrent: Bool = false, sha: String,
     upstream: String? = nil, ahead: Int = 0, behind: Int = 0, isUpstreamGone: Bool = false,
-    date: Date? = nil, subject: String = ""
+    date: Date? = nil, subject: String = "", aheadOfHead: Int? = nil, behindHead: Int? = nil
   ) {
     self.refName = refName
     self.name = name
@@ -33,6 +38,8 @@ public struct Branch: Sendable, Hashable, Identifiable {
     self.isUpstreamGone = isUpstreamGone
     self.date = date
     self.subject = subject
+    self.aheadOfHead = aheadOfHead
+    self.behindHead = behindHead
   }
 
   public var id: String { refName }
@@ -48,6 +55,35 @@ public struct Branch: Sendable, Hashable, Identifiable {
     guard isRemote, let slash = name.firstIndex(of: "/") else { return name }
     return String(name[name.index(after: slash)...])
   }
+}
+
+/// A working tree of the repository (`git worktree list`).
+public struct Worktree: Sendable, Hashable, Identifiable {
+  public var url: URL
+  public var head: String?
+  /// The checked-out branch's short name, or `nil` when detached.
+  public var branch: String?
+  public var isBare: Bool
+  public var isLocked: Bool
+  public var isPrunable: Bool
+  /// The worktree this list was read from.
+  public var isCurrent: Bool
+
+  public init(
+    url: URL, head: String? = nil, branch: String? = nil, isBare: Bool = false,
+    isLocked: Bool = false, isPrunable: Bool = false, isCurrent: Bool = false
+  ) {
+    self.url = url
+    self.head = head
+    self.branch = branch
+    self.isBare = isBare
+    self.isLocked = isLocked
+    self.isPrunable = isPrunable
+    self.isCurrent = isCurrent
+  }
+
+  public var id: URL { url }
+  public var name: String { url.lastPathComponent }
 }
 
 public struct Stash: Sendable, Hashable, Identifiable {

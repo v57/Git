@@ -86,6 +86,8 @@ public struct FileDiff: Sendable, Hashable {
   public var hunks: [DiffHunk]
   /// Some bytes were not valid UTF-8 and were replaced; line patches would corrupt the file.
   public var hasInvalidUTF8: Bool
+  /// Whitespace changes were left out, so the lines don't match the files exactly.
+  public var ignoresWhitespace = false
 
   public init(
     oldPath: String?, newPath: String?, oldMode: String? = nil, newMode: String? = nil,
@@ -115,7 +117,8 @@ public struct FileDiff: Sendable, Hashable {
 
   /// Whether individual lines can be staged, unstaged or discarded.
   public var supportsLineSelection: Bool {
-    !isBinary && !isRename && !isCopy && !hasInvalidUTF8 && !hunks.isEmpty
+    !isBinary && !isRename && !isCopy && !hasInvalidUTF8 && !ignoresWhitespace
+      && !hunks.isEmpty
   }
 }
 

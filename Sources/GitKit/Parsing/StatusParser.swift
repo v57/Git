@@ -30,7 +30,7 @@ enum StatusParser {
         status.conflicted.append(
           FileChange(
             path: String(fields[10]), kind: .conflicted, area: .conflicted,
-            isSubmodule: fields[2].first == "S"))
+            isSubmodule: fields[2].first == "S", conflict: ConflictType(xy: fields[1])))
       case "?":
         let path = String(record.dropFirst(2))
         status.unstaged.append(FileChange(path: path, kind: .untracked, area: .unstaged))

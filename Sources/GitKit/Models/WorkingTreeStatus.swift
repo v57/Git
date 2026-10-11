@@ -46,16 +46,19 @@ public struct FileChange: Sendable, Hashable, Identifiable {
   public var kind: ChangeKind
   public var area: ChangeArea
   public var isSubmodule: Bool
+  /// How the sides disagree, for a conflicted path.
+  public var conflict: ConflictType?
 
   public init(
     path: String, originalPath: String? = nil, kind: ChangeKind, area: ChangeArea,
-    isSubmodule: Bool = false
+    isSubmodule: Bool = false, conflict: ConflictType? = nil
   ) {
     self.path = path
     self.originalPath = originalPath
     self.kind = kind
     self.area = area
     self.isSubmodule = isSubmodule
+    self.conflict = conflict
   }
 
   public var id: String { "\(area.rawValue):\(path)" }
@@ -110,6 +113,8 @@ public struct RepositorySummary: Sendable, Hashable {
   public var ahead: Int
   public var behind: Int
   public var hasUpstream: Bool
+  public var conflictCount: Int
+  public var operation: RepositoryOperation?
 
   public init(_ status: WorkingTreeStatus) {
     branch = status.branch
@@ -118,6 +123,13 @@ public struct RepositorySummary: Sendable, Hashable {
     ahead = status.ahead
     behind = status.behind
     hasUpstream = status.upstream != nil
+    conflictCount = status.conflicted.count
+    operation = status.operation
+  }
+
+  /// Uncommitted changes, commits to push or pull, or an operation to finish.
+  public var needsAttention: Bool {
+    changeCount > 0 || ahead > 0 || behind > 0 || operation != nil
   }
 
   public var branchLabel: String {

@@ -6,13 +6,23 @@ import Foundation
 /// bookkeeping doesn't trigger refresh loops.
 public final class RepositoryWatcher: @unchecked Sendable {
   private let paths: [String]
-  private let onChange: @Sendable () -> Void
+  private let onChange: @Sendable ([String]) -> Void
   private let queue = DispatchQueue(label: "dev.v57.GitKit.watcher")
   private var stream: FSEventStreamRef?
 
-  public init(paths: [URL], latency: TimeInterval = 0.4, onChange: @escaping @Sendable () -> Void) {
+  public convenience init(
+    paths: [URL], latency: TimeInterval = 0.4, onChange: @escaping @Sendable () -> Void
+  ) {
+    self.init(paths: paths, latency: latency, onChanges: { _ in onChange() })
+  }
+
+  /// Calls `onChanges` with the relevant paths that changed, so one watcher can serve several
+  /// repositories.
+  public init(
+    paths: [URL], latency: TimeInterval = 0.4, onChanges: @escaping @Sendable ([String]) -> Void
+  ) {
     self.paths = Array(Set(paths.map { $0.standardizedFileURL.path }))
-    self.onChange = onChange
+    self.onChange = onChanges
     self.latency = latency
     queue.setSpecific(key: Self.queueKey, value: ())
   }
@@ -61,7 +71,8 @@ public final class RepositoryWatcher: @unchecked Sendable {
   private static let queueKey = DispatchSpecificKey<Void>()
 
   private func handle(_ changed: ArraySlice<String>) {
-    if changed.contains(where: Self.isRelevant) { onChange() }
+    let relevant = changed.filter(Self.isRelevant)
+    if !relevant.isEmpty { onChange(Array(relevant)) }
   }
 
   static func isRelevant(_ path: String) -> Bool {

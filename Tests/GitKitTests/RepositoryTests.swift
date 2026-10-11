@@ -52,6 +52,19 @@ struct TempRepo {
     try await repo.commit(message: message)
   }
 
+  /// Another worktree of a TempRepo, sharing its runner.
+  struct Worktree {
+    let root: URL
+    let repo: Repository
+    init(url: URL) {
+      root = url
+      repo = Repository(url: url, runner: TempRepo.runner)
+    }
+    func write(_ path: String, _ text: String) throws {
+      try text.write(to: root.appendingPathComponent(path), atomically: true, encoding: .utf8)
+    }
+  }
+
   static func lines(_ range: ClosedRange<Int>) -> String {
     range.map { "line \($0)\n" }.joined()
   }
@@ -299,6 +312,210 @@ struct TempRepo {
     #expect(try first.read("b.txt") == "b\n")
     #expect(try await first.repo.status().behind == 0)
     _ = parent
+  }
+}
+
+@Suite struct HistoryEditingTests {
+  @Test func divergenceAndWorktrees() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try await temp.repo.createBranch("feature", checkout: false)
+    let worktreeURL = temp.root.deletingLastPathComponent().appendingPathComponent("wt")
+    try await temp.repo.git(["worktree", "add", "-q", worktreeURL.path, "feature"])
+    let worktree = TempRepo.Worktree(url: worktreeURL)
+    try worktree.write("b.txt", "b\n")
+    try await worktree.repo.stageAll()
+    try await worktree.repo.commit(message: "feature work")
+
+    let branches = try await temp.repo.branches()
+    let feature = try #require(branches.first { $0.name == "feature" })
+    #expect(feature.aheadOfHead == 1 && feature.behindHead == 0)
+    #expect(branches.first { $0.name == "main" }?.aheadOfHead == 0)
+
+    let worktrees = try await temp.repo.worktrees()
+    #expect(worktrees.count == 2)
+    #expect(worktrees[0].isCurrent && worktrees[0].branch == "main")
+    #expect(worktrees[1].branch == "feature" && !worktrees[1].isCurrent)
+
+    // Merging the branch brings main level with it.
+    try await temp.repo.merge(feature)
+    #expect(try await temp.repo.branches().first { $0.name == "feature" }?.aheadOfHead == 0)
+    #expect(try temp.read("b.txt") == "b\n")
+  }
+
+  /// main and feature both change line 2 of a.txt and feature deletes b.txt that main edits.
+  func conflictingMerge() async throws -> TempRepo {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "one\ntwo\nthree\n")
+    try temp.write("b.txt", "b\n")
+    try await temp.commitAll("init")
+    try await temp.repo.createBranch("feature")
+    try temp.write("a.txt", "one\nTWO from feature\nthree\n")
+    try FileManager.default.removeItem(at: temp.root.appendingPathComponent("b.txt"))
+    try await temp.commitAll("feature work")
+    try await temp.repo.git(["switch", "-q", "main"])
+    try temp.write("a.txt", "one\ntwo from main\nthree\n")
+    try temp.write("b.txt", "b changed\n")
+    try await temp.commitAll("main work")
+    let feature = try #require(try await temp.repo.branches().first { $0.name == "feature" })
+    await #expect(throws: GitError.self) { try await temp.repo.merge(feature) }
+    return temp
+  }
+
+  @Test func resolvesMergeConflictsBlockByBlock() async throws {
+    let temp = try await conflictingMerge()
+    let status = try await temp.repo.status()
+    #expect(status.operation == .merge)
+    #expect(status.conflicted.map(\.path) == ["a.txt", "b.txt"])
+    #expect(status.conflicted.map(\.conflict) == [.bothModified, .deletedByThem])
+    #expect(await temp.repo.operationSource(.merge) == "feature")
+    let summary = try await temp.repo.summary()
+    #expect(summary.operation == .merge && summary.conflictCount == 2 && summary.needsAttention)
+
+    let file = try #require(try await temp.repo.conflictedFile("a.txt"))
+    #expect(file.blocks.count == 1)
+    #expect(file.blocks[0].current == "two from main\n")
+    #expect(file.blocks[0].incoming == "TWO from feature\n")
+    #expect(try await temp.repo.conflictedFile("b.txt") == nil)
+
+    let text = try #require(file.resolved([0: .currentThenIncoming]))
+    try await temp.repo.resolveConflict("a.txt", with: text)
+    #expect(try temp.read("a.txt") == "one\ntwo from main\nTWO from feature\nthree\n")
+    // The incoming side deleted b.txt, so taking it deletes the file.
+    try await temp.repo.resolveConflict("b.txt", taking: .incoming)
+    #expect(!FileManager.default.fileExists(atPath: temp.root.appendingPathComponent("b.txt").path))
+
+    let resolved = try await temp.repo.status()
+    #expect(resolved.conflicted.isEmpty)
+    try await temp.repo.continueOperation(.merge)
+    #expect(try await temp.repo.status().operation == nil)
+    #expect(try await temp.repo.log().first?.parents.count == 2)
+  }
+
+  @Test func resolvesByTakingTheCurrentSideAndAborts() async throws {
+    let temp = try await conflictingMerge()
+    try await temp.repo.resolveConflict("a.txt", taking: .current)
+    try await temp.repo.resolveConflict("b.txt", taking: .current)
+    #expect(try temp.read("a.txt") == "one\ntwo from main\nthree\n")
+    #expect(try temp.read("b.txt") == "b changed\n")
+    #expect(try await temp.repo.status().conflicted.isEmpty)
+    try await temp.repo.abortOperation(.merge)
+    #expect(try await temp.repo.status().operation == nil)
+  }
+
+  @Test func logsAllBranchesForTheGraph() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try await temp.repo.createBranch("feature")
+    try temp.write("b.txt", "b\n")
+    try await temp.commitAll("on feature")
+    try await temp.repo.git(["switch", "-q", "main"])
+    #expect(try await temp.repo.log().count == 1)
+    let all = try await temp.repo.log(LogQuery(allBranches: true))
+    #expect(all.map(\.subject) == ["on feature", "init"])
+    #expect(CommitGraph.layout(all).map(\.column) == [0, 0])
+  }
+
+  @Test func countsLinesTagsChecksOutAndCherryPicks() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "one\ntwo\n")
+    try await temp.commitAll("init")
+    try await temp.repo.createTag("v1", message: "First")
+    try await temp.repo.createBranch("feature")
+    try temp.write("b.txt", "b\n")
+    try await temp.commitAll("add b")
+    try await temp.repo.git(["switch", "-q", "main"])
+
+    try temp.write("a.txt", "one\nTWO\nthree\n")
+    try temp.write("new.txt", "x\ny")
+    try await temp.repo.stage(["a.txt"])
+    try temp.write("a.txt", "one\nTWO\nthree\nfour\n")
+    let counts = try await temp.repo.lineCounts(untracked: ["new.txt"])
+    #expect(counts.staged["a.txt"] == LineCounts(added: 2, removed: 1))
+    #expect(counts.unstaged["a.txt"] == LineCounts(added: 1, removed: 0))
+    #expect(counts.unstaged["new.txt"] == LineCounts(added: 2, removed: 0))
+    try await temp.repo.commit(message: "edit a")
+    try await temp.repo.discard([FileChange(path: "a.txt", kind: .modified, area: .unstaged)])
+    try FileManager.default.removeItem(at: temp.root.appendingPathComponent("new.txt"))
+
+    let tags = try await temp.repo.tags()
+    #expect(tags.map(\.name) == ["v1"])
+    let initial = try #require(try await temp.repo.log().last)
+    #expect(tags.first?.commit == initial.id)
+
+    let head = try #require(try await temp.repo.log().first)
+    let files = try await temp.repo.changedFiles(in: head)
+    #expect(files.first?.lines == LineCounts(added: 2, removed: 1))
+
+    let feature = try #require(try await temp.repo.log(LogQuery(revision: "feature")).first)
+    try await temp.repo.cherryPick(feature)
+    #expect(try temp.read("b.txt") == "b\n")
+    #expect(try await temp.repo.log().first?.subject == "add b")
+
+    try await temp.repo.checkout(initial)
+    #expect(try await temp.repo.status().isDetached)
+  }
+
+  @Test func searchesMessageAuthorAndShaAtOnce() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("Fix the parser")
+    try temp.write("a.txt", "b\n")
+    try await temp.commitAll("Unrelated")
+    let byMessage = try await temp.repo.log(LogQuery(search: "parser", searchField: .any))
+    #expect(byMessage.map(\.subject) == ["Fix the parser"])
+    // Every commit's author is "Test".
+    #expect(try await temp.repo.log(LogQuery(search: "test", searchField: .any)).count == 2)
+    let sha = try #require(try await temp.repo.log().last?.id)
+    let bySha = try await temp.repo.log(LogQuery(search: String(sha.prefix(7)), searchField: .any))
+    #expect(bySha.map(\.id).contains(sha))
+  }
+
+  @Test func revertUndoResetAndTag() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "one\n")
+    try await temp.commitAll("first")
+    try temp.write("a.txt", "two\n")
+    try await temp.commitAll("second")
+    #expect(try await temp.repo.unpushedCommits().count == 2)
+
+    let second = try #require(try await temp.repo.log().first)
+    try await temp.repo.revert(second)
+    #expect(try temp.read("a.txt") == "one\n")
+    #expect(try await temp.repo.log().first?.subject == "Revert \"second\"")
+
+    let message = try await temp.repo.undoLastCommit()
+    #expect(message.hasPrefix("Revert \"second\""))
+    #expect(try await temp.repo.status().staged.map(\.path) == ["a.txt"])
+    try await temp.repo.unstageAll()
+
+    try await temp.repo.createTag("v1", message: "Release")
+    #expect(try await temp.repo.log().first?.refs.contains { $0.name == "v1" && $0.kind == .tag } == true)
+
+    let first = try #require(try await temp.repo.log().last)
+    try await temp.repo.reset(to: first.id)
+    #expect(try await temp.repo.log().count == 1)
+    #expect(try temp.read("a.txt") == "one\n")  // mixed reset keeps the working tree
+
+    // Undoing the only commit leaves an unborn branch with the files staged.
+    try await temp.repo.git(["checkout", "-q", "--", "."])
+    try await temp.repo.undoLastCommit()
+    let status = try await temp.repo.status()
+    #expect(status.isUnborn && status.staged.map(\.path) == ["a.txt"])
+  }
+
+  @Test func ignoresWhitespace() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\nb\n")
+    try await temp.commitAll("init")
+    try temp.write("a.txt", "a  \nB\n")
+    let full = try #require(try await temp.repo.diff(.unstaged(path: "a.txt", untracked: false)))
+    let trimmed = try #require(
+      try await temp.repo.diff(.unstaged(path: "a.txt", untracked: false), ignoreWhitespace: true))
+    #expect(full.deletions == 2 && trimmed.deletions == 1)
+    #expect(full.supportsLineSelection && !trimmed.supportsLineSelection)
   }
 }
 

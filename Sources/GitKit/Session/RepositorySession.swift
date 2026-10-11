@@ -8,7 +8,8 @@ import Observation
 public final class RepositorySession {
   public enum Activity: Sendable, Hashable {
     case staging, discarding, committing, fetching, pulling, pushing, switchingBranch, stashing,
-      continuing, aborting
+      continuing, aborting, reverting, resetting, tagging, merging, resolving, checkingOut,
+      cherryPicking
 
     public var title: String {
       switch self {
@@ -22,6 +23,13 @@ public final class RepositorySession {
       case .stashing: "Stashing…"
       case .continuing: "Continuing…"
       case .aborting: "Aborting…"
+      case .reverting: "Reverting…"
+      case .resetting: "Resetting…"
+      case .tagging: "Tagging…"
+      case .merging: "Merging…"
+      case .resolving: "Resolving…"
+      case .checkingOut: "Checking out…"
+      case .cherryPicking: "Cherry-picking…"
       }
     }
   }
@@ -37,8 +45,21 @@ public final class RepositorySession {
   public private(set) var status: WorkingTreeStatus?
   public private(set) var branches: [Branch] = []
   public private(set) var stashes: [Stash] = []
+  public private(set) var tags: [Tag] = []
+  /// Lines added and removed per changed file, keyed by `FileChange.id`.
+  public private(set) var lineCounts: [FileChange.ID: LineCounts] = [:]
   public private(set) var remotes: [String] = []
+  public private(set) var worktrees: [Worktree] = []
+  /// The commit HEAD points to.
+  public private(set) var headCommit: Commit?
+  /// Commits on HEAD that aren't pushed (to the upstream, or to any remote without one).
+  public private(set) var unpushed: Set<String> = []
+  public private(set) var lastFetched: Date?
   public private(set) var commits: [Commit] = []
+  /// The branch graph, one row per commit, when the history isn't filtered.
+  public private(set) var graph: [GraphRow] = []
+  /// What the operation in progress brings in, e.g. the branch being merged.
+  public private(set) var operationSource: String?
   public private(set) var hasMoreCommits = true
   public private(set) var isLoadingCommits = false
   public private(set) var isRefreshing = false
@@ -73,6 +94,14 @@ public final class RepositorySession {
   public var localBranches: [Branch] { branches.filter { !$0.isRemote } }
   public var remoteBranches: [Branch] { branches.filter(\.isRemote) }
   public var currentBranch: Branch? { branches.first(where: \.isCurrent) }
+  /// Local branches with commits the current branch doesn't have.
+  public var branchesAheadOfHead: [Branch] {
+    localBranches.filter { !$0.isCurrent && ($0.aheadOfHead ?? 0) > 0 }
+  }
+  /// The branch checked out in another worktree, if any.
+  public func worktree(for branch: Branch) -> Worktree? {
+    worktrees.first { $0.branch == branch.name && !$0.isCurrent }
+  }
   public var isBusy: Bool { activity != nil }
 
   // MARK: Lifecycle
@@ -131,12 +160,36 @@ public final class RepositorySession {
     async let branches = repository.branches()
     async let stashes = repository.stashes()
     async let remotes = repository.remotes()
+    async let worktrees = repository.worktrees()
+    async let unpushed = repository.unpushedCommits()
+    async let head = repository.log(limit: 1)
+    async let lastFetched = repository.lastFetchDate()
+    async let tags = repository.tags()
     do {
       let newStatus = try await status
+      if let operation = newStatus.operation {
+        if operation != self.status?.operation || operationSource == nil {
+          operationSource = await repository.operationSource(operation)
+        }
+      } else {
+        operationSource = nil
+      }
       self.status = newStatus
+      let untracked = newStatus.unstaged.filter { $0.kind == .untracked }.map(\.path)
+      if let counts = try? await repository.lineCounts(untracked: untracked) {
+        var byID: [FileChange.ID: LineCounts] = [:]
+        for change in newStatus.staged { byID[change.id] = counts.staged[change.path] }
+        for change in newStatus.unstaged { byID[change.id] = counts.unstaged[change.path] }
+        lineCounts = byID
+      }
+      self.tags = (try? await tags) ?? []
       self.branches = (try? await branches) ?? []
       self.stashes = (try? await stashes) ?? []
       self.remotes = (try? await remotes) ?? []
+      self.worktrees = (try? await worktrees) ?? []
+      self.unpushed = (try? await unpushed) ?? []
+      self.headCommit = (try? await head)?.first
+      self.lastFetched = await lastFetched
       revision += 1
       let key = ([newStatus.headOID ?? "-"] + self.branches.map { "\($0.refName)=\($0.sha)" })
         .joined(separator: ",")
@@ -148,6 +201,11 @@ public final class RepositorySession {
       _ = try? await branches
       _ = try? await stashes
       _ = try? await remotes
+      _ = try? await worktrees
+      _ = try? await unpushed
+      _ = try? await head
+      _ = await lastFetched
+      _ = try? await tags
       report(error, title: "Couldn't read the repository")
     }
   }
@@ -158,6 +216,7 @@ public final class RepositorySession {
   public func reloadHistory() async {
     historyGeneration += 1
     commits = []
+    graph = []
     hasMoreCommits = true
     isLoadingCommits = false
     await loadMoreCommits()
@@ -173,6 +232,11 @@ public final class RepositorySession {
       let page = try await repository.log(logQuery, skip: skip, limit: Self.pageSize)
       guard generation == historyGeneration else { return }
       commits += page
+      let showsGraph = logQuery.showsGraph
+      let all = commits
+      let layout = showsGraph ? await Task.detached { CommitGraph.layout(all) }.value : []
+      guard generation == historyGeneration else { return }
+      graph = layout
       hasMoreCommits = page.count == Self.pageSize && logQuery.searchField != .sha
     } catch {
       guard generation == historyGeneration else { return }
@@ -329,6 +393,55 @@ public final class RepositorySession {
     }
   }
 
+  public func merge(_ branch: Branch) async {
+    await perform(.merging, failureTitle: "Couldn't merge \(branch.name)") {
+      try await $0.merge(branch)
+    }
+  }
+
+  public func revert(_ commit: Commit) async {
+    await perform(.reverting, failureTitle: "Couldn't revert \(commit.shortID)") {
+      try await $0.revert(commit)
+    }
+  }
+
+  public func checkout(_ commit: Commit) async {
+    await perform(.checkingOut, failureTitle: "Couldn't check out \(commit.shortID)") {
+      try await $0.checkout(commit)
+    }
+  }
+
+  public func cherryPick(_ commit: Commit) async {
+    await perform(.cherryPicking, failureTitle: "Couldn't cherry-pick \(commit.shortID)") {
+      try await $0.cherryPick(commit)
+    }
+  }
+
+  public func reset(to commit: Commit, mode: Repository.ResetMode = .mixed) async {
+    await perform(.resetting, failureTitle: "Couldn't reset to \(commit.shortID)") {
+      try await $0.reset(to: commit.id, mode: mode)
+    }
+  }
+
+  /// Undoes the last commit, keeping its changes staged. Returns its message, or `nil` on failure.
+  public func undoLastCommit() async -> String? {
+    let box = MessageBox()
+    let succeeded = await perform(.resetting, failureTitle: "Couldn't undo the commit") {
+      box.message = try await $0.undoLastCommit()
+    }
+    return succeeded ? box.message : nil
+  }
+
+  @discardableResult
+  public func createTag(_ name: String, at commit: Commit?, message: String? = nil) async -> Bool {
+    await perform(.tagging, failureTitle: "Couldn't create tag \(name)") {
+      try await $0.createTag(name, at: commit?.id, message: message)
+    }
+  }
+
+  /// Whether `commit` is on HEAD but not pushed yet.
+  public func isUnpushed(_ commit: Commit) -> Bool { unpushed.contains(commit.id) }
+
   public func continueOperation() async {
     guard let operation = status?.operation else { return }
     await perform(.continuing, failureTitle: "Couldn't continue") {
@@ -343,6 +456,26 @@ public final class RepositorySession {
     }
   }
 
+  // MARK: Conflicts
+
+  /// Writes the resolved text of a conflicted file and marks it resolved.
+  @discardableResult
+  public func resolveConflict(_ change: FileChange, with text: String) async -> Bool {
+    let path = change.path
+    return await perform(.resolving, failureTitle: "Couldn't resolve \(change.fileName)") {
+      try await $0.resolveConflict(path, with: text)
+    }
+  }
+
+  /// Resolves a conflicted file with one side's whole version (deleting it if that side did).
+  @discardableResult
+  public func resolveConflict(_ change: FileChange, taking side: ConflictSide) async -> Bool {
+    let path = change.path
+    return await perform(.resolving, failureTitle: "Couldn't resolve \(change.fileName)") {
+      try await $0.resolveConflict(path, taking: side)
+    }
+  }
+
   // MARK: Errors
 
   public func report(_ error: any Error, title: String) {
@@ -350,4 +483,8 @@ public final class RepositorySession {
     let message = (error as? GitError)?.message ?? error.localizedDescription
     failure = Failure(title: title, message: message)
   }
+}
+
+private final class MessageBox: @unchecked Sendable {
+  var message: String?
 }

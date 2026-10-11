@@ -78,7 +78,9 @@ extension Repository {
     let result = try await git(
       ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"],
       environment: ["GIT_OPTIONAL_LOCKS": "0"])
-    return RepositorySummary(StatusParser.parse(result.output))
+    var status = StatusParser.parse(result.output)
+    status.operation = try? await operationInProgress()
+    return RepositorySummary(status)
   }
 
   /// A merge, rebase, cherry-pick or revert that is waiting to be continued or aborted.
@@ -105,6 +107,39 @@ extension Repository {
     }
   }
 
+  /// What the operation brings in: the merged branch, the picked or reverted commit, or the
+  /// branch being rebased.
+  public func operationSource(_ operation: RepositoryOperation) async -> String? {
+    func name(_ revision: String) async -> String? {
+      let result = try? await git(
+        ["name-rev", "--name-only", "--no-undefined", "--exclude=refs/tags/*", revision],
+        allowedExitCodes: [0, 128])
+      guard let result, result.exitCode == 0 else { return nil }
+      var name = result.output.trimmingCharacters(in: .whitespacesAndNewlines)
+      if name.hasPrefix("remotes/") { name.removeFirst("remotes/".count) }
+      return name.isEmpty ? nil : name
+    }
+    func summary(_ revision: String) async -> String? {
+      let output = try? await output(["log", "-1", "--format=%h %s", revision])
+      return output?.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    switch operation {
+    case .merge: return await name("MERGE_HEAD")
+    case .cherryPick: return await summary("CHERRY_PICK_HEAD")
+    case .revert: return await summary("REVERT_HEAD")
+    case .rebase:
+      guard let gitDir = try? await gitDirectory() else { return nil }
+      for folder in ["rebase-merge", "rebase-apply"] {
+        let url = gitDir.appendingPathComponent(folder).appendingPathComponent("head-name")
+        if let ref = try? String(contentsOf: url, encoding: .utf8) {
+          return ref.trimmingCharacters(in: .whitespacesAndNewlines)
+            .replacingOccurrences(of: "refs/heads/", with: "")
+        }
+      }
+      return nil
+    }
+  }
+
   public func abortOperation(_ operation: RepositoryOperation) async throws {
     switch operation {
     case .merge: try await git(["merge", "--abort"])
@@ -128,6 +163,21 @@ extension Repository {
     ]
     if let search = query.search?.trimmingCharacters(in: .whitespaces), !search.isEmpty {
       switch query.searchField {
+      case .any:
+        // git ANDs --grep with --author, so each field is its own search, merged newest first.
+        guard skip == 0 else { return [] }
+        var fields: [LogQuery.SearchField] = [.message, .author]
+        if search.count >= 4, search.allSatisfy(\.isHexDigit) { fields.append(.sha) }
+        var seen = Set<String>()
+        var merged: [Commit] = []
+        for field in fields {
+          var single = query
+          single.searchField = field
+          for commit in try await log(single, skip: 0, limit: limit) where seen.insert(commit.id).inserted {
+            merged.append(commit)
+          }
+        }
+        return merged.sorted { $0.committerDate > $1.committerDate }.prefix(limit).map { $0 }
       case .message: arguments += ["--regexp-ignore-case", "--fixed-strings", "--grep=\(search)"]
       case .author: arguments += ["--regexp-ignore-case", "--fixed-strings", "--author=\(search)"]
       case .sha:
@@ -141,7 +191,11 @@ extension Repository {
       }
     }
     if query.revision == nil, !(try await hasHead()) { return [] }
-    arguments.append(query.revision ?? "HEAD")
+    if query.allBranches, query.revision == nil {
+      arguments += ["--branches", "--remotes", "--tags", "HEAD"]
+    } else {
+      arguments.append(query.revision ?? "HEAD")
+    }
     arguments.append("--")
     if let path = query.path { arguments.append(path) }
     return LogParser.parse(try await output(arguments))
@@ -150,10 +204,41 @@ extension Repository {
   /// Files changed by `commit`, against its first parent.
   @concurrent public func changedFiles(in commit: Commit) async throws -> [CommitFile] {
     let base = try await baseRevision(for: commit)
-    let output = try await output([
+    async let names = output([
       "diff-tree", "-r", "-z", "-M", "--no-commit-id", "--name-status", base, commit.id,
     ])
-    return NameStatusParser.parse(output)
+    async let numbers = output([
+      "diff-tree", "-r", "-z", "-M", "--no-commit-id", "--numstat", base, commit.id,
+    ])
+    let counts = NumstatParser.parse((try? await numbers) ?? "")
+    return NameStatusParser.parse(try await names).map { file in
+      var file = file
+      file.lines = counts[file.path]
+      return file
+    }
+  }
+
+  /// Lines added and removed per path: staged (index against HEAD) and unstaged (working tree
+  /// against the index, plus untracked files counted whole).
+  @concurrent public func lineCounts(untracked: [String] = []) async throws
+    -> (staged: [String: LineCounts], unstaged: [String: LineCounts])
+  {
+    let options = ["--numstat", "-z", "--no-ext-diff", "--no-renames"]
+    async let staged = hasHead()
+      ? output(["diff", "--cached"] + options, environment: ["GIT_OPTIONAL_LOCKS": "0"]) : ""
+    async let unstaged = output(["diff"] + options, environment: ["GIT_OPTIONAL_LOCKS": "0"])
+    var unstagedCounts = NumstatParser.parse(try await unstaged)
+    for path in untracked {
+      let url = url.appendingPathComponent(path)
+      guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 2_000_000,
+        let data = try? Data(contentsOf: url)
+      else { continue }
+      unstagedCounts[path] =
+        data.contains(0)
+        ? LineCounts(added: nil, removed: nil)
+        : LineCounts(added: data.reduce(0) { $1 == 10 ? $0 + 1 : $0 } + (data.last == 10 || data.isEmpty ? 0 : 1), removed: 0)
+    }
+    return (NumstatParser.parse(try await staged), unstagedCounts)
   }
 
   /// The commit's first parent, or the empty tree for a root commit.
@@ -191,25 +276,33 @@ extension Repository {
   static let diffOptions = ["--no-ext-diff", "--no-color", "-U3", "--submodule=short"]
 
   /// The diff of one file, or `nil` when it has no changes.
-  @concurrent public func diff(_ target: DiffTarget) async throws -> FileDiff? {
+  /// - Parameter ignoreWhitespace: hides whitespace-only changes. Such a diff can't be used to
+  ///   stage lines, so it reports `supportsLineSelection == false`.
+  @concurrent public func diff(_ target: DiffTarget, ignoreWhitespace: Bool = false) async throws
+    -> FileDiff?
+  {
     let result: GitResult
+    let options = Self.diffOptions + (ignoreWhitespace ? ["--ignore-all-space"] : [])
     switch target {
     case .unstaged(let path, true):
       result = try await git(
-        ["diff", "--no-index"] + Self.diffOptions + ["--", "/dev/null", path],
+        ["diff", "--no-index"] + options + ["--", "/dev/null", path],
         allowedExitCodes: [0, 1])
     case .unstaged(let path, false):
-      result = try await git(["diff"] + Self.diffOptions + ["--", path])
+      result = try await git(["diff"] + options + ["--", path])
     case .staged(let path, let originalPath):
       let paths = [originalPath, path].compactMap { $0 }
-      result = try await git(["diff", "--cached", "-M"] + Self.diffOptions + ["--"] + paths)
+      result = try await git(["diff", "--cached", "-M"] + options + ["--"] + paths)
     case .commit(let sha, let parent, let path, let originalPath):
       let base: String
       if let parent { base = parent } else { base = try await emptyTree() }
       let paths = [originalPath, path].compactMap { $0 }
-      result = try await git(["diff", "-M"] + Self.diffOptions + [base, sha, "--"] + paths)
+      result = try await git(["diff", "-M"] + options + [base, sha, "--"] + paths)
     }
-    let diffs = DiffParser.parse(result.stdout)
+    var diffs = DiffParser.parse(result.stdout)
+    if ignoreWhitespace {
+      for index in diffs.indices { diffs[index].ignoresWhitespace = true }
+    }
     return diffs.first { $0.path == target.path } ?? diffs.first
   }
 }
@@ -314,12 +407,33 @@ extension Repository {
 
 extension Repository {
   /// Local branches, then remote-tracking branches, each sorted by name.
+  /// Each branch also carries its divergence from HEAD when HEAD has a commit.
   @concurrent public func branches() async throws -> [Branch] {
-    let output = try await output([
-      "for-each-ref", "--format=\(RefParser.format)", "--sort=refname", "refs/heads",
-      "refs/remotes",
-    ])
-    return RefParser.parseBranches(output)
+    let format = try await hasHead() ? RefParser.formatWithDivergence : RefParser.format
+    let arguments = ["for-each-ref", "--sort=refname", "refs/heads", "refs/remotes"]
+    do {
+      return RefParser.parseBranches(try await output(arguments + ["--format=\(format)"]))
+    } catch where format == RefParser.formatWithDivergence {
+      // git before 2.41 has no %(ahead-behind).
+      return RefParser.parseBranches(try await output(arguments + ["--format=\(RefParser.format)"]))
+    }
+  }
+
+  /// Every worktree of the repository, the main one first.
+  @concurrent public func worktrees() async throws -> [Worktree] {
+    RefParser.parseWorktrees(
+      try await output(["worktree", "list", "--porcelain", "-z"]), current: url)
+  }
+
+  /// Creates a tag at `revision` (HEAD when `nil`), annotated when `message` is given.
+  public func createTag(_ name: String, at revision: String? = nil, message: String? = nil)
+    async throws
+  {
+    var arguments = ["tag"]
+    if let message, !message.isEmpty { arguments += ["--annotate", "--message", message] }
+    arguments.append(name)
+    if let revision { arguments.append(revision) }
+    try await git(arguments)
   }
 
   /// Checks out a local branch, or creates a tracking branch for a remote one.
@@ -355,12 +469,98 @@ extension Repository {
     try await git(["branch", force ? "-D" : "-d", name])
   }
 
+  /// Merges `branch` into the current branch. Conflicts leave a merge in progress.
+  public func merge(_ branch: Branch) async throws {
+    try await git(["merge", "--no-edit", branch.name])
+  }
+
+  /// Tags, highest version first (`v2.10` before `v2.9`).
+  @concurrent public func tags() async throws -> [Tag] {
+    TagParser.parse(
+      try await output(["for-each-ref", "--sort=-v:refname", "refs/tags", "--format=\(TagParser.format)"]))
+  }
+
+  /// Checks out `commit` without a branch (detached HEAD).
+  public func checkout(_ commit: Commit) async throws {
+    try await git(["switch", "--detach", commit.id])
+  }
+
+  /// Applies `commit` on top of HEAD (against its first parent for a merge). Conflicts leave a
+  /// cherry-pick in progress.
+  public func cherryPick(_ commit: Commit) async throws {
+    var arguments = ["cherry-pick"]
+    if commit.isMerge { arguments += ["-m", "1"] }
+    try await git(arguments + [commit.id])
+  }
+
+  /// Whether `name` is a valid tag name.
+  public func isValidTagName(_ name: String) async -> Bool {
+    guard !name.isEmpty else { return false }
+    let result = try? await git(
+      ["check-ref-format", "refs/tags/\(name)"], allowedExitCodes: [0, 1, 128])
+    return result?.exitCode == 0
+  }
+
   /// Whether `name` is a valid new branch name.
   public func isValidBranchName(_ name: String) async -> Bool {
     guard !name.isEmpty else { return false }
     let result = try? await git(
       ["check-ref-format", "--branch", name], allowedExitCodes: [0, 1, 128])
     return result?.exitCode == 0
+  }
+}
+
+// MARK: - Rewriting
+
+extension Repository {
+  public enum ResetMode: String, Sendable { case soft, mixed, hard }
+
+  /// Creates a commit that undoes `commit` (against its first parent for a merge). Conflicts
+  /// leave a revert in progress.
+  public func revert(_ commit: Commit) async throws {
+    var arguments = ["revert", "--no-edit"]
+    if commit.isMerge { arguments += ["-m", "1"] }
+    try await git(arguments + [commit.id])
+  }
+
+  /// Moves the current branch to `revision`. `mixed` keeps the changes in the working tree.
+  public func reset(to revision: String, mode: ResetMode = .mixed) async throws {
+    try await git(["reset", "--\(mode.rawValue)", "-q", revision])
+  }
+
+  /// Removes the last commit but keeps its changes staged, and returns its message. The first
+  /// commit is undone by deleting the branch ref, which leaves an unborn branch.
+  @discardableResult
+  public func undoLastCommit() async throws -> String {
+    let message = try await lastCommitMessage()
+    let hasParent = try await git(
+      ["rev-parse", "--verify", "--quiet", "HEAD~1"], allowedExitCodes: [0, 1]
+    ).exitCode == 0
+    if hasParent {
+      try await git(["reset", "--soft", "HEAD~1"])
+    } else {
+      try await git(["update-ref", "-d", "HEAD"])
+    }
+    return message
+  }
+
+  /// Commits on HEAD that aren't on its upstream (or, without one, on any remote).
+  @concurrent public func unpushedCommits(limit: Int = 1000) async throws -> Set<String> {
+    guard try await hasHead() else { return [] }
+    let upstream = try await git(
+      ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"],
+      allowedExitCodes: [0, 128])
+    let range = upstream.exitCode == 0 ? ["@{upstream}..HEAD"] : ["HEAD", "--not", "--remotes"]
+    let output = try await output(["rev-list", "--max-count=\(limit)"] + range)
+    return Set(output.split(separator: "\n").map(String.init))
+  }
+
+  /// When the repository last fetched (the modification date of FETCH_HEAD).
+  public func lastFetchDate() async -> Date? {
+    guard let gitDir = try? await gitDirectory() else { return nil }
+    let values = try? gitDir.appendingPathComponent("FETCH_HEAD")
+      .resourceValues(forKeys: [.contentModificationDateKey])
+    return values?.contentModificationDate
   }
 }
 
@@ -439,5 +639,45 @@ extension Repository {
 
   public func dropStash(_ stash: Stash) async throws {
     try await git(["stash", "drop", stash.reference])
+  }
+}
+
+// MARK: - Conflicts
+
+extension Repository {
+  /// The working-tree text of a conflicted file split into blocks, or `nil` when it has no
+  /// conflict markers (binary, deleted, or already edited by hand).
+  @concurrent public func conflictedFile(_ path: String) async throws -> ConflictedFile? {
+    let url = url.appendingPathComponent(path)
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    let data = try Data(contentsOf: url)
+    guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { return nil }
+    return ConflictParser.parse(text)
+  }
+
+  /// Writes the resolved `text` to `path` and marks it resolved. The file keeps its permissions.
+  public func resolveConflict(_ path: String, with text: String) async throws {
+    let url = url.appendingPathComponent(path)
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.truncate(atOffset: 0)
+    try handle.write(contentsOf: Data(text.utf8))
+    try handle.close()
+    try await markResolved([path])
+  }
+
+  /// Resolves `path` with one side's whole version. When that side deleted the file, the file is
+  /// deleted.
+  public func resolveConflict(_ path: String, taking side: ConflictSide) async throws {
+    // Stage 2 is the current side, stage 3 the incoming one.
+    let stage = side == .current ? "2" : "3"
+    let stages = try await output(["ls-files", "-u", "-z", "--", path])
+      .split(separator: "\0")
+      .compactMap { $0.split(separator: "\t").first?.split(separator: " ").last }
+    if stages.contains(where: { $0 == stage }) {
+      try await git(["checkout", side == .current ? "--ours" : "--theirs", "--", path])
+      try await git(["add", "--", path])
+    } else {
+      try await git(["rm", "--quiet", "--ignore-unmatch", "--", path])
+    }
   }
 }

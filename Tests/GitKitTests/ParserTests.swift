@@ -218,3 +218,123 @@ struct PatchBuilderTests {
     #expect(PatchBuilder.patch(for: diff, selecting: [0, 3], direction: .forward) == nil)
   }
 }
+
+struct ConflictParserTests {
+  @Test func splitsCommonTextAndBlocks() throws {
+    let text = """
+      top
+      <<<<<<< HEAD
+      ours 1
+      ours 2
+      =======
+      theirs
+      >>>>>>> feature
+      middle
+      <<<<<<< HEAD
+      a
+      ||||||| base
+      b
+      =======
+      c
+      >>>>>>> feature
+      end
+
+      """
+    let file = try #require(ConflictParser.parse(text))
+    #expect(file.blocks.count == 2)
+    let first = file.blocks[0]
+    #expect(first.current == "ours 1\nours 2\n" && first.incoming == "theirs\n")
+    #expect(first.currentLabel == "HEAD" && first.incomingLabel == "feature" && first.line == 2)
+    #expect(first.base == nil)
+    #expect(file.blocks[1].base == "b\n" && file.blocks[1].line == 9)
+
+    #expect(file.resolved([0: .current]) == nil)
+    #expect(
+      file.resolved([0: .incoming, 1: .currentThenIncoming])
+        == "top\ntheirs\nmiddle\na\nc\nend\n")
+    #expect(
+      file.resolved([0: .current, 1: .incomingThenCurrent])
+        == "top\nours 1\nours 2\nmiddle\nc\na\nend\n")
+  }
+
+  @Test func keepsWindowsLineEndings() throws {
+    let text = "x\r\n<<<<<<< HEAD\r\nours\r\n=======\r\ntheirs\r\n>>>>>>> b\r\ny\r\n"
+    let file = try #require(ConflictParser.parse(text))
+    #expect(file.blocks[0].current == "ours\r\n")
+    #expect(file.resolved([0: .incoming]) == "x\r\ntheirs\r\ny\r\n")
+  }
+
+  @Test func joinsSidesWithoutTrailingNewline() {
+    let block = ConflictBlock(id: 0, current: "a", incoming: "b")
+    #expect(block.text(for: .currentThenIncoming) == "a\nb")
+  }
+
+  @Test func rejectsTextWithoutCompleteBlocks() {
+    #expect(ConflictParser.parse("plain\ntext\n") == nil)
+    #expect(ConflictParser.parse("<<<<<<< HEAD\nours\n=======\ntheirs\n") == nil)
+    #expect(ConflictParser.parse("<<<<<<<< not a marker\n") == nil)
+  }
+
+  @Test func statusCarriesConflictType() {
+    let output = [
+      "u UU N... 100644 100644 100644 100644 a b c both.txt",
+      "u UD N... 100644 100644 000000 100644 a b c gone.txt",
+      "",
+    ].joined(separator: "\0")
+    let status = StatusParser.parse(output)
+    #expect(status.conflicted.map(\.conflict) == [.bothModified, .deletedByThem])
+  }
+}
+
+struct CommitGraphTests {
+  private func commit(_ id: String, _ parents: String...) -> Commit {
+    Commit(
+      id: id, parents: parents, authorName: "", authorEmail: "", authorDate: .now,
+      committerName: "", committerEmail: "", committerDate: .now, subject: id)
+  }
+
+  @Test func laysOutABranchAndItsMerge() {
+    // m merges f into main; f branched off at b.
+    let rows = CommitGraph.layout([
+      commit("m", "c", "f"),
+      commit("f", "b"),
+      commit("c", "b"),
+      commit("b", "a"),
+      commit("a"),
+    ])
+    #expect(rows.map(\.column) == [0, 1, 0, 0, 0])
+    #expect(rows[0].incoming.isEmpty && rows[0].outgoing.map(\.lane) == [0, 1])
+    #expect(rows[1].incoming.map(\.lane) == [1] && rows[1].passing.map(\.lane) == [0])
+    // c and f both lead to b, so f's lane folds into c's below c.
+    #expect(rows[2].passing.isEmpty)
+    #expect(rows[2].joining == [GraphRow.Join(lane: 1, target: 0, color: rows[1].color)])
+    #expect(rows[3].incoming.map(\.lane) == [0] && rows[3].width == 1)
+    #expect(rows[4].outgoing.isEmpty && rows[4].width == 1)
+    // A line keeps its color from the commit that started it.
+    #expect(rows[1].color == rows[0].outgoing[1].color)
+    #expect(rows[0].color != rows[1].color)
+  }
+
+  @Test func startsANewLaneForAnUnrelatedTip() {
+    let rows = CommitGraph.layout([commit("x", "a"), commit("y", "a"), commit("a")])
+    #expect(rows.map(\.column) == [0, 1, 0])
+    #expect(rows[1].outgoing.map(\.lane) == [0])
+  }
+}
+
+struct NumstatAndTagParserTests {
+  @Test func parsesNumstatWithRenamesAndBinary() {
+    let output = "3\t1\ta.txt\0-\t-\timage.png\0" + "2\t0\t\0old.txt\0new.txt\0"
+    let counts = NumstatParser.parse(output)
+    #expect(counts["a.txt"] == LineCounts(added: 3, removed: 1))
+    #expect(counts["image.png"] == LineCounts(added: nil, removed: nil))
+    #expect(counts["new.txt"] == LineCounts(added: 2, removed: 0))
+  }
+
+  @Test func parsesTagsPeelingAnnotatedOnes() {
+    let output = "v2\u{1F}c0ffee\u{1F}7a9\u{1F}1700000000\nv1\u{1F}\u{1F}abc123\u{1F}1690000000\n"
+    let tags = TagParser.parse(output)
+    #expect(tags.map(\.name) == ["v2", "v1"])
+    #expect(tags.map(\.commit) == ["c0ffee", "abc123"])
+  }
+}

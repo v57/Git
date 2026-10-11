@@ -86,3 +86,41 @@ enum NameStatusParser {
     return files
   }
 }
+
+/// Parses `--numstat -z`: `added<TAB>removed<TAB>path NUL`, or for a rename
+/// `added<TAB>removed<TAB> NUL old NUL new NUL`. Binary files have `-` counts. Keys are the new paths.
+enum NumstatParser {
+  static func parse(_ output: String) -> [String: LineCounts] {
+    var fields = output.split(separator: "\0", omittingEmptySubsequences: false)[...]
+    var counts: [String: LineCounts] = [:]
+    while let field = fields.popFirst() {
+      let parts = field.split(separator: "\t", maxSplits: 2, omittingEmptySubsequences: false)
+      guard parts.count == 3 else { continue }
+      let lines = LineCounts(added: Int(parts[0]), removed: Int(parts[1]))
+      if parts[2].isEmpty {
+        _ = fields.popFirst()
+        if let path = fields.popFirst() { counts[String(path)] = lines }
+      } else {
+        counts[String(parts[2])] = lines
+      }
+    }
+    return counts
+  }
+}
+
+/// Parses `for-each-ref refs/tags --format=<TagParser.format>`.
+enum TagParser {
+  /// name, peeled target (annotated tags), target, date.
+  static let format = "%(refname:short)%1f%(*objectname)%1f%(objectname)%1f%(creatordate:unix)"
+
+  static func parse(_ output: String) -> [Tag] {
+    output.split(separator: "\n").compactMap { line in
+      let fields = line.split(separator: "\u{1F}", omittingEmptySubsequences: false)
+      guard fields.count == 4, !fields[0].isEmpty else { return nil }
+      let commit = fields[1].isEmpty ? fields[2] : fields[1]
+      return Tag(
+        name: String(fields[0]), commit: String(commit),
+        date: TimeInterval(fields[3]).map(Date.init(timeIntervalSince1970:)))
+    }
+  }
+}
