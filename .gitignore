@@ -18,3 +18,20 @@ CLAUDE.md
 # Xcode and SwiftPM per-machine state
 xcuserdata/
 .swiftpm/
+
+# macOS
+# Finder folder icon: a file named Icon plus a carriage return
+Icon[]
+
+# Build
+DerivedData/
+*.xcuserstate
+
+# Secrets
+.env
+
+# Agents (local agent instructions, settings and boards)
+AGENTS.md
+.claude/
+.codex/
+KANBAN*.md
