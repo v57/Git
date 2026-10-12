@@ -35,7 +35,10 @@ struct CompletedOperation: Equatable {
 @Observable final class RepositoryViewState {
   var mode: RepositoryMode = .changes
   var selectedChanges: Set<FileChange.ID> = []
+  /// The commit shown in the inspector, where ↑/↓ move from.
   var selectedCommit: Commit.ID?
+  /// Every selected commit, `selectedCommit` included; ⇧ selects several.
+  var selectedCommits: Set<Commit.ID> = []
   var selectedCommitFile: CommitFile.ID?
   var summary = ""
   var details = ""

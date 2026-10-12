@@ -7,7 +7,8 @@ The app shows commit history, colored diffs with word-level highlights, and the 
 staged and unstaged files. You can:
 - Stage, unstage or discard whole files, hunks or individual lines.
 - Commit (with amend), undo the last unpushed commit, and revert, reset to or tag a commit from
-  History.
+  History. Select several commits with ⇧↑/⇧↓ or ⇧-click and squash ones that follow one another
+  on the current branch into one.
 - Fetch, pull and push with one button that picks the useful action, the way GitHub Desktop does.
 - Switch, create, merge and delete branches, and stash.
 - Resolve merge, rebase, cherry-pick and revert conflicts in the app: pick Current, Incoming or
@@ -75,6 +76,10 @@ Screens, panels and selections change with one animation, `Animation.app`
 - **Branch graph.** `CommitGraph` gives each commit a lane as `git log` lists it. A parent's line
   stays in its child's lane, merges open lanes for their other parents, and a side lane folds back
   left when it reaches a commit another lane already leads to.
+- **Squash.** The new commit gets the newest commit's tree and the oldest one's parent and author.
+  Later commits on HEAD are recreated on top with `commit-tree` and the same trees, so the working
+  tree and index aren't touched and nothing conflicts; `update-ref` moves HEAD only if it hasn't
+  moved meanwhile.
 - **Discarding is recoverable for new files.** Untracked files are moved to the Trash rather than deleted.
 - **Live updates.** `RepositorySession` watches the working tree and `.git` with FSEvents. It ignores objects,
   logs and lock files, and refreshes status, branches, stashes and, when refs move, history.

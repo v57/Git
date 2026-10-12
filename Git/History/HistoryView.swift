@@ -80,7 +80,8 @@ private struct CommitColumnsHeader: View {
   }
 }
 
-/// The commit rows, paged as they scroll, with ↑/↓ to move the selection.
+/// The commit rows, paged as they scroll, with ↑/↓ to move the selection. ⇧↑/⇧↓ and ⇧-click
+/// select several; the context menu squashes several that follow one another.
 private struct CommitTable: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
@@ -88,6 +89,9 @@ private struct CommitTable: View {
   @State private var branchStart: Commit?
   @State private var tagTarget: Commit?
   @State private var resetTarget: Commit?
+  @State private var squashRequest: SquashRequest?
+  /// Where ⇧ ranges start: the commit last selected without ⇧.
+  @State private var anchor: Commit.ID?
   @FocusState private var isFocused: Bool
 
   var body: some View {
@@ -99,12 +103,18 @@ private struct CommitTable: View {
               commit: commit, graph: index < session.graph.count ? session.graph[index] : nil,
               graphWidth: graphWidth, isHead: commit.id == session.status?.headOID,
               isSelected: state.selectedCommit == commit.id
+                || state.selectedCommits.contains(commit.id)
             ) {
-              state.selectedCommit = commit.id
-              isFocused = true
+              click(commit)
             }
             .id(commit.id)
-            .contextMenu { contextMenu(for: commit) }
+            .contextMenu {
+              if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
+                selectionMenu()
+              } else {
+                contextMenu(for: commit)
+              }
+            }
             .onAppear {
               if commit.id == session.commits.last?.id {
                 Task { await session.loadMoreCommits() }
@@ -121,11 +131,20 @@ private struct CommitTable: View {
       .focusable()
       .focusEffectDisabled()
       .focused($isFocused)
-      .onKeyPress(.downArrow) { move(1, proxy) }
-      .onKeyPress(.upArrow) { move(-1, proxy) }
+      .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+        move(press.key == .downArrow ? 1 : -1, extending: press.modifiers.contains(.shift))
+      }
       .onChange(of: state.selectedCommit) { _, id in
         if let id { withAnimation(.app) { proxy.scrollTo(id) } }
       }
+    }
+    // A commit selected elsewhere (a tag in the sidebar) replaces a selection it isn't part of.
+    .onChange(of: state.selectedCommit, initial: true) { _, id in
+      guard let id, !state.selectedCommits.contains(id) || state.selectedCommits.count == 1 else {
+        return
+      }
+      state.selectedCommits = [id]
+      anchor = id
     }
     .overlay {
       if session.commits.isEmpty && !session.isLoadingCommits {
@@ -145,6 +164,9 @@ private struct CommitTable: View {
     .sheet(item: $tagTarget) { commit in
       NewTagSheet(session: session, commit: commit)
     }
+    .sheet(item: $squashRequest) { request in
+      SquashSheet(session: session, commits: request.commits) { select($0) }
+    }
     .confirmationDialog(
       "Reset \(session.status?.branch ?? "HEAD") to \(resetTarget?.shortID ?? "")?",
       isPresented: .init(get: { resetTarget != nil }, set: { if !$0 { resetTarget = nil } }),
@@ -160,13 +182,59 @@ private struct CommitTable: View {
     }
   }
 
-  private func move(_ offset: Int, _ proxy: ScrollViewProxy) -> KeyPress.Result {
+  /// Moves the selection one row; with ⇧ it extends the selection instead.
+  private func move(_ offset: Int, extending: Bool) -> KeyPress.Result {
     let commits = session.commits
     guard !commits.isEmpty else { return .ignored }
     let index = state.selectedCommit.flatMap { id in commits.firstIndex { $0.id == id } } ?? -1
-    let next = min(max(index + offset, 0), commits.count - 1)
-    state.selectedCommit = commits[next].id
+    let next = commits[min(max(index + offset, 0), commits.count - 1)].id
+    if extending { extendSelection(to: next) } else { select(next) }
     return .handled
+  }
+
+  /// Click selects one commit; ⇧-click selects every commit from the anchor to this one.
+  private func click(_ commit: Commit) {
+    let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+    if flags.contains(.shift) { extendSelection(to: commit.id) } else { select(commit.id) }
+    isFocused = true
+  }
+
+  private func select(_ id: Commit.ID) {
+    anchor = id
+    state.selectedCommits = [id]
+    state.selectedCommit = id
+  }
+
+  /// Selects the commits from the anchor to `id` and shows `id` in the inspector.
+  private func extendSelection(to id: Commit.ID) {
+    let commits = session.commits
+    let start = anchor ?? state.selectedCommit ?? id
+    guard let from = commits.firstIndex(where: { $0.id == start }),
+      let to = commits.firstIndex(where: { $0.id == id })
+    else { return select(id) }
+    anchor = start
+    state.selectedCommits = Set(commits[min(from, to)...max(from, to)].map(\.id))
+    state.selectedCommit = id
+  }
+
+  /// The menu for several selected commits: Squash when they follow one another on the current
+  /// branch, otherwise the reason it's unavailable.
+  @ViewBuilder
+  private func selectionMenu() -> some View {
+    let selected = state.selectedCommits
+    let run = Result { try session.squashRun(selected) }
+    Button("Squash \(selected.count) Commits…") {
+      if case .success(let commits) = run { squashRequest = SquashRequest(commits: commits) }
+    }
+    .disabled(session.isBusy || session.status?.operation != nil || (try? run.get()) == nil)
+    if case .failure(let error) = run {
+      Text((error as? GitError)?.message ?? error.localizedDescription)
+    }
+    Divider()
+    Button("Copy SHAs") {
+      copyToPasteboard(
+        session.commits.filter { selected.contains($0.id) }.map(\.id).joined(separator: "\n"))
+    }
   }
 
   @ViewBuilder
@@ -185,6 +253,74 @@ private struct CommitTable: View {
     Divider()
     Button("Copy SHA") { copyToPasteboard(commit.id) }
     Button("Copy Message") { copyToPasteboard(commit.message) }
+  }
+}
+
+/// Commits to squash, newest first.
+private struct SquashRequest: Identifiable {
+  let commits: [Commit]
+  var id: Commit.ID { commits[0].id }
+}
+
+/// The message of the commit that replaces the selected ones, prefilled with theirs (oldest
+/// first), and a warning when some of them are already pushed.
+private struct SquashSheet: View {
+  let session: RepositorySession
+  /// Newest first.
+  let commits: [Commit]
+  let squashed: (Commit.ID) -> Void
+  @Environment(\.dismiss) private var dismiss
+  @State private var summary: String
+  @State private var details: String
+
+  init(session: RepositorySession, commits: [Commit], squashed: @escaping (Commit.ID) -> Void) {
+    self.session = session
+    self.commits = commits
+    self.squashed = squashed
+    let oldest = commits.last
+    let rest = [oldest?.body ?? ""] + commits.dropLast().reversed().map(\.message)
+    _summary = State(initialValue: oldest?.subject ?? "")
+    _details = State(initialValue: rest.filter { !$0.isEmpty }.joined(separator: "\n\n"))
+  }
+
+  var body: some View {
+    Form {
+      TextField("Summary", text: $summary)
+      TextField("Description", text: $details, axis: .vertical)
+        .lineLimit(4...12)
+      if let oldest = commits.last, let newest = commits.first {
+        LabeledContent("Commits", value: "\(oldest.shortID) … \(newest.shortID)")
+        LabeledContent("Author", value: oldest.authorName)
+      }
+      if !commits.allSatisfy(session.isUnpushed) {
+        Label(
+          "Some of these commits are already pushed. Afterwards, Force Push replaces them on "
+            + "the remote.", systemImage: "exclamationmark.triangle"
+        )
+        .foregroundStyle(.secondary)
+      }
+    }
+    .formStyle(.grouped)
+    .frame(width: 480)
+    .navigationTitle("Squash \(commits.count) Commits")
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel") { dismiss() }
+      }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Squash") {
+          let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+          let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
+          let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
+          let (session, commits, squashed) = (session, commits, squashed)
+          Task {
+            if let sha = await session.squash(commits, message: message) { squashed(sha) }
+          }
+          dismiss()
+        }
+        .disabled(summary.trimmingCharacters(in: .whitespaces).isEmpty || session.isBusy)
+      }
+    }
   }
 }
 

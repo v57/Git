@@ -51,6 +51,31 @@ public struct Commit: Sendable, Hashable, Identifiable {
   public var isMerge: Bool { parents.count > 1 }
   /// Subject and body as one message.
   public var message: String { body.isEmpty ? subject : "\(subject)\n\n\(body)" }
+
+  /// `commits` newest first, when they can be squashed into one: two or more, no merges, and
+  /// each one's parent is the next. Throws a `GitError` that says why not.
+  public static func squashRun(_ commits: [Commit]) throws -> [Commit] {
+    guard commits.count > 1 else { throw GitError(message: "Select two or more commits to squash.") }
+    guard !commits.contains(where: \.isMerge) else {
+      throw GitError(message: "Merge commits can't be squashed.")
+    }
+    let byID = Dictionary(commits.map { ($0.id, $0) }) { first, _ in first }
+    let parents = Set(commits.compactMap(\.parents.first))
+    // The newest is no other commit's parent; from it, every parent must be one of the commits.
+    var run = commits.first { !parents.contains($0.id) }.map { [$0] } ?? []
+    while run.count < byID.count, let parent = run.last?.parents.first, let next = byID[parent] {
+      run.append(next)
+    }
+    guard run.count == byID.count else {
+      throw GitError(message: "Only commits that follow one another can be squashed.")
+    }
+    return run
+  }
+}
+
+extension GitError {
+  static let squashOffHead = GitError(
+    message: "Only commits on the current branch can be squashed.")
 }
 
 /// A path changed by a commit.
