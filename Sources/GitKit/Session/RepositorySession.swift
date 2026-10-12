@@ -9,7 +9,7 @@ public final class RepositorySession {
   public enum Activity: Sendable, Hashable {
     case staging, discarding, committing, fetching, pulling, pushing, switchingBranch, stashing,
       continuing, aborting, reverting, resetting, tagging, merging, resolving, checkingOut,
-      cherryPicking
+      cherryPicking, squashing
 
     public var title: String {
       switch self {
@@ -30,6 +30,7 @@ public final class RepositorySession {
       case .resolving: "Resolving…"
       case .checkingOut: "Checking out…"
       case .cherryPicking: "Cherry-picking…"
+      case .squashing: "Squashing…"
       }
     }
   }
@@ -425,11 +426,48 @@ public final class RepositorySession {
 
   /// Undoes the last commit, keeping its changes staged. Returns its message, or `nil` on failure.
   public func undoLastCommit() async -> String? {
-    let box = MessageBox()
+    let box = StringBox()
     let succeeded = await perform(.resetting, failureTitle: "Couldn't undo the commit") {
-      box.message = try await $0.undoLastCommit()
+      box.value = try await $0.undoLastCommit()
     }
-    return succeeded ? box.message : nil
+    return succeeded ? box.value : nil
+  }
+
+  /// The loaded commits with `ids`, newest first, when they can be squashed into one; otherwise
+  /// throws a `GitError` that says why. `Repository.squash` checks again against the repository.
+  public func squashRun(_ ids: Set<Commit.ID>) throws -> [Commit] {
+    let selected = commits.filter { ids.contains($0.id) }
+    guard selected.count == ids.count else {
+      throw GitError(message: "Some of these commits are no longer in the history.")
+    }
+    let run = try Commit.squashRun(selected)
+    guard isOnHead(run[0].id) else { throw GitError.squashOffHead }
+    return run
+  }
+
+  /// Whether `id` is HEAD or one of its ancestors, as far as the loaded history shows.
+  private func isOnHead(_ id: Commit.ID) -> Bool {
+    guard let head = status?.headOID else { return false }
+    // The current branch's history is all on HEAD, and a search can't be followed through.
+    if (!logQuery.allBranches && logQuery.revision == nil) || !logQuery.showsGraph { return true }
+    let byID = Dictionary(commits.map { ($0.id, $0) }) { first, _ in first }
+    var stack = [head]
+    var seen = Set<String>()
+    while let next = stack.popLast() {
+      if next == id { return true }
+      guard seen.insert(next).inserted, let commit = byID[next] else { continue }
+      stack += commit.parents
+    }
+    return false
+  }
+
+  /// Squashes `commits` into one with `message`. Returns the new commit, or `nil` on failure.
+  public func squash(_ commits: [Commit], message: String) async -> String? {
+    let box = StringBox()
+    let succeeded = await perform(.squashing, failureTitle: "Couldn't squash the commits") {
+      box.value = try await $0.squash(commits, message: message)
+    }
+    return succeeded ? box.value : nil
   }
 
   @discardableResult
@@ -485,6 +523,6 @@ public final class RepositorySession {
   }
 }
 
-private final class MessageBox: @unchecked Sendable {
-  var message: String?
+private final class StringBox: @unchecked Sendable {
+  var value: String?
 }

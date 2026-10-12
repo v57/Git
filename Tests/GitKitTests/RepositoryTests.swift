@@ -519,6 +519,98 @@ struct TempRepo {
   }
 }
 
+@Suite struct SquashTests {
+  /// init, then one commit per name, each adding `<name>.txt`.
+  func linearRepo(_ names: [String]) async throws -> TempRepo {
+    let temp = try await TempRepo()
+    try temp.write("init.txt", "init\n")
+    try await temp.commitAll("init")
+    for name in names {
+      try temp.write("\(name).txt", "\(name)\n")
+      try await temp.commitAll(name)
+    }
+    return temp
+  }
+
+  func tree(_ temp: TempRepo, _ revision: String = "HEAD") async throws -> String {
+    try await temp.repo.git(["rev-parse", "\(revision)^{tree}"]).output
+  }
+
+  @Test func ordersARunNewestFirstAndRejectsGaps() async throws {
+    let temp = try await linearRepo(["a", "b", "c"])
+    let log = try await temp.repo.log()  // c, b, a, init
+    #expect(try Commit.squashRun([log[2], log[0], log[1]]).map(\.subject) == ["c", "b", "a"])
+    #expect(throws: GitError.self) { try Commit.squashRun([log[0], log[2]]) }
+    #expect(throws: GitError.self) { try Commit.squashRun([log[0]]) }
+  }
+
+  @Test func squashesTheLatestCommitsAndKeepsStagedChanges() async throws {
+    let temp = try await linearRepo(["a", "b", "c"])
+    try temp.write("init.txt", "staged\n")
+    try await temp.repo.stage(["init.txt"])
+    try temp.write("loose.txt", "untracked\n")
+    let before = try await tree(temp)
+    let log = try await temp.repo.log()
+
+    let squashed = try await temp.repo.squash([log[0], log[1]], message: "b and c\n\nBoth.  \n\n")
+    let after = try await temp.repo.log()
+    #expect(after.map(\.subject) == ["b and c", "a", "init"])
+    #expect(after[0].id == squashed && after[0].body == "Both.")
+    #expect(after[0].parents == [log[2].id])
+    #expect(try await tree(temp) == before)
+    let status = try await temp.repo.status()
+    #expect(status.staged.map(\.path) == ["init.txt"])
+    #expect(status.unstaged.map(\.path) == ["loose.txt"])
+  }
+
+  @Test func recreatesLaterCommitsAndMergesOnTop() async throws {
+    let temp = try await linearRepo(["a", "b"])
+    try await temp.repo.createBranch("side", checkout: false)
+    try temp.write("c.txt", "c\n")
+    try await temp.commitAll("c")
+    try await temp.repo.git(["switch", "-q", "side"])
+    try temp.write("side.txt", "side\n")
+    try await temp.commitAll("on side")
+    try await temp.repo.git(["switch", "-q", "main"])
+    try await temp.repo.git(["merge", "-q", "--no-ff", "-m", "merge side", "side"])
+    let before = try await tree(temp)
+    let log = try await temp.repo.log()
+    let commit = { (subject: String) in try #require(log.first { $0.subject == subject }) }
+    let (a, b, c) = (try commit("a"), try commit("b"), try commit("c"))
+    // "side" starts at b, so squashing b into c would bring b back through the merge.
+    await #expect(throws: GitError.self) { try await temp.repo.squash([b, c], message: "b+c") }
+
+    // Squashing a and b recreates both sides of the merge on the new commit.
+    let squashed = try await temp.repo.squash([a, b], message: "a+b")
+    let after = try await temp.repo.log()
+    #expect(try await tree(temp) == before)
+    #expect(after.count == 5 && !after.contains { $0.subject == "a" || $0.subject == "b" })
+    let byID = Dictionary(uniqueKeysWithValues: after.map { ($0.id, $0) })
+    let merge = after[0]
+    #expect(merge.subject == "merge side" && merge.parents.count == 2)
+    let first = try #require(byID[merge.parents[0]])
+    let second = try #require(byID[merge.parents[1]])
+    #expect(first.subject == "c" && first.parents == [squashed] && first.id != c.id)
+    #expect(second.subject == "on side" && second.parents == [squashed])
+    #expect(byID[squashed]?.parents == [try commit("init").id])
+  }
+
+  @Test func refusesCommitsOffTheCurrentBranch() async throws {
+    let temp = try await linearRepo(["a"])
+    try await temp.repo.createBranch("feature")
+    try temp.write("f1.txt", "1\n")
+    try await temp.commitAll("f1")
+    try temp.write("f2.txt", "2\n")
+    try await temp.commitAll("f2")
+    let feature = try await temp.repo.log()
+    try await temp.repo.git(["switch", "-q", "main"])
+    await #expect(throws: GitError.self) {
+      try await temp.repo.squash([feature[0], feature[1]], message: "f")
+    }
+    #expect(try await temp.repo.log(LogQuery(revision: "feature")).count == 4)
+  }
+}
+
 @Suite struct DiscoveryTests {
   @Test func findsNestedRepositoriesAndSkipsIgnoredFolders() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(
@@ -584,5 +676,24 @@ struct TempRepo {
 
     await session.push()
     #expect(session.failure != nil)  // no remote
+  }
+
+  @Test func squashesSelectedCommitsThroughSession() async throws {
+    let temp = try await TempRepo()
+    for name in ["init", "a", "b", "c"] {
+      try temp.write("\(name).txt", "\(name)\n")
+      try await temp.commitAll(name)
+    }
+    let session = RepositorySession(repository: temp.repo)
+    await session.refresh()
+    let ids = session.commits.map(\.id)  // c, b, a, init
+    #expect(throws: GitError.self) { try session.squashRun([ids[0], ids[2]]) }
+    let run = try session.squashRun([ids[1], ids[0]])
+    #expect(run.map(\.subject) == ["c", "b"])
+
+    let squashed = try #require(await session.squash(run, message: "b and c"))
+    #expect(session.failure == nil)
+    #expect(session.commits.map(\.subject) == ["b and c", "a", "init"])
+    #expect(session.commits.first?.id == squashed)
   }
 }

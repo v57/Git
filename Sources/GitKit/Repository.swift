@@ -545,6 +545,118 @@ extension Repository {
     return message
   }
 
+  /// Replaces `commits`, which must follow one another on HEAD's history, with one commit that
+  /// has their combined changes, the oldest one's author and `message`, and returns it.
+  ///
+  /// Later commits on HEAD are recreated on top with the same trees, so the working tree and
+  /// index stay as they are and nothing can conflict. HEAD moves only if it hasn't moved since.
+  /// Like `git commit`, the new commits are signed when `commit.gpgSign` is set.
+  @discardableResult
+  public func squash(_ commits: [Commit], message: String) async throws -> String {
+    let run = try Commit.squashRun(commits).map(\.id)
+    let newest = run[0]
+    let oldest = run[run.count - 1]
+    if try await operationInProgress() != nil {
+      throw GitError(message: "Continue or abort the operation in progress first.")
+    }
+    let head = try await output(["rev-parse", "--verify", "HEAD"])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    let isOnHead = try await git(
+      ["merge-base", "--is-ancestor", newest, head], allowedExitCodes: [0, 1]
+    ).exitCode == 0
+    guard isOnHead else { throw GitError.squashOffHead }
+
+    // Commits after the run, parents first.
+    let later = try await output([
+      "rev-list", "--reverse", "--topo-order", "--ancestry-path", "\(newest)..\(head)",
+    ]).split(separator: "\n").map(String.init)
+    // A branch merged into HEAD that starts inside the run would bring the old commits back.
+    let descendants = try await output([
+      "rev-list", "--count", "--ancestry-path", "\(oldest)..\(head)",
+    ]).trimmingCharacters(in: .whitespacesAndNewlines)
+    guard Int(descendants) == later.count + run.count - 1 else {
+      throw GitError(
+        message: "A branch merged into this one starts from one of these commits, so they "
+          + "can't be squashed.")
+    }
+
+    let records = try await commitRecords(run + later)
+    for (index, id) in run.enumerated() {
+      let parents = records[id]?.parents ?? []
+      let expected = index + 1 < run.count ? [run[index + 1]] : Array(parents.prefix(1))
+      guard parents == expected else {
+        throw GitError(message: "Only commits that follow one another can be squashed.")
+      }
+    }
+    let squashedMessage = try await git(["stripspace"], input: Data(message.utf8)).stdout
+    guard !squashedMessage.isEmpty, let base = records[oldest], let tip = records[newest] else {
+      throw GitError(message: "Enter a message for the squashed commit.")
+    }
+
+    let sign = try await git(
+      ["config", "--type=bool", "--get", "commit.gpgsign"], allowedExitCodes: [0, 1]
+    ).output.trimmingCharacters(in: .whitespacesAndNewlines) == "true"
+    func commitTree(_ tree: String, parents: [String], author: CommitRecord, message: Data)
+      async throws -> String
+    {
+      let arguments =
+        ["commit-tree"] + (sign ? ["-S"] : []) + parents.flatMap { ["-p", $0] } + ["-F", "-", tree]
+      let environment = [
+        "GIT_AUTHOR_NAME": author.authorName, "GIT_AUTHOR_EMAIL": author.authorEmail,
+        "GIT_AUTHOR_DATE": author.authorDate,
+      ]
+      return try await git(arguments, input: message, environment: environment).output
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    var rewritten: [String: String] = [:]
+    rewritten[newest] = try await commitTree(
+      tip.tree, parents: base.parents, author: base, message: squashedMessage)
+    for id in later {
+      guard let record = records[id] else {
+        throw GitError(message: "Couldn't read commit \(id.prefix(7)).")
+      }
+      rewritten[id] = try await commitTree(
+        record.tree, parents: record.parents.map { rewritten[$0] ?? $0 }, author: record,
+        message: Data(record.message.utf8))
+    }
+    guard let squashed = rewritten[newest], let newHead = rewritten[head] else {
+      throw GitError(message: "Couldn't squash the commits.")
+    }
+    let subject = String(decoding: squashedMessage, as: UTF8.self)
+      .prefix { $0 != "\n" }
+    try await git(["update-ref", "-m", "squash: \(subject)", "HEAD", newHead, head])
+    return squashed
+  }
+
+  /// What recreating a commit needs, read as git stores it: the raw author date and message.
+  struct CommitRecord {
+    var tree: String
+    var parents: [String]
+    var authorName: String
+    var authorEmail: String
+    var authorDate: String
+    var message: String
+  }
+
+  private func commitRecords(_ ids: [String]) async throws -> [String: CommitRecord] {
+    let format = ["%H", "%T", "%P", "%an", "%ae", "%ad", "%B"].joined(separator: "%x1f")
+    let output = try await git(
+      ["log", "--no-walk=unsorted", "--stdin", "-z", "--date=raw", "--format=\(format)"],
+      input: Data((ids.joined(separator: "\n") + "\n").utf8)
+    ).output
+    var records: [String: CommitRecord] = [:]
+    for record in output.split(separator: "\0") {
+      let fields = record.split(separator: "\u{1f}", maxSplits: 6, omittingEmptySubsequences: false)
+        .map(String.init)
+      guard fields.count == 7 else { continue }
+      records[fields[0]] = CommitRecord(
+        tree: fields[1], parents: fields[2].split(separator: " ").map(String.init),
+        authorName: fields[3], authorEmail: fields[4], authorDate: fields[5], message: fields[6])
+    }
+    return records
+  }
+
   /// Commits on HEAD that aren't on its upstream (or, without one, on any remote).
   @concurrent public func unpushedCommits(limit: Int = 1000) async throws -> Set<String> {
     guard try await hasHead() else { return [] }
