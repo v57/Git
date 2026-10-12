@@ -16,12 +16,17 @@ staged and unstaged files. You can:
 - Clone a repository or create a new one from the welcome screen or the File menu.
 
 The Worktree and Branch headers show which worktrees and branches have commits the current branch
-doesn't. Drop a folder on the sidebar and every Git repository inside it is added.
+doesn't. Drop a folder on the sidebar and every Git repository inside it is added. Repositories
+that share a folder become a group named after it, with the folder above as a note (`Hub/Apps/*`
+makes `Apps`, noted `Hub`); groups don't nest, so a repository deeper down joins only its own
+folder's group. Drag repositories and groups to reorder or regroup them; ⌘- and ⇧-click select
+several, and the context menu fetches, pulls, pushes, hides or moves them together.
 
 The sidebar shows every repository's state without opening it: an orange dot with the number of
 changed files, ↑ commits to push, ↓ commits to pull, and a merge or rebase in progress. One file
-watcher covers all of them. A collapsed group still shows the open repository, and its header
-shows an icon for each hidden repository that needs attention.
+watcher covers all of them, and a group's header sums up its repositories. Collapsed, the
+Repositories section still shows the open repository, and its header shows an icon for each
+other repository that needs attention.
 
 ## Layout
 
@@ -32,13 +37,14 @@ shows an icon for each hidden repository that needs attention.
                   ConflictedFile (conflict markers → blocks), CommitGraph (lanes for the history graph)
       Parsing/    status --porcelain=v2, log, name-status, for-each-ref, stash list, unified diff
       Staging/    PatchBuilder: patches for a subset of a diff's lines
-      Discovery/  RepoDiscovery: finds repositories inside a folder
+      Discovery/  RepoDiscovery: finds repositories inside a folder; RepoGrouping: groups them by folder
       Session/    RepositorySession (@Observable state + actions), RepositoryWatcher (FSEvents)
       Repository.swift   every git operation, as async methods on a Sendable struct
     Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeKit)
     Git/                          app sources
-      Library/    SavedRepository (SwiftData), RepositoryLibrary (sessions, summaries, import)
-      Sidebar/    repositories with their state, then Workspace, Branches, Remotes, Tags, Worktrees
+      Library/    SavedRepository and SavedGroup (SwiftData), RepositoryLibrary (sessions, summaries,
+                  import, grouping and ordering, fetch/pull/push across repositories)
+      Sidebar/    groups and repositories with their state, then Workspace, Branches, Remotes, Tags, Worktrees
       Changes/    file list, commit composer, diff cards with hunk/line actions, Resolve Conflicts
       History/    commit table with branch graph, commit inspector
       Stashes/    stashes with Apply, Pop and Drop

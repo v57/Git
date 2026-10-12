@@ -15,7 +15,7 @@ enum RepositoryStore {
   /// scripted runs with `--add-folder` don't change the real list. An unwritable or corrupt store
   /// falls back to memory too, so the app still opens.
   static func makeContainer() -> ModelContainer {
-    let schema = Schema([SavedRepository.self])
+    let schema = Schema([SavedRepository.self, SavedGroup.self])
     #if DEBUG
       if ProcessInfo.processInfo.arguments.contains("--in-memory") {
         return inMemoryContainer(schema)

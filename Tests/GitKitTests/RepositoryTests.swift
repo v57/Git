@@ -543,6 +543,25 @@ struct TempRepo {
   }
 }
 
+@Suite struct GroupingTests {
+  @Test func groupsSiblingsByTheirOwnFolder() {
+    let urls = [
+      "/Users/me/Developer/Hub/Apps/hub-app", "/Users/me/Developer/Hub/Apps/hub-web",
+      "/Users/me/Developer/playgra/Vijo/a", "/Users/me/Developer/playgra/Vijo/b",
+      "/Users/me/Developer/playgra/Vijo/c",
+      // Nested deeper: its own folder's group, not Vijo's.
+      "/Users/me/Developer/playgra/Vijo/tools/x", "/Users/me/Developer/playgra/Vijo/tools/y",
+      // Alone in its folder.
+      "/Users/me/Developer/Hub/Server",
+    ].map { URL(fileURLWithPath: $0) }
+    let (groups, ungrouped) = RepoGrouping.groups(for: urls)
+    #expect(groups.map(\.name) == ["Apps", "tools", "Vijo"])
+    #expect(groups.map(\.note) == ["Hub", "Vijo", "playgra"])
+    #expect(groups[2].repositories.map(\.lastPathComponent) == ["a", "b", "c"])
+    #expect(ungrouped.map(\.lastPathComponent) == ["Server"])
+  }
+}
+
 @MainActor @Suite struct SessionTests {
   @Test func refreshesAndStagesThroughSession() async throws {
     let temp = try await TempRepo()

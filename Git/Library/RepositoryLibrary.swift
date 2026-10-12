@@ -77,8 +77,14 @@ struct CompletedOperation: Equatable {
   var requestedSelection: String?
   /// Shown after an import that found nothing.
   var importMessage: String?
+  /// Repositories with a fetch, pull or push started from the sidebar.
+  var remoteActivity: [String: RemoteAction] = [:]
+  /// The repositories a sidebar fetch, pull or push failed in.
+  var remoteFailure: RemoteFailure?
 
   private weak var activeSession: RepositorySession?
+  /// The repository on screen.
+  var openSession: RepositorySession? { activeSession }
   private var summaryWatcher: RepositoryWatcher?
   private var watchedPaths: [String] = []
   private var pendingSummaries: [String: Task<Void, Never>] = [:]
@@ -193,19 +199,24 @@ struct CompletedOperation: Equatable {
     defer { isImporting = false }
 
     let found = await RepoDiscovery.scan(folders)
-    let existing = Set(
-      ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).map(\.path))
-    var added: [String] = []
+    let all = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
+    let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
+    var added: [SavedRepository] = []
+    // Found repositories that are already in the list but in no group are grouped again.
+    var regrouped: [SavedRepository] = []
     for folder in folders {
       let repos = found[folder] ?? []
-      for repo in repos where !existing.contains(repo.path) && !added.contains(repo.path) {
-        // A repository dropped on its own is grouped under its parent folder.
-        let group = repos == [folder.standardizedFileURL]
-          ? folder.deletingLastPathComponent().path : folder.standardizedFileURL.path
-        context.insert(SavedRepository(path: repo.path, group: group))
-        added.append(repo.path)
+      for repo in repos {
+        if let saved = existing[repo.path] {
+          if saved.groupID == nil, !regrouped.contains(saved) { regrouped.append(saved) }
+        } else if !added.contains(where: { $0.path == repo.path }) {
+          let saved = SavedRepository(path: repo.path, group: folder.standardizedFileURL.path)
+          context.insert(saved)
+          added.append(saved)
+        }
       }
     }
+    arrange(added + regrouped, new: Set(added.map(\.path)), context: context)
     try? context.save()
 
     let foundCount = found.values.reduce(0) { $0 + $1.count }
@@ -213,8 +224,8 @@ struct CompletedOperation: Equatable {
       let names = folders.map(\.lastPathComponent).formatted()
       importMessage = "No Git repositories were found in \(names)."
     }
-    await refreshSummaries(added)
-    return added
+    await refreshSummaries(added.map(\.path))
+    return added.map(\.path)
   }
 
   /// Shows `url` (a repository or worktree), adding it to the sidebar first if needed.
@@ -225,12 +236,15 @@ struct CompletedOperation: Equatable {
       requestedSelection = path
       return
     }
-    // Worktrees join the group of the repository they belong to, when it is in the sidebar.
-    let group =
-      existing.first { (path as NSString).deletingLastPathComponent.appending("/").hasPrefix($0.path + "/") }?
-      .group
-      ?? url.deletingLastPathComponent().path
-    context.insert(SavedRepository(path: path, group: group))
+    let saved = SavedRepository(path: path, group: url.deletingLastPathComponent().path)
+    context.insert(saved)
+    // A worktree inside a repository in the list joins that repository's group.
+    if let owner = existing.first(where: { path.hasPrefix($0.path + "/") }), let groupID = owner.groupID {
+      saved.groupID = groupID
+      saved.sortIndex = existing.filter { $0.groupID == groupID }.count
+    } else {
+      arrange([saved], new: [path], context: context)
+    }
     try? context.save()
     requestedSelection = path
     Task { await refreshSummaries([path]) }
@@ -261,6 +275,8 @@ struct CompletedOperation: Equatable {
       summaries[repository.path] = nil
       context.delete(repository)
     }
+    try? context.save()
+    deleteEmptyGroups(Set(repositories.compactMap(\.groupID)), context: context)
     try? context.save()
   }
 

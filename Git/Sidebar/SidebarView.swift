@@ -6,38 +6,24 @@ import UniformTypeIdentifiers
 /// The sidebar: every repository with its state at a glance, then the open repository's
 /// Workspace (Changes, History, Stashes), Branches, Remotes and Tags, and a filter at the bottom.
 ///
-/// Dropping a folder (or picking one with +) adds every git repository inside it. Repository
-/// states come from a file watcher over all of them. Collapsed, Repositories keeps the open one
-/// visible and shows an icon for each other repository that needs attention.
+/// Dropping a folder (or picking one with +) adds every git repository inside it, grouped by
+/// the folder each is in. Repository states come from a file watcher over the shown ones.
 struct SidebarView: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
   @Query(sort: \SavedRepository.name, order: .forward) private var repositories: [SavedRepository]
   @Binding var selection: String?
+  /// Repositories selected together with ⌘- or ⇧-click.
+  @State private var selected: Set<String> = []
   @State private var isDropTargeted = false
   @State private var filter = ""
-  @AppStorage("RepositoriesCollapsed") private var isCollapsed = false
-
-  /// Most recently opened first, as in the Welcome window's Recent list.
-  private var sorted: [SavedRepository] {
-    repositories.sorted {
-      let lhs = $0.lastOpenedAt ?? .distantPast
-      let rhs = $1.lastOpenedAt ?? .distantPast
-      if lhs != rhs { return lhs > rhs }
-      return $0.name.localizedStandardCompare($1.name) == .orderedAscending
-    }
-  }
-
-  private func matches(_ text: String) -> Bool {
-    filter.isEmpty || text.localizedCaseInsensitiveContains(filter)
-  }
 
   var body: some View {
     @Bindable var library = library
     VStack(spacing: 0) {
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
-          repositoriesSection
+          RepositoryList(selection: $selection, selected: $selected, filter: filter)
           if let selection {
             RepositorySections(
               session: library.session(for: selection), state: library.viewState(for: selection),
@@ -77,7 +63,7 @@ struct SidebarView: View {
       }
     }
     .dropDestination(for: URL.self) { urls, _ in
-      importFolders(urls)
+      drop(urls)
       return true
     } isTargeted: { isDropTargeted = $0 }
     .fileImporter(
@@ -95,8 +81,20 @@ struct SidebarView: View {
     } message: {
       Text(library.importMessage ?? "")
     }
-    .task(id: repositories.map(\.path)) {
-      library.watchSummaries(of: repositories.map(\.path))
+    .alert(
+      library.remoteFailure?.title ?? "",
+      isPresented: .init(
+        get: { library.remoteFailure != nil }, set: { if !$0 { library.remoteFailure = nil } }),
+      presenting: library.remoteFailure
+    ) { _ in
+      Button("OK") {}
+    } message: { failure in
+      Text(failure.message)
+    }
+    .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
+      library.groupExistingRepositories(context: context)
+      let shown = repositories.filter { !$0.isHidden }.map(\.path)
+      library.watchSummaries(of: shown)
       #if DEBUG
         // --add-folder <path> (repeatable) imports folders at launch, for testing.
         let arguments = ProcessInfo.processInfo.arguments
@@ -104,84 +102,21 @@ struct SidebarView: View {
           .map { URL(fileURLWithPath: arguments[$0 + 1]) }
         if !folders.isEmpty, repositories.isEmpty { importFolders(folders) }
       #endif
-      await library.refreshSummaries(repositories.map(\.path))
+      await library.refreshSummaries(shown)
     }
   }
 
-  // MARK: Repositories
-
-  private var repositoriesSection: some View {
-    let others = sorted.filter { $0.path != selection }
-    let attention = others.compactMap { repository in
-      library.summaries[repository.path].flatMap { $0.needsAttention ? (repository.name, $0) : nil }
+  /// A drop outside the list: repositories and groups move to the end, folders are added.
+  private func drop(_ urls: [URL]) {
+    let result = RepositoryList.sort(urls, known: Set(repositories.map(\.path)))
+    for id in result.groups { library.moveGroup(id, before: nil, context: context) }
+    if !result.repositories.isEmpty {
+      let paths =
+        result.repositories.count == 1 && selected.count > 1 && selected.contains(result.repositories[0])
+        ? repositories.map(\.path).filter(selected.contains) : result.repositories
+      library.move(paths, into: nil, before: nil, context: context)
     }
-    let visible = sorted.filter { (!isCollapsed || $0.path == selection) && matches($0.name) }
-    return VStack(alignment: .leading, spacing: 1) {
-      HStack(spacing: 2) {
-        Button {
-          withAnimation(.app) { isCollapsed.toggle() }
-        } label: {
-          HStack(spacing: 6) {
-            Image(systemName: "chevron.right")
-              .font(.system(size: 8, weight: .heavy))
-              .rotationEffect(.degrees(isCollapsed ? 0 : 90))
-            SectionTitle("Repositories")
-            Spacer(minLength: 4)
-            if isCollapsed {
-              AttentionIcons(items: attention)
-                .transition(.opacity.combined(with: .scale(scale: 0.8)))
-            }
-          }
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 8)
-          .frame(height: 24)
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(attentionHelp(attention))
-        .accessibilityLabel(isCollapsed ? "Expand Repositories" : "Collapse Repositories")
-        Button {
-          library.isImporterPresented = true
-        } label: {
-          Image(systemName: "plus")
-            .font(.system(size: 11, weight: .semibold))
-            .frame(width: 24, height: 24)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .foregroundStyle(.secondary)
-        .help("Add the Git repositories in a folder")
-        .accessibilityLabel("Add Repository")
-      }
-      ForEach(visible) { repository in
-        RepositoryRow(
-          repository: repository, summary: library.summaries[repository.path],
-          isCurrent: repository.path == selection
-        ) {
-          selection = repository.path
-        }
-        .contextMenu { repositoryMenu(repository) }
-        .transition(.opacity.combined(with: .move(edge: .top)))
-      }
-    }
-    .animation(.app, value: visible.map(\.path))
-    .animation(.app, value: selection)
-  }
-
-  private func attentionHelp(_ items: [(name: String, summary: RepositorySummary)]) -> String {
-    guard isCollapsed, !items.isEmpty else { return isCollapsed ? "All other repositories are up to date" : "" }
-    return items.map { "\($0.name): \(StatusMarks.description($0.summary))" }.joined(separator: "\n")
-  }
-
-  @ViewBuilder
-  private func repositoryMenu(_ repository: SavedRepository) -> some View {
-    Button("Show in Finder") { RepositoryLibrary.reveal(repository.url) }
-    Button("Open in Terminal") { RepositoryLibrary.openInTerminal(repository.url) }
-    Divider()
-    Button("Remove from List") {
-      if selection == repository.path { selection = nil }
-      library.remove([repository], from: context)
-    }
+    if !result.folders.isEmpty { importFolders(result.folders) }
   }
 
   private func importFolders(_ urls: [URL]) {
@@ -467,76 +402,6 @@ struct SidebarRow<Trailing: View>: View {
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
-  }
-}
-
-/// A repository: icon, name and state. The open one is a raised card.
-private struct RepositoryRow: View {
-  let repository: SavedRepository
-  let summary: RepositorySummary?
-  let isCurrent: Bool
-  let select: () -> Void
-  @State private var isHovered = false
-
-  var body: some View {
-    Button(action: select) {
-      HStack(spacing: 9) {
-        RepositoryIcon(name: repository.name, size: 18)
-        Text(repository.name)
-          .fontWeight(isCurrent ? .semibold : .regular)
-          .lineLimit(1)
-        Spacer(minLength: 4)
-        if !repository.exists {
-          Image(systemName: "exclamationmark.triangle.fill")
-            .foregroundStyle(.orange)
-            .help("Missing")
-        } else if let summary {
-          StatusMarks(summary: summary)
-        }
-      }
-      .padding(.horizontal, 8)
-      .frame(height: 30)
-      .animation(.app, value: isCurrent)
-      .animation(.app, value: isHovered)
-      .background {
-        if isCurrent {
-          RoundedRectangle(cornerRadius: 7, style: .continuous)
-            .fill(Color(nsColor: .controlBackgroundColor))
-            .shadow(color: .black.opacity(0.12), radius: 1, y: 0.5)
-        } else if isHovered {
-          RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.primary.opacity(0.05))
-        }
-      }
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .onHover { isHovered = $0 }
-    .help("\(repository.path)\n\(summary.map(StatusMarks.description) ?? "")")
-    .accessibilityAddTraits(isCurrent ? .isSelected : [])
-  }
-}
-
-/// Icons with a status dot for repositories that need attention, in the collapsed header.
-private struct AttentionIcons: View {
-  let items: [(name: String, summary: RepositorySummary)]
-
-  var body: some View {
-    HStack(spacing: 6) {
-      ForEach(items.prefix(5), id: \.name) { item in
-        RepositoryIcon(name: item.name, size: 16)
-          .overlay(alignment: .topTrailing) {
-            Circle()
-              .fill(StatusMarks.dotColor(item.summary))
-              .frame(width: 8, height: 8)
-              .overlay(Circle().strokeBorder(.background, lineWidth: 1.5))
-              .offset(x: 3, y: -3)
-          }
-      }
-      if items.count > 5 {
-        Text("+\(items.count - 5)")
-          .font(.caption2.weight(.semibold))
-      }
-    }
   }
 }
 

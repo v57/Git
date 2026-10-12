@@ -127,6 +127,19 @@ public struct RepositorySummary: Sendable, Hashable {
     operation = status.operation
   }
 
+  /// The totals of several repositories, for a group: summed counts, and the first operation in
+  /// progress.
+  public init(combining summaries: [RepositorySummary]) {
+    branch = nil
+    headOID = nil
+    changeCount = summaries.reduce(0) { $0 + $1.changeCount }
+    ahead = summaries.reduce(0) { $0 + $1.ahead }
+    behind = summaries.reduce(0) { $0 + $1.behind }
+    hasUpstream = summaries.contains(where: \.hasUpstream)
+    conflictCount = summaries.reduce(0) { $0 + $1.conflictCount }
+    operation = summaries.lazy.compactMap(\.operation).first
+  }
+
   /// Uncommitted changes, commits to push or pull, or an operation to finish.
   public var needsAttention: Bool {
     changeCount > 0 || ahead > 0 || behind > 0 || operation != nil
