@@ -5,6 +5,8 @@ public struct GitResult: Sendable {
   public var stdout: Data
   public var stderr: Data
   public var exitCode: Int32
+  /// git ran past its timeout and was terminated.
+  var timedOut = false
 
   /// stdout decoded as UTF-8 (invalid bytes replaced).
   public var output: String { String(decoding: stdout, as: UTF8.self) }
@@ -16,9 +18,17 @@ public struct GitResult: Sendable {
 /// stdout and stderr are read concurrently and kept apart, stdin is `/dev/null` unless input is
 /// given, and cancelling the calling task terminates git. Credential prompts are disabled, so a
 /// missing credential fails with git's message instead of hanging.
+///
+/// A running git holds no thread: its output arrives through readability handlers and its exit
+/// through the termination handler. At most `maxConcurrentProcesses` gits run at once and the
+/// rest wait their turn, so a burst of refreshes across many repositories can't starve the app.
 public struct GitRunner: Sendable {
   /// Settings passed as `-c` to every call: unquoted UTF-8 paths and no color codes.
   static let globalConfig = ["-c", "core.quotepath=false", "-c", "color.ui=never"]
+
+  /// How many git processes may run at the same time, across the app.
+  public static let maxConcurrentProcesses = 12
+  private static let limiter = ProcessLimiter(limit: maxConcurrentProcesses)
 
   public var extraEnvironment: [String: String]
 
@@ -30,13 +40,14 @@ public struct GitRunner: Sendable {
   /// - Parameters:
   ///   - input: written to git's stdin, then closed.
   ///   - allowedExitCodes: exit codes that count as success (`diff --no-index` exits 1).
+  ///   - timeout: terminates git after this long, for reads that must not hang the app.
   ///   - progress: receives stderr lines as they arrive (split on `\r` and `\n`), for
   ///     `--progress` output.
   @discardableResult
   public func run(
     _ arguments: [String], in directory: URL?, input: Data? = nil,
     allowedExitCodes: Set<Int32> = [0], environment: [String: String] = [:],
-    progress: (@Sendable (String) -> Void)? = nil
+    timeout: Duration? = nil, progress: (@Sendable (String) -> Void)? = nil
   ) async throws -> GitResult {
     guard let executable = GitExecutable.current else {
       throw GitError(
@@ -45,9 +56,38 @@ public struct GitRunner: Sendable {
           + "or Homebrew git, or choose a git binary in Settings.")
     }
     let fullArguments = Self.globalConfig + arguments
+
+    await Self.limiter.acquire()
+    let outcome = await Result {
+      try Task.checkCancellation()
+      return try await launch(
+        executable, arguments: fullArguments, in: directory, input: input,
+        environment: environment, timeout: timeout, progress: progress)
+    }
+    await Self.limiter.release()
+    let result = try outcome.get()
+
+    try Task.checkCancellation()
+    if result.timedOut, let timeout {
+      throw GitError(
+        arguments: fullArguments, exitCode: result.exitCode,
+        message: "git didn't finish within \(timeout.components.seconds) seconds and was stopped.")
+    }
+    guard allowedExitCodes.contains(result.exitCode) else {
+      var message = result.errorOutput
+      if message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { message = result.output }
+      throw GitError(arguments: fullArguments, exitCode: result.exitCode, message: message)
+    }
+    return result
+  }
+
+  private func launch(
+    _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
+    environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
+  ) async throws -> GitResult {
     let process = Process()
     process.executableURL = executable
-    process.arguments = fullArguments
+    process.arguments = arguments
     if let directory { process.currentDirectoryURL = directory }
     process.environment = Self.environment(merging: extraEnvironment.merging(environment) { $1 })
 
@@ -58,82 +98,52 @@ public struct GitRunner: Sendable {
     process.standardError = stderr
     process.standardInput = stdin ?? FileHandle.nullDevice
 
+    let state = RunState(progress: progress)
     let box = ProcessBox(process)
-    let result: GitResult = try await withTaskCancellationHandler {
-      try await withCheckedThrowingContinuation { continuation in
-        DispatchQueue.global(qos: .userInitiated).async {
-          let exited = DispatchSemaphore(value: 0)
-          process.terminationHandler = { _ in exited.signal() }
-          do {
-            try process.run()
-          } catch {
-            continuation.resume(
-              throwing: GitError(arguments: fullArguments, message: error.localizedDescription))
-            return
-          }
-          if box.cancelled { process.terminate() }
+    let timer = timeout.map { timeout in
+      Task {
+        try await Task.sleep(for: timeout)
+        state.markTimedOut()
+        box.cancel()
+      }
+    }
+    defer { timer?.cancel() }
 
-          let group = DispatchGroup()
-          let out = DataBox()
-          let err = DataBox()
-          group.enter()
-          DispatchQueue.global(qos: .userInitiated).async {
-            out.data = stdout.fileHandleForReading.readDataToEndOfFile()
-            group.leave()
-          }
-          group.enter()
-          DispatchQueue.global(qos: .userInitiated).async {
-            err.data = Self.readAll(stderr.fileHandleForReading, progress: progress)
-            group.leave()
-          }
-          if let stdin, let input {
-            DispatchQueue.global(qos: .userInitiated).async {
-              // git may exit before reading everything (e.g. on an error); ignore EPIPE.
-              try? stdin.fileHandleForWriting.write(contentsOf: input)
-              try? stdin.fileHandleForWriting.close()
+    return try await withTaskCancellationHandler {
+      try await withCheckedThrowingContinuation { continuation in
+        state.start(continuation)
+        for (pipe, stream) in [(stdout, RunState.Stream.stdout), (stderr, .stderr)] {
+          pipe.fileHandleForReading.readabilityHandler = { handle in
+            let data = handle.availableData
+            if data.isEmpty {
+              handle.readabilityHandler = nil
+              state.close(stream)
+            } else {
+              state.append(data, to: stream)
             }
           }
-          group.wait()
-          exited.wait()
-          continuation.resume(
-            returning: GitResult(
-              stdout: out.data, stderr: err.data, exitCode: process.terminationStatus))
+        }
+        process.terminationHandler = { process in state.exit(process.terminationStatus) }
+        do {
+          try process.run()
+        } catch {
+          stdout.fileHandleForReading.readabilityHandler = nil
+          stderr.fileHandleForReading.readabilityHandler = nil
+          state.fail(GitError(arguments: arguments, message: error.localizedDescription))
+          return
+        }
+        if box.cancelled { process.terminate() }
+        if let stdin, let input {
+          DispatchQueue.global(qos: .userInitiated).async {
+            // git may exit before reading everything (e.g. on an error); ignore EPIPE.
+            try? stdin.fileHandleForWriting.write(contentsOf: input)
+            try? stdin.fileHandleForWriting.close()
+          }
         }
       }
     } onCancel: {
       box.cancel()
     }
-
-    try Task.checkCancellation()
-    guard allowedExitCodes.contains(result.exitCode) else {
-      var message = result.errorOutput
-      if message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { message = result.output }
-      throw GitError(arguments: fullArguments, exitCode: result.exitCode, message: message)
-    }
-    return result
-  }
-
-  /// Reads a pipe to EOF, reporting each `\r`/`\n`-terminated line to `progress`.
-  private static func readAll(_ handle: FileHandle, progress: (@Sendable (String) -> Void)?)
-    -> Data
-  {
-    guard let progress else { return handle.readDataToEndOfFile() }
-    var all = Data()
-    var pending = Data()
-    while true {
-      let chunk = handle.availableData
-      if chunk.isEmpty { break }
-      all.append(chunk)
-      pending.append(chunk)
-      while let index = pending.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
-        let line = String(decoding: pending[pending.startIndex..<index], as: UTF8.self)
-        pending.removeSubrange(pending.startIndex...index)
-        let trimmed = line.trimmingCharacters(in: .whitespaces)
-        if !trimmed.isEmpty { progress(trimmed) }
-      }
-    }
-    if !pending.isEmpty { progress(String(decoding: pending, as: UTF8.self)) }
-    return all
   }
 
   /// The app's environment plus a PATH that finds Homebrew tools (credential helpers, gpg, hooks)
@@ -156,8 +166,118 @@ public struct GitRunner: Sendable {
   }
 }
 
-private final class DataBox: @unchecked Sendable {
-  var data = Data()
+/// One git run's output. Resumes the caller once git exited and both pipes reached EOF, in
+/// whichever order those happen.
+private final class RunState: @unchecked Sendable {
+  enum Stream { case stdout, stderr }
+
+  private let lock = NSLock()
+  private let progress: (@Sendable (String) -> Void)?
+  private var continuation: CheckedContinuation<GitResult, any Error>?
+  private var stdout = Data()
+  private var stderr = Data()
+  /// stderr not yet reported to `progress` because its line hasn't ended.
+  private var pendingLine = Data()
+  private var openStreams = 2
+  private var exitCode: Int32?
+  private var timedOut = false
+
+  init(progress: (@Sendable (String) -> Void)?) {
+    self.progress = progress
+  }
+
+  func start(_ continuation: CheckedContinuation<GitResult, any Error>) {
+    lock.withLock { self.continuation = continuation }
+  }
+
+  func append(_ data: Data, to stream: Stream) {
+    let lines: [String] = lock.withLock {
+      switch stream {
+      case .stdout:
+        stdout.append(data)
+        return []
+      case .stderr:
+        stderr.append(data)
+        guard progress != nil else { return [] }
+        pendingLine.append(data)
+        var lines: [String] = []
+        while let index = pendingLine.firstIndex(where: { $0 == 0x0A || $0 == 0x0D }) {
+          let line = String(decoding: pendingLine[pendingLine.startIndex..<index], as: UTF8.self)
+          pendingLine.removeSubrange(pendingLine.startIndex...index)
+          let trimmed = line.trimmingCharacters(in: .whitespaces)
+          if !trimmed.isEmpty { lines.append(trimmed) }
+        }
+        return lines
+      }
+    }
+    for line in lines { progress?(line) }
+  }
+
+  func close(_ stream: Stream) {
+    let last: String? = lock.withLock {
+      openStreams -= 1
+      guard stream == .stderr, progress != nil, !pendingLine.isEmpty else { return nil }
+      defer { pendingLine = Data() }
+      return String(decoding: pendingLine, as: UTF8.self)
+    }
+    if let last { progress?(last) }
+    resumeIfDone()
+  }
+
+  func exit(_ status: Int32) {
+    lock.withLock { exitCode = status }
+    resumeIfDone()
+  }
+
+  func markTimedOut() {
+    lock.withLock { timedOut = true }
+  }
+
+  func fail(_ error: any Error) {
+    let continuation = lock.withLock { () -> CheckedContinuation<GitResult, any Error>? in
+      defer { self.continuation = nil }
+      return self.continuation
+    }
+    continuation?.resume(throwing: error)
+  }
+
+  private func resumeIfDone() {
+    let done = lock.withLock { () -> (CheckedContinuation<GitResult, any Error>, GitResult)? in
+      guard openStreams == 0, let exitCode, let continuation else { return nil }
+      self.continuation = nil
+      let result = GitResult(stdout: stdout, stderr: stderr, exitCode: exitCode, timedOut: timedOut)
+      return (continuation, result)
+    }
+    if let (continuation, result) = done { continuation.resume(returning: result) }
+  }
+}
+
+/// Limits how many git processes run at once. Waiting callers suspend rather than block a thread.
+private actor ProcessLimiter {
+  private let limit: Int
+  private var running = 0
+  private var waiting: [CheckedContinuation<Void, Never>] = []
+
+  init(limit: Int) {
+    self.limit = limit
+  }
+
+  func acquire() async {
+    guard running >= limit else {
+      running += 1
+      return
+    }
+    // `release` hands its slot straight to the first waiter, so `running` stays the same.
+    await withCheckedContinuation { waiting.append($0) }
+  }
+
+  func release() {
+    if waiting.isEmpty {
+      running -= 1
+    } else {
+      waiting.removeFirst().resume()
+    }
+  }
 }
 
 /// Lets the cancellation handler terminate a process that may not have started yet.

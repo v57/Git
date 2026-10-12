@@ -20,11 +20,12 @@ public struct Repository: Sendable, Hashable, Identifiable {
   @discardableResult
   public func git(
     _ arguments: [String], input: Data? = nil, allowedExitCodes: Set<Int32> = [0],
-    environment: [String: String] = [:], progress: (@Sendable (String) -> Void)? = nil
+    environment: [String: String] = [:], timeout: Duration? = nil,
+    progress: (@Sendable (String) -> Void)? = nil
   ) async throws -> GitResult {
     try await runner.run(
       arguments, in: url, input: input, allowedExitCodes: allowedExitCodes,
-      environment: environment, progress: progress)
+      environment: environment, timeout: timeout, progress: progress)
   }
 
   /// stdout of `git <arguments>` as a string.
@@ -67,7 +68,7 @@ extension Repository {
   @concurrent public func status() async throws -> WorkingTreeStatus {
     let result = try await git(
       ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=all"],
-      environment: ["GIT_OPTIONAL_LOCKS": "0"])
+      environment: ["GIT_OPTIONAL_LOCKS": "0"], timeout: .seconds(60))
     var status = StatusParser.parse(result.output)
     status.operation = try? await operationInProgress()
     return status
@@ -77,7 +78,7 @@ extension Repository {
   @concurrent public func summary() async throws -> RepositorySummary {
     let result = try await git(
       ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"],
-      environment: ["GIT_OPTIONAL_LOCKS": "0"])
+      environment: ["GIT_OPTIONAL_LOCKS": "0"], timeout: .seconds(30))
     var status = StatusParser.parse(result.output)
     status.operation = try? await operationInProgress()
     return RepositorySummary(status)
