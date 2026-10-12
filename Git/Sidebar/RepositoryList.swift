@@ -430,7 +430,8 @@ private struct DragPreview: View {
   }
 }
 
-/// A group: name, note and its repositories' summed state. Click collapses it.
+/// A group, laid out like a repository row: a folder tile, the name over its note, and its
+/// repositories' summed state. Click collapses it; the chevron shows while collapsed or hovered.
 private struct GroupHeader: View {
   let group: SavedGroup
   let summary: RepositorySummary
@@ -442,26 +443,18 @@ private struct GroupHeader: View {
 
   var body: some View {
     Button(action: toggle) {
-      HStack(spacing: 7) {
-        Image(systemName: "chevron.right")
-          .font(.system(size: 8, weight: .heavy))
-          .foregroundStyle(.tertiary)
-          .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
-          .frame(width: 10)
-        Image(systemName: group.isCollapsed ? "folder" : "folder.fill")
-          .font(.system(size: 13))
-          .foregroundStyle(.secondary)
-          .contentTransition(.symbolEffect(.replace))
-          .frame(width: 18)
-        Text(group.name)
-          .fontWeight(.medium)
-          .lineLimit(1)
-          .layoutPriority(1)
-        if !group.note.isEmpty {
-          Text(group.note)
-            .font(.system(size: 11))
-            .foregroundStyle(.tertiary)
+      HStack(spacing: 9) {
+        GroupIcon(name: group.name, isOpen: !group.isCollapsed, size: 18)
+        VStack(alignment: .leading, spacing: 0) {
+          Text(group.name)
+            .fontWeight(.medium)
             .lineLimit(1)
+          if !group.note.isEmpty {
+            Text(group.note)
+              .font(.system(size: 11))
+              .foregroundStyle(.secondary)
+              .lineLimit(1)
+          }
         }
         Spacer(minLength: 4)
         if isBusy {
@@ -469,10 +462,14 @@ private struct GroupHeader: View {
         } else {
           StatusMarks(summary: summary)
         }
+        Image(systemName: "chevron.right")
+          .font(.system(size: 9, weight: .bold))
+          .foregroundStyle(.tertiary)
+          .rotationEffect(.degrees(group.isCollapsed ? 0 : 90))
+          .opacity(isHovered || group.isCollapsed ? 1 : 0)
       }
-      .padding(.leading, 2)
-      .padding(.trailing, 8)
-      .frame(height: 28)
+      .padding(.horizontal, 8)
+      .frame(height: group.note.isEmpty ? 30 : 36)
       .background(
         isTargeted
           ? Color.accentColor.opacity(0.15) : Color.primary.opacity(isHovered ? 0.05 : 0),
@@ -481,12 +478,35 @@ private struct GroupHeader: View {
       .contentShape(Rectangle())
       .animation(.app, value: isHovered)
       .animation(.app, value: isTargeted)
+      .animation(.app, value: group.isCollapsed)
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
     .help(help)
     .accessibilityLabel("\(group.name), \(StatusMarks.description(summary))")
     .accessibilityHint(group.isCollapsed ? "Expands the group" : "Collapses the group")
+  }
+}
+
+/// A group's tile, in the style of `RepositoryIcon`: a folder on the group's stable color.
+private struct GroupIcon: View {
+  let name: String
+  let isOpen: Bool
+  let size: CGFloat
+
+  private static let palette: [Color] = [.blue, .purple, .teal, .orange, .pink, .indigo, .green, .brown]
+
+  var body: some View {
+    Image(systemName: isOpen ? "folder.fill" : "folder")
+      .font(.system(size: size * 0.5, weight: .bold))
+      .foregroundStyle(.white)
+      .contentTransition(.symbolEffect(.replace))
+      .frame(width: size, height: size)
+      .background(
+        StableColor.pick(name, from: Self.palette).gradient,
+        in: .rect(cornerRadius: size * 0.28, style: .continuous)
+      )
+      .accessibilityHidden(true)
   }
 }
 
