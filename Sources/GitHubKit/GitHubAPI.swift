@@ -59,7 +59,7 @@ public struct GitHubAPI: Sendable {
     guard let url = URL(string: path, relativeTo: Self.baseURL) else {
       throw GitHubError.invalidResponse
     }
-    var request = URLRequest(url: url)
+    var request = URLRequest.gitHub(url)
     request.httpMethod = method
     request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
     request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")

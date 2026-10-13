@@ -97,6 +97,9 @@ actor Waits {
 
     let request = try #require(transport.requests.first)
     #expect(request.httpMethod == "POST")
+    // GitHub refuses API calls whose User-Agent starts with "Git/", URLSession's default for this app.
+    let agent = try #require(request.value(forHTTPHeaderField: "User-Agent"))
+    #expect(!agent.hasPrefix("Git/") && agent.hasSuffix("GitHubKit"))
     #expect(request.url?.absoluteString == "https://api.github.com/user/repos")
     #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer t")
     let body = try JSONSerialization.jsonObject(with: request.httpBody ?? Data()) as? [String: Any]
@@ -118,11 +121,14 @@ actor Waits {
       {"message":"Repository creation failed.","errors":[{"resource":"Repository","code":"custom",\
       "field":"name","message":"name already exists on this account"}]}
       """
-    let api = GitHubAPI(token: "t", transport: FakeTransport([(422, taken), (401, "{}")]))
+    let api = GitHubAPI(token: "t", transport: FakeTransport([(422, taken), (401, "{}"), (403, "<html>")]))
     await #expect(throws: GitHubError.api(status: 422, message: "Name already exists on this account.")) {
       try await api.createRepository(NewRepository(name: "Git", isPrivate: true))
     }
     await #expect(throws: GitHubError.unauthorized) { try await api.user() }
+    await #expect(throws: GitHubError.api(status: 403, message: "GitHub refused the request: forbidden (HTTP 403).")) {
+      try await api.user()
+    }
   }
 
   @Test func normalizesNamesLikeGitHub() {

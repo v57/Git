@@ -43,10 +43,12 @@ public enum GitHubError: Error, Sendable, Hashable, LocalizedError {
       if let field = detail.field, detail.code == "already_exists" { return "\(field) already exists" }
       return nil
     }
-    let message =
-      details.isEmpty
-      ? (decoded?.message ?? HTTPURLResponse.localizedString(forStatusCode: status))
-      : details.joined(separator: "\n")
+    if details.isEmpty, decoded?.message == nil {
+      // No JSON explanation (GitHub sends an HTML page for some refusals).
+      let reason = sentence(HTTPURLResponse.localizedString(forStatusCode: status)).dropLast()
+      return .api(status: status, message: "GitHub refused the request: \(reason.lowercased()) (HTTP \(status)).")
+    }
+    let message = details.isEmpty ? decoded?.message ?? "" : details.joined(separator: "\n")
     return .api(status: status, message: sentence(message))
   }
 
