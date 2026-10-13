@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import os
 
 /// Finds the git binary the library runs.
 ///
@@ -7,7 +7,7 @@ import Synchronization
 /// `/usr/bin/git`. The `/usr/bin/git` shim is only used when a developer directory is selected;
 /// without the Command Line Tools it pops the installer instead of running git.
 public enum GitExecutable {
-  private static let state = Mutex<(custom: String?, cached: URL??)>((nil, nil))
+  private static let state = OSAllocatedUnfairLock<(custom: String?, cached: URL??)>(initialState: (nil, nil))
 
   /// A user-chosen git binary. `nil` or empty means automatic.
   public static var customPath: String? {

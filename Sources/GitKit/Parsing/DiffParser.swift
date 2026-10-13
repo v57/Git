@@ -5,7 +5,7 @@ enum DiffParser {
   static func parse(_ data: Data) -> [FileDiff] {
     var invalidUTF8 = false
     let text: String
-    if let valid = String(validating: data, as: UTF8.self) {
+    if let valid = String(data: data, encoding: .utf8) {
       text = valid
     } else {
       text = String(decoding: data, as: UTF8.self)

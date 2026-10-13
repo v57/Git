@@ -1,5 +1,5 @@
 import Foundation
-import Synchronization
+import os
 
 /// A username and password (or token) for one HTTPS host.
 public struct GitCredential: Sendable, Hashable {
@@ -20,7 +20,7 @@ public struct GitCredential: Sendable, Hashable {
 /// The token reaches git only through that one process's environment, never its arguments, which
 /// other users can read with `ps`.
 public enum GitCredentials {
-  private static let store = Mutex<[String: GitCredential]>([:])
+  private static let store = OSAllocatedUnfairLock<[String: GitCredential]>(initialState: [:])
 
   /// Sets the credential for `host` (e.g. `github.com`), or removes it with `nil`.
   public static func set(_ credential: GitCredential?, for host: String) {

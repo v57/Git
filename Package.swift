@@ -3,7 +3,7 @@
 import PackageDescription
 
 let package = Package(
-  name: "Git", platforms: [.macOS(.v15)],
+  name: "Git", platforms: [.macOS(.v14), .iOS(.v17)],
   products: [
     .library(name: "GitKit", targets: ["GitKit"]),
     .library(name: "GitHubKit", targets: ["GitHubKit"]),
