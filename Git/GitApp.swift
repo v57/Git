@@ -2,6 +2,7 @@ import GitHubKit
 import GitKit
 import SwiftData
 import SwiftUI
+import UpdateKit
 
 @main
 struct GitApp: App {
@@ -9,7 +10,12 @@ struct GitApp: App {
   @State private var github = GitHubAccount.app
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
 
+  /// Updates from GitHub Releases (Git.zip, built by Dev's release tool from release.env): checked
+  /// daily once the user turns on automatic checks (never before), installed in place with a relaunch.
+  private let updater = AppUpdater(github: "v57/Git", assetName: "Git.zip")
+
   init() {
+    updater.start()
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
       // --light draws the app in light mode, for screenshots.
@@ -45,6 +51,7 @@ struct GitApp: App {
     .modelContainer(Self.modelContainer)
     .commands {
       RepositoryCommands(library: library)
+      UpdaterCommands(updater: updater)
     }
 
     Window("Welcome to Git", id: WelcomeWindow.id) {

@@ -10,6 +10,7 @@
 		A10000000000000000000001 /* GitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GitKit */; };
 		A10000000000000000000002 /* CodeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* CodeKit */; };
 		A10000000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* GitHubKit */; };
+		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -31,6 +32,7 @@
 				A10000000000000000000001 /* GitKit in Frameworks */,
 				A10000000000000000000002 /* CodeKit in Frameworks */,
 				A10000000000000000000003 /* GitHubKit in Frameworks */,
+				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -73,6 +75,7 @@
 				A10000000000000000000011 /* GitKit */,
 				A10000000000000000000012 /* CodeKit */,
 				A10000000000000000000013 /* GitHubKit */,
+				D5C0DE000000000000000002 /* UpdateKit */,
 			);
 			productName = Git;
 			productReference = 000000000000000000000120 /* Git.app */;
@@ -105,6 +108,7 @@
 			packageReferences = (
 				A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */,
 				A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */,
+				D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -359,6 +363,10 @@
 			isa = XCLocalSwiftPackageReference;
 			relativePath = ../Code;
 		};
+		D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../UpdateKit;
+		};
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -376,6 +384,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */;
 			productName = GitHubKit;
+		};
+		D5C0DE000000000000000002 /* UpdateKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */;
+			productName = UpdateKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
