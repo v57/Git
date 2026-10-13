@@ -189,13 +189,11 @@ final class ScopedTransport: HTTPTransport, @unchecked Sendable {
 
   @Test func signsInSavesAndSignsOut() async throws {
     let transport = ScopedTransport(
-      FakeTransport([
-        (200, codeResponse),
-        (200, #"{"access_token":"gho_token","scope":"repo,read:org"}"#),
-        (200, userResponse),
-        (200, userResponse),
-        (200, #"[{"login":"octo-org"}]"#),
-      ]), scopes: "repo, read:org")
+      FakeTransport(
+        [(200, codeResponse), (200, #"{"access_token":"gho_token","scope":"repo,read:org"}"#)],
+        // By path: refresh() asks for the profile and the organizations at the same time.
+        routes: ["/user": (200, userResponse), "/user/orgs": (200, #"[{"login":"octo-org"}]"#)]),
+      scopes: "repo, read:org")
     let store = MemoryTokenStore()
     let account = GitHubAccount(clientID: "client", store: store, transport: transport)
     var credentials: [GitHubCredential?] = []
