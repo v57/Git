@@ -15,6 +15,11 @@ staged and unstaged files. You can:
   both for each conflict block, or keep or delete a file one side deleted, then Continue or Abort.
 - Browse history with a branch graph, for the current branch or all branches.
 - Clone a repository or create a new one from the welcome screen or the File menu.
+- Publish a repository that has no remote: sign in to GitHub once (Settings › GitHub), then
+  Publish creates a private or public repository for you or one of your organizations and pushes
+  the current branch to it. Before signing in you choose what Git may do (public and private or
+  only public repositories, organizations, workflow files); Settings shows what GitHub granted,
+  and anything missing can be granted later, also from the place that needs it.
 
 The Worktree and Branch headers show which worktrees and branches have commits the current branch
 doesn't. Drop a folder on the sidebar and every Git repository inside it is added. Repositories
@@ -31,7 +36,7 @@ other repository that needs attention.
 
 ## Layout
 
-    Package.swift                 GitKit library + GitKitTests (swift-testing)
+    Package.swift                 GitKit and GitHubKit libraries + their tests (swift-testing)
     Sources/GitKit/
       Process/    GitRunner (argv-based process runner), GitExecutable (finds git), GitError
       Models/     WorkingTreeStatus/FileChange, Commit/RefLabel, Branch/Stash, FileDiff/DiffHunk/DiffLine,
@@ -41,6 +46,10 @@ other repository that needs attention.
       Discovery/  RepoDiscovery: finds repositories inside a folder; RepoGrouping: groups them by folder
       Session/    RepositorySession (@Observable state + actions), RepositoryWatcher (FSEvents)
       Repository.swift   every git operation, as async methods on a Sendable struct
+    Sources/GitHubKit/            GitHub sign-in (OAuth device flow) for chosen GitHubPermissions, the token
+                                  and its granted scopes in the app's own keychain item (KeychainTokenStore),
+                                  the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
+                                  no dependency on GitKit
     Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeKit)
     Git/                          app sources
       Library/    SavedRepository and SavedGroup (SwiftData), RepositoryLibrary (sessions, summaries,
@@ -53,6 +62,8 @@ other repository that needs attention.
       Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing CodeKit), LoadedDiff
       Toolbar/    Fetch/Pull/Push, Branch/Merge/Stash, branch popover, sheets
       Welcome/    the Welcome window: clone, open, new repository, recent repositories
+      GitHub/     the app's GitHubAccount (client ID, hands its token to GitCredentials), the
+                  sign-in sheet and its animated connection header, Settings › GitHub, Publish sheet
 
 Screens, panels and selections change with one animation, `Animation.app`
 (`.smooth(duration: 0.25)`): pages fade and rise, counts roll and symbols swap.
@@ -64,6 +75,12 @@ Screens, panels and selections change with one animation, `Animation.app`
   human-readable output. It reads porcelain v2, `-z` separated records and `%x1f` separated log fields.
 - **Your git setup applies.** Your config, hooks, commit signing, SSH agent and credential helpers all apply. The
   runner turns off terminal prompts, so a missing credential fails with git's own message instead of hanging.
+- **The GitHub account stays in the app.** While you're signed in with access to private
+  repositories, fetch, pull, push and clone over
+  `https://github.com` use the app's token instead of your credential helpers: `GitCredentials` passes
+  git a helper through `GIT_CONFIG_COUNT` environment entries, clearing the configured helpers for that
+  host first, so the token is never written to osxkeychain or gh and never appears in an argument list.
+  The token itself lives in a keychain item only the app can read without a prompt.
 - **Line staging.** `PatchBuilder` rewrites the diff and the result goes through `git apply --cached`
   (`--reverse` to unstage, no `--cached` to discard).
   - Unselected lines on the side being kept become context, and unselected lines on the other side are dropped.

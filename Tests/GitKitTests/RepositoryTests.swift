@@ -313,6 +313,46 @@ struct TempRepo {
     #expect(try await first.repo.status().behind == 0)
     _ = parent
   }
+
+  @Test func publishAddsTheRemoteAndTracksIt() async throws {
+    let remote = try await TempRepo(bare: true)
+    let temp = try await TempRepo(in: remote.root.deletingLastPathComponent())
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try await temp.repo.addRemote("origin", url: remote.root.path)
+    #expect(try await temp.repo.remoteURL("origin") == remote.root.path)
+    try await temp.repo.push()
+    #expect(try await temp.repo.status().upstream == "origin/main")
+  }
+
+  @Test func appCredentialReplacesTheConfiguredHelpers() async throws {
+    let temp = try await TempRepo()
+    let saved = temp.root.deletingLastPathComponent().appendingPathComponent("credentials")
+    try await temp.repo.git(["config", "credential.helper", "store --file=\(saved.path)"])
+    let host = "credentials-\(UUID().uuidString.prefix(8).lowercased()).test"
+    GitCredentials.set(GitCredential(username: "octo", password: "s3cret token"), for: host)
+    defer { GitCredentials.set(nil, for: host) }
+    let environment = GitCredentials.environment()
+    func request(_ host: String, _ extra: String = "") -> Data {
+      Data("protocol=https\nhost=\(host)\n\(extra)\n".utf8)
+    }
+
+    let filled = try await temp.repo.git(
+      ["credential", "fill"], input: request(host), environment: environment
+    ).output
+    #expect(filled.contains("username=octo\n") && filled.contains("password=s3cret token\n"))
+
+    // `approve` runs every helper's `store`: the configured one must not see the token.
+    let credential = "username=octo\npassword=s3cret token\n"
+    try await temp.repo.git(
+      ["credential", "approve"], input: request(host, credential), environment: environment)
+    #expect(!FileManager.default.fileExists(atPath: saved.path))
+
+    // Other hosts still use the configured helper.
+    try await temp.repo.git(
+      ["credential", "approve"], input: request("other.test", credential), environment: environment)
+    #expect(try String(contentsOf: saved, encoding: .utf8).contains("other.test"))
+  }
 }
 
 @Suite struct HistoryEditingTests {

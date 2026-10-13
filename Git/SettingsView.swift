@@ -1,3 +1,4 @@
+import GitHubKit
 import GitKit
 import SwiftUI
 
@@ -6,6 +7,19 @@ enum SettingsKeys {
 }
 
 struct SettingsView: View {
+  var body: some View {
+    TabView {
+      Tab("General", systemImage: "gearshape") {
+        GeneralSettingsView()
+      }
+      Tab("GitHub", systemImage: "cloud") {
+        GitHubSettingsView()
+      }
+    }
+  }
+}
+
+private struct GeneralSettingsView: View {
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
   @State private var resolved: String?
   @State private var version: String?
@@ -27,7 +41,8 @@ struct SettingsView: View {
       } footer: {
         Text(
           "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
-            + "Pushing uses your SSH agent, Keychain and git credential helpers.")
+            + "Pushing uses your SSH agent, Keychain and git credential helpers, or your GitHub "
+            + "account for github.com while you're signed in.")
       }
     }
     .formStyle(.grouped)

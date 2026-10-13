@@ -56,7 +56,8 @@ public struct Repository: Sendable, Hashable, Identifiable {
   ) async throws -> Repository {
     try await runner.run(
       ["clone", "--progress", "--", remote, destination.path],
-      in: destination.deletingLastPathComponent(), progress: progress)
+      in: destination.deletingLastPathComponent(), environment: GitCredentials.environment(),
+      progress: progress)
     return Repository(url: destination, runner: runner)
   }
 }
@@ -684,13 +685,25 @@ extension Repository {
     try await output(["remote"]).split(separator: "\n").map(String.init)
   }
 
+  /// The URL `remote` fetches from.
+  public func remoteURL(_ remote: String) async throws -> String {
+    try await output(["remote", "get-url", "--", remote])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+  }
+
+  public func addRemote(_ name: String, url: String) async throws {
+    try await git(["remote", "add", "--", name, url])
+  }
+
   public func fetch(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(["fetch", "--all", "--prune", "--progress"], progress: progress)
+    try await git(
+      ["fetch", "--all", "--prune", "--progress"], environment: GitCredentials.environment(),
+      progress: progress)
   }
 
   /// `git pull` with the user's pull settings (merge, rebase, ff-only).
   public func pull(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(["pull", "--progress"], progress: progress)
+    try await git(["pull", "--progress"], environment: GitCredentials.environment(), progress: progress)
   }
 
   /// Pushes the current branch. A branch without an upstream is pushed to its push remote (or
@@ -708,7 +721,7 @@ extension Repository {
       let remote = try await pushRemote(for: branch)
       arguments += ["--set-upstream", remote, "HEAD"]
     }
-    try await git(arguments, progress: progress)
+    try await git(arguments, environment: GitCredentials.environment(), progress: progress)
   }
 
   private func pushRemote(for branch: String) async throws -> String {

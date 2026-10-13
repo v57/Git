@@ -1,3 +1,4 @@
+import GitHubKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -66,8 +67,9 @@ struct ContentView: View {
 }
 
 #if DEBUG
-  /// `--mode history|changes|stashes`, `--select-change <path>`, `--select-commit <index>` and
-  /// `--all-branches` set the first repository's view state at launch, for screenshots.
+  /// `--mode history|changes|stashes`, `--select-change <path>`, `--select-commit <index>`,
+  /// `--all-branches` and `--show-publish` set the first repository's view state at launch, for
+  /// screenshots.
   @MainActor private func applyLaunchArguments(
     _ state: RepositoryViewState, session: RepositorySession
   ) {
@@ -82,6 +84,7 @@ struct ContentView: View {
       }
       if status.conflicted.contains(where: { $0.path == path }) { state.selectedConflict = path }
     }
+    if arguments.contains("--show-publish") { state.isPublishPresented = true }
     if arguments.contains("--all-branches") {
       session.logQuery = LogQuery(allBranches: true)
     }
@@ -98,6 +101,8 @@ struct RepositoryScreen: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
   @State private var search = ""
+  @State private var gitHubSignIn: GitHubSignInRequest?
+  @Environment(GitHubAccount.self) private var gitHub
 
   private var kind: RepositoryScreenKind {
     switch state.mode {
@@ -121,7 +126,7 @@ struct RepositoryScreen: View {
       // Once the operation is done, the toolbar goes back to the Changes items.
       .toolbar {
         RepositoryToolbar(
-          session: session,
+          session: session, state: state,
           screen: kind == .conflicts && session.status?.operation == nil ? .changes : kind)
       }
       .modifier(HistorySearch(isOn: kind == .history, text: $search, session: session))
@@ -129,16 +134,27 @@ struct RepositoryScreen: View {
         library.updateSummary(session.repository.url.path, from: session)
       }
       .onChange(of: state.mode) { state.completedOperation = nil }
+      .sheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
       .alert(
         session.failure?.title ?? "",
         isPresented: .init(
           get: { session.failure != nil }, set: { if !$0 { session.failure = nil } }),
         presenting: session.failure
-      ) { _ in
-        Button("OK") {}
+      ) { failure in
+        // GitHub refuses pushes that change workflows from a token without the workflow scope.
+        if failure.message.contains("workflow"), failure.message.contains("scope") {
+          Button("Grant Access…") {
+            gitHubSignIn = GitHubSignInRequest(
+              permissions: gitHub.permissions.union(GitHubPermission.workflows.permissions))
+          }
+          Button("Cancel", role: .cancel) {}
+        } else {
+          Button("OK") {}
+        }
       } message: { failure in
         Text(failure.message)
       }
+      .sheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
   }
 
   @ViewBuilder

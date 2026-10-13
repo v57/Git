@@ -1,3 +1,4 @@
+import GitHubKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -5,6 +6,7 @@ import SwiftUI
 @main
 struct GitApp: App {
   @State private var library = RepositoryLibrary()
+  @State private var github = GitHubAccount.app
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
 
   init() {
@@ -35,6 +37,7 @@ struct GitApp: App {
     WindowGroup("Git", id: MainWindow.id) {
       ContentView()
         .environment(library)
+        .environment(github)
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
     }
     .defaultSize(width: 1440, height: 900)
@@ -47,6 +50,7 @@ struct GitApp: App {
     Window("Welcome to Git", id: WelcomeWindow.id) {
       WelcomeWindow()
         .environment(library)
+        .environment(github)
     }
     .windowStyle(.hiddenTitleBar)
     .windowResizability(.contentSize)
@@ -56,6 +60,7 @@ struct GitApp: App {
 
     Settings {
       SettingsView()
+        .environment(github)
     }
   }
 }

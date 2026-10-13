@@ -45,6 +45,8 @@ struct CompletedOperation: Equatable {
   var amend = false
   /// The commit just made, for the toast with Undo and Push.
   var lastCommit: String?
+  /// The Publish sheet, for a repository without a remote.
+  var isPublishPresented = false
 
   // Conflicts: choices are kept here and written when the operation continues.
   /// Every path that was conflicted during the current operation, in order.

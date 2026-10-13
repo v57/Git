@@ -7,6 +7,7 @@ import SwiftUI
 /// the keyboard shortcuts instead.
 struct RepositoryToolbar: ToolbarContent {
   let session: RepositorySession
+  let state: RepositoryViewState
   let screen: RepositoryScreenKind
 
   var body: some ToolbarContent {
@@ -19,7 +20,7 @@ struct RepositoryToolbar: ToolbarContent {
       }
     } else {
       ToolbarItemGroup(placement: .primaryAction) {
-        SyncButtons(session: session)
+        SyncButtons(session: session, state: state)
       }
       // Sets Fetch, Pull and Push apart from Branch, Merge and Stash.
       if #available(macOS 26, *) {
@@ -44,6 +45,7 @@ enum RepositoryScreenKind: Equatable {
 /// Fetch, Pull and Push.
 private struct SyncButtons: View {
   let session: RepositorySession
+  let state: RepositoryViewState
   @State private var confirmForcePush = false
 
   private var ahead: Int { session.status?.ahead ?? 0 }
@@ -71,7 +73,12 @@ private struct SyncButtons: View {
     .disabled(!hasUpstream || session.isBusy)
     .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
     Button {
-      Task { await session.push() }
+      // Without a remote, Publish creates one on GitHub first.
+      if session.remotes.isEmpty {
+        state.isPublishPresented = true
+      } else {
+        Task { await session.push() }
+      }
     } label: {
       HStack(spacing: 6) {
         Image(systemName: "arrow.up.to.line")
@@ -93,8 +100,8 @@ private struct SyncButtons: View {
       .animation(.app, value: ahead)
       .animation(.app, value: session.activity)
     }
-    .disabled(session.remotes.isEmpty || session.status?.branch == nil || session.isBusy)
-    .help(ahead > 0 ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Push")
+    .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
+    .help(pushHelp)
     .contextMenu {
       Button("Force Push…") { confirmForcePush = true }
         .disabled(!hasUpstream)
@@ -109,6 +116,14 @@ private struct SyncButtons: View {
         "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
           + "if someone else pushed since your last fetch.")
     }
+  }
+
+  private var pushHelp: String {
+    let branch = session.status?.branch ?? "this branch"
+    if session.headCommit == nil { return "Commit something first" }
+    if session.remotes.isEmpty { return "Create a repository on GitHub and push \(branch) to it" }
+    if !hasUpstream { return "Push \(branch) and track it" }
+    return ahead > 0 ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Push"
   }
 
   private var fetchHelp: String {

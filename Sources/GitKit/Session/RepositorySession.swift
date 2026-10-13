@@ -349,6 +349,17 @@ public final class RepositorySession {
     }
   }
 
+  /// Adds `url` as remote `name` and pushes the current branch to it, tracking it. The remote
+  /// stays when the push fails, so the next push retries it.
+  @discardableResult
+  public func publish(to url: String, remote name: String = "origin") async -> Bool {
+    let progress = progressHandler()
+    return await perform(.pushing, failureTitle: "Couldn't publish") {
+      try await $0.addRemote(name, url: url)
+      try await $0.push(progress: progress)
+    }
+  }
+
   public func switchTo(_ branch: Branch) async {
     await perform(.switchingBranch, failureTitle: "Couldn't switch to \(branch.name)") {
       try await $0.switchTo(branch)

@@ -9,6 +9,7 @@ extension FocusedValues {
 struct RepositoryCommands: Commands {
   let library: RepositoryLibrary
   @FocusedValue(\.repositorySession) private var session
+  @FocusedValue(\.repositoryViewState) private var state
 
   var body: some Commands {
     CommandGroup(after: .newItem) {
@@ -33,9 +34,15 @@ struct RepositoryCommands: Commands {
       Button("Pull") { run { await $0.pull() } }
         .keyboardShortcut("p", modifiers: [.command, .shift])
         .disabled(session?.status?.upstream == nil)
-      Button("Push") { run { await $0.push() } }
-        .keyboardShortcut("p")
-        .disabled(session?.status?.branch == nil || session?.remotes.isEmpty != false)
+      if session?.remotes.isEmpty == true {
+        Button("Publish to GitHub…") { state?.isPublishPresented = true }
+          .keyboardShortcut("p")
+          .disabled(session?.status?.branch == nil || session?.headCommit == nil || session?.isBusy == true)
+      } else {
+        Button("Push") { run { await $0.push() } }
+          .keyboardShortcut("p")
+          .disabled(session?.status?.branch == nil)
+      }
       Divider()
       Button("Stage All") { run { await $0.stageAll() } }
         .keyboardShortcut("a", modifiers: [.command, .shift])

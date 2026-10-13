@@ -280,7 +280,10 @@ private struct CommitToast: View {
             }
           }
           .buttonStyle(ToastButtonStyle(prominent: false))
-          if !session.remotes.isEmpty {
+          if session.remotes.isEmpty {
+            Button("Publish…") { state.isPublishPresented = true }
+              .buttonStyle(ToastButtonStyle(prominent: true))
+          } else {
             Button(ahead > 0 ? "Push \(ahead)" : "Push") {
               Task {
                 if await session.push() {
