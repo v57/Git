@@ -1,9 +1,9 @@
-import CodeKit
+import CodeHighlighting
 import Foundation
 import GitKit
 import SwiftUI
 
-/// Syntax-colors diff lines with CodeKit (`../Code`). This is the only file that imports it.
+/// Syntax-colors diff lines with CodeHighlighting (`../Code`). This is the only file that imports it.
 ///
 /// Highlighting carries state across lines (block comments, multi-line strings), so each side is
 /// highlighted as a whole file when its text is available, and the tokens are mapped onto diff

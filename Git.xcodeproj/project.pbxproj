@@ -8,7 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		A10000000000000000000001 /* GitKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GitKit */; };
-		A10000000000000000000002 /* CodeKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* CodeKit */; };
+		A10000000000000000000002 /* CodeHighlighting in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000012 /* CodeHighlighting */; };
 		A10000000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* GitHubKit */; };
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 /* End PBXBuildFile section */
@@ -30,7 +30,7 @@
 			isa = PBXFrameworksBuildPhase;
 			files = (
 				A10000000000000000000001 /* GitKit in Frameworks */,
-				A10000000000000000000002 /* CodeKit in Frameworks */,
+				A10000000000000000000002 /* CodeHighlighting in Frameworks */,
 				A10000000000000000000003 /* GitHubKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 			);
@@ -73,7 +73,7 @@
 			name = Git;
 			packageProductDependencies = (
 				A10000000000000000000011 /* GitKit */,
-				A10000000000000000000012 /* CodeKit */,
+				A10000000000000000000012 /* CodeHighlighting */,
 				A10000000000000000000013 /* GitHubKit */,
 				D5C0DE000000000000000002 /* UpdateKit */,
 			);
@@ -375,10 +375,10 @@
 			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */;
 			productName = GitKit;
 		};
-		A10000000000000000000012 /* CodeKit */ = {
+		A10000000000000000000012 /* CodeHighlighting */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */;
-			productName = CodeKit;
+			productName = CodeHighlighting;
 		};
 		A10000000000000000000013 /* GitHubKit */ = {
 			isa = XCSwiftPackageProductDependency;

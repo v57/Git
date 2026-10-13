@@ -50,7 +50,7 @@ other repository that needs attention.
                                   and its granted scopes in the app's own keychain item (KeychainTokenStore),
                                   the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
                                   no dependency on GitKit
-    Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeKit)
+    Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeHighlighting)
     Git/                          app sources
       Library/    SavedRepository and SavedGroup (SwiftData), RepositoryLibrary (sessions, summaries,
                   import, grouping and ordering, fetch/pull/push across repositories)
@@ -59,7 +59,7 @@ other repository that needs attention.
       History/    commit table with branch graph, commit inspector
       Stashes/    stashes with Apply, Pop and Drop
       Shared/     avatars, status badges, ref pills and other small views
-      Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing CodeKit), LoadedDiff
+      Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing CodeHighlighting), LoadedDiff
       Toolbar/    Fetch/Pull/Push, Branch/Merge/Stash, branch popover, sheets
       Welcome/    the Welcome window: clone, open, new repository, recent repositories
       GitHub/     the app's GitHubAccount (client ID, hands its token to GitCredentials), the
@@ -100,7 +100,7 @@ Screens, panels and selections change with one animation, `Animation.app`
 - **Discarding is recoverable for new files.** Untracked files are moved to the Trash rather than deleted.
 - **Live updates.** `RepositorySession` watches the working tree and `.git` with FSEvents. It ignores objects,
   logs and lock files, and refreshes status, branches, stashes and, when refs move, history.
-- **Syntax colors.** They come from CodeKit (`../Code`), which detects the language from the file name,
+- **Syntax colors.** They come from CodeHighlighting (`../Code`), which detects the language from the file name,
   extension or `#!` line. Each side of a diff is highlighted as a whole file and mapped onto the diff lines.
 - **Not sandboxed.** The app is distributed with Developer ID and the hardened runtime, because it runs git and
   your hooks on arbitrary folders.
