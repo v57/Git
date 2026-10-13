@@ -28,6 +28,11 @@ public enum GitHubError: Error, Sendable, Hashable, LocalizedError {
   /// `{"message": "Repository creation failed.", "errors": [{"message": "name already exists…"}]}`.
   static func from(status: Int, body: Data) -> GitHubError {
     if status == 401 { return .unauthorized }
+    if status == 403 || status == 429,
+      String(decoding: body, as: UTF8.self).localizedCaseInsensitiveContains("rate limit")
+    {
+      return .api(status: status, message: "GitHub’s rate limit is reached. Sign in, or try again later.")
+    }
     struct Body: Decodable {
       struct Detail: Decodable {
         var message: String?

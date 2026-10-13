@@ -1,13 +1,14 @@
 import Foundation
 
-/// The parts of GitHub's REST API the app uses, authenticated with a user's token.
+/// The parts of GitHub's REST API the apps use, authenticated with a user's token, or anonymous
+/// (public repositories only, 60 requests an hour) without one.
 public struct GitHubAPI: Sendable {
   public static let baseURL = URL(string: "https://api.github.com")!
 
-  public let token: String
+  public let token: String?
   let transport: any HTTPTransport
 
-  public init(token: String, transport: any HTTPTransport = URLSession.shared) {
+  public init(token: String?, transport: any HTTPTransport = URLSession.shared) {
     self.token = token
     self.transport = transport
   }
@@ -56,13 +57,26 @@ public struct GitHubAPI: Sendable {
   func request<Response: Decodable>(
     _ method: String, _ path: String, body: (any Encodable)? = nil
   ) async throws -> (Response, HTTPURLResponse) {
+    let (data, response) = try await raw(method, path, body: body)
+    do {
+      return (try JSONDecoder().decode(Response.self, from: data), response)
+    } catch {
+      throw GitHubError.invalidResponse
+    }
+  }
+
+  /// The response body as GitHub sent it. `accept` overrides the JSON media type, e.g.
+  /// `application/vnd.github.raw+json` for a blob's bytes.
+  func raw(
+    _ method: String, _ path: String, body: (any Encodable)? = nil, accept: String? = nil
+  ) async throws -> (Data, HTTPURLResponse) {
     guard let url = URL(string: path, relativeTo: Self.baseURL) else {
       throw GitHubError.invalidResponse
     }
     var request = URLRequest.gitHub(url)
     request.httpMethod = method
-    request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+    if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    request.setValue(accept ?? "application/vnd.github+json", forHTTPHeaderField: "Accept")
     request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
     if let body {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -72,14 +86,10 @@ public struct GitHubAPI: Sendable {
     guard (200..<300).contains(response.statusCode) else {
       throw GitHubError.from(status: response.statusCode, body: data)
     }
-    do {
-      return (try JSONDecoder().decode(Response.self, from: data), response)
-    } catch {
-      throw GitHubError.invalidResponse
-    }
+    return (data, response)
   }
 
-  private static func pathComponent(_ value: String) -> String {
+  static func pathComponent(_ value: String) -> String {
     value.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(["/"])) ?? value
   }
 }

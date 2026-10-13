@@ -40,10 +40,11 @@ public struct GitHubOrganization: Sendable, Hashable, Codable, Identifiable {
 }
 
 /// A repository on GitHub.
-public struct GitHubRepository: Sendable, Hashable, Codable {
+public struct GitHubRepository: Sendable, Hashable, Codable, Identifiable {
   public var name: String
   /// `owner/name`.
   public var fullName: String
+  public var description: String?
   public var isPrivate: Bool
   public var htmlURL: URL
   /// The HTTPS URL git pushes to.
@@ -52,7 +53,7 @@ public struct GitHubRepository: Sendable, Hashable, Codable {
   public var defaultBranch: String?
 
   enum CodingKeys: String, CodingKey {
-    case name
+    case name, description
     case fullName = "full_name"
     case isPrivate = "private"
     case htmlURL = "html_url"
@@ -60,6 +61,11 @@ public struct GitHubRepository: Sendable, Hashable, Codable {
     case sshURL = "ssh_url"
     case defaultBranch = "default_branch"
   }
+
+  public var id: String { fullName }
+
+  /// The user or organization that owns it: the part of `fullName` before the slash.
+  public var owner: String { String(fullName.prefix { $0 != "/" }) }
 }
 
 /// A repository to create. Nothing is pushed: the repository starts empty.

@@ -56,13 +56,14 @@ public final class GitHubAccount {
     credential.map { GitHubAPI(token: $0.token, transport: transport) }
   }
 
-  /// Loads the saved credential, then refreshes the profile in the background. Git can use the
-  /// credential right away, before the profile loads or without a network.
-  public func restore() {
+  /// Loads the saved credential, then (with `refreshing`) refreshes the profile in the
+  /// background. Git can use the credential right away, before the profile loads or without a
+  /// network. Apps that contact GitHub only when the user asks pass `refreshing: false`.
+  public func restore(refreshing: Bool = true) {
     guard let saved = try? store.load() else { return }
     credential = saved
     user = GitHubUser(login: saved.login)
-    Task { await refresh() }
+    if refreshing { Task { await refresh() } }
   }
 
   /// Reloads the profile, organizations and granted scopes. A revoked token signs out.
