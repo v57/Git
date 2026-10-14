@@ -109,10 +109,10 @@
 			mainGroup = 000000000000000000000001;
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
-				A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */,
-				A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */,
-				D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */,
-				2EA6ED1B6B478505AA212C49 /* XCLocalSwiftPackageReference "../Vault" */,
+				A10000000000000000000021 /* XCLocalSwiftPackageReference "." */,
+				A10000000000000000000022 /* XCRemoteSwiftPackageReference "Code" */,
+				D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */,
+				2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -361,48 +361,63 @@
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
-		A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */ = {
+		A10000000000000000000021 /* XCLocalSwiftPackageReference "." */ = {
 			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Git;
-		};
-		A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Code;
-		};
-		D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../UpdateKit;
-		};
-		2EA6ED1B6B478505AA212C49 /* XCLocalSwiftPackageReference "../Vault" */ = {
-			isa = XCLocalSwiftPackageReference;
-			relativePath = ../Vault;
+			relativePath = .;
 		};
 /* End XCLocalSwiftPackageReference section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		A10000000000000000000022 /* XCRemoteSwiftPackageReference "Code" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/v57/Code.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/v57/UpdateKit.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+		2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/v57/Vault.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		A10000000000000000000011 /* GitKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */;
+			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "." */;
 			productName = GitKit;
 		};
 		A10000000000000000000012 /* CodeHighlighting */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000022 /* XCLocalSwiftPackageReference "../Code" */;
+			package = A10000000000000000000022 /* XCRemoteSwiftPackageReference "Code" */;
 			productName = CodeHighlighting;
 		};
 		A10000000000000000000013 /* GitHubKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "../Git" */;
+			package = A10000000000000000000021 /* XCLocalSwiftPackageReference "." */;
 			productName = GitHubKit;
 		};
 		D5C0DE000000000000000002 /* UpdateKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = D5C0DE000000000000000001 /* XCLocalSwiftPackageReference "../UpdateKit" */;
+			package = D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */;
 			productName = UpdateKit;
 		};
 		562DD26DC24C46D32E895A4E /* VaultKit */ = {
 			isa = XCSwiftPackageProductDependency;
-			package = 2EA6ED1B6B478505AA212C49 /* XCLocalSwiftPackageReference "../Vault" */;
+			package = 2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */;
 			productName = VaultKit;
 		};
 /* End XCSwiftPackageProductDependency section */

@@ -21,7 +21,8 @@ xcuserdata/
 
 # macOS
 # Finder folder icon: a file named Icon plus a carriage return
-Icon[]
+Icon[
+]
 
 # Build
 DerivedData/
@@ -38,3 +39,8 @@ KANBAN*.md
 
 # Manual tests
 tmp
+
+# Package pins: the other v57 repositories follow GitHub's main until release (or the checkouts next to this
+# one, through <App>-Local.xcworkspace or V57_LOCAL=1), so nothing pins them
+/Git.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
+/Git-Local.xcworkspace/xcshareddata/

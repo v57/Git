@@ -112,6 +112,9 @@ swift build && swift test
 xcodebuild -project Git.xcodeproj -scheme Git -destination 'platform=macOS' build
 ```
 
+The app's v57 packages (Code, Vault, UpdateKit) come from GitHub's `main` branch. To work on them together, clone
+them next to this repository and open `Git-Local.xcworkspace` instead of the project.
+
 Debug builds accept these launch arguments for scripted screenshots:
 - `--in-memory`, which keeps the repository list in memory so the real one is untouched
 - `--add-folder <path>` (repeatable)
