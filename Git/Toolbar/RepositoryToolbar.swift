@@ -267,26 +267,14 @@ struct BranchPopover: View {
     .sheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
-    .confirmationDialog(
-      "Delete \(pendingDelete?.name ?? "")?",
-      isPresented: .init(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-      titleVisibility: .visible
-    ) {
-      Button("Delete", role: .destructive) {
-        if let branch = pendingDelete { Task { await session.deleteBranch(branch) } }
-      }
-      Button("Force Delete", role: .destructive) {
-        if let branch = pendingDelete { Task { await session.deleteBranch(branch, force: true) } }
-      }
-    } message: {
-      Text("Delete refuses a branch that isn't merged; Force Delete removes it anyway.")
-    }
+    .branchDeletion($pendingDelete, session: session)
   }
 
   private func row(_ branch: Branch) -> some View {
     let worktree = session.worktree(for: branch)
     let divergence = divergenceText(
       ahead: branch.aheadOfHead, behind: branch.behindHead, base: current)
+    let isDeleting = session.deletingBranches.contains(branch.id)
     return Button {
       if let worktree {
         // A branch checked out in another worktree can't be checked out here; open that one.
@@ -303,7 +291,10 @@ struct BranchPopover: View {
         VStack(alignment: .leading, spacing: 1) {
           Text(branch.name).lineLimit(1).truncationMode(.middle)
           HStack(spacing: 6) {
-            if branch.isCurrent {
+            if isDeleting {
+              ProgressView().controlSize(.mini)
+              Text("Deleting…")
+            } else if branch.isCurrent {
               Text("Current")
             } else if let divergence {
               Text(divergence)
@@ -327,6 +318,7 @@ struct BranchPopover: View {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
+    .disabled(isDeleting)
     .contextMenu {
       if !branch.isCurrent, !branch.isRemote {
         Button("Merge into \(current)") {
@@ -523,6 +515,133 @@ struct NewTagSheet: View {
           dismiss()
         }
         .disabled(!isValid)
+      }
+    }
+  }
+}
+
+extension View {
+  func branchDeletion(_ pending: Binding<Branch?>, session: RepositorySession) -> some View {
+    modifier(BranchDeletion(session: session, pending: pending))
+  }
+}
+
+private struct BranchDeletion: ViewModifier {
+  struct Everywhere: Identifiable {
+    let branch: Branch
+    let upstream: Branch
+    var id: String { branch.id }
+  }
+
+  let session: RepositorySession
+  @Binding var pending: Branch?
+  @State private var everywhere: Everywhere?
+
+  func body(content: Content) -> some View {
+    content
+      .confirmationDialog(
+        "Delete \(pending?.name ?? "")?",
+        isPresented: .init(get: { pending != nil }, set: { if !$0 { pending = nil } }),
+        titleVisibility: .visible, presenting: pending
+      ) { branch in
+        Button("Delete", role: .destructive) { Task { await session.deleteBranch(branch) } }
+        Button("Force Delete", role: .destructive) {
+          Task { await session.deleteBranch(branch, force: true) }
+        }
+        if let upstream = session.upstream(of: branch) {
+          Button("Delete Local and \(upstream.remoteName ?? "Remote")…", role: .destructive) {
+            everywhere = Everywhere(branch: branch, upstream: upstream)
+          }
+        }
+      } message: { branch in
+        if let upstream = session.upstream(of: branch) {
+          Text(
+            "Delete refuses a branch that isn't merged; Force Delete removes it anyway. "
+              + "Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name).")
+        } else {
+          Text("Delete refuses a branch that isn't merged; Force Delete removes it anyway.")
+        }
+      }
+      .sheet(item: $everywhere) { item in
+        DeleteEverywhereSheet(session: session, branch: item.branch, upstream: item.upstream)
+      }
+  }
+}
+
+private struct DeleteEverywhereSheet: View {
+  let session: RepositorySession
+  let branch: Branch
+  let upstream: Branch
+  @Environment(\.dismiss) private var dismiss
+  @State private var confirmation = ""
+
+  private var remote: String { upstream.remoteName ?? "the remote" }
+
+  private var isConfirmed: Bool {
+    confirmation.trimmingCharacters(in: .whitespaces) == branch.name
+  }
+
+  private var warnings: [String] {
+    func commits(_ count: Int, on name: String, notOn other: String) -> String {
+      count == 1
+        ? "1 commit on \(name) isn't on \(other)." : "\(count) commits on \(name) aren't on \(other)."
+    }
+    var warnings: [String] = []
+    if let ahead = branch.aheadOfHead, ahead > 0 {
+      warnings.append(commits(ahead, on: branch.name, notOn: session.currentBranch?.name ?? "HEAD"))
+    }
+    if branch.behind > 0 {
+      warnings.append(commits(branch.behind, on: upstream.name, notOn: branch.name))
+    }
+    return warnings
+  }
+
+  var body: some View {
+    Form {
+      Section {
+        LabeledContent("Local", value: branch.name)
+        LabeledContent("On \(remote)", value: upstream.name)
+      } footer: {
+        Text(
+          "\(upstream.name) is deleted for everyone who uses \(remote), and only if nobody pushed "
+            + "to it since you last fetched.")
+      }
+      if !warnings.isEmpty {
+        Section {
+          ForEach(warnings, id: \.self) { warning in
+            Label {
+              Text(warning)
+            } icon: {
+              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+            }
+          }
+        }
+      }
+      Section {
+        TextField("Branch name", text: $confirmation, prompt: Text(branch.name))
+          .labelsHidden()
+      } header: {
+        HStack(spacing: 0) {
+          Text("Type ")
+          Text(branch.name)
+          Text(" to confirm")
+        }
+        .textSelection(.enabled)
+      }
+    }
+    .formStyle(.grouped)
+    .frame(width: 440)
+    .navigationTitle("Delete Local and \(remote)")
+    .toolbar {
+      ToolbarItem(placement: .cancellationAction) {
+        Button("Cancel") { dismiss() }
+      }
+      ToolbarItem(placement: .confirmationAction) {
+        Button("Delete", role: .destructive) {
+          Task { await session.deleteBranch(branch, andUpstream: upstream) }
+          dismiss()
+        }
+        .disabled(!isConfirmed)
       }
     }
   }

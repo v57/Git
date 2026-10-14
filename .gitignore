@@ -35,3 +35,6 @@ AGENTS.md
 .claude/
 .codex/
 KANBAN*.md
+
+# Manual tests
+tmp
