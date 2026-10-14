@@ -8,17 +8,18 @@ struct ChangesScreen: View {
   @Bindable var state: RepositoryViewState
 
   var body: some View {
-    HStack(spacing: 0) {
+    ResizableSplit(
+      "ChangesListWidth", pane: .leading, width: 360, range: 280...640, mainMinWidth: 360
+    ) {
+      ChangeDetailView(session: session, state: state)
+        .frame(maxHeight: .infinity)
+    } pane: {
       VStack(spacing: 0) {
         ChangeList(session: session, state: state)
           .frame(maxHeight: .infinity)
         Divider()
         CommitComposer(session: session, state: state)
       }
-      .frame(width: 360)
-      Divider()
-      ChangeDetailView(session: session, state: state)
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
   }
 }

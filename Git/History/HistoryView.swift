@@ -8,17 +8,17 @@ struct HistoryScreen: View {
   @Bindable var state: RepositoryViewState
 
   var body: some View {
-    HStack(spacing: 0) {
+    ResizableSplit(
+      "HistoryInspectorWidth", pane: .trailing, width: 424, range: 340...720, mainMinWidth: 520
+    ) {
       VStack(spacing: 0) {
         filterBar
         CommitColumnsHeader(graphWidth: graphWidth)
         Divider()
         CommitTable(session: session, state: state, graphWidth: graphWidth)
       }
-      .frame(minWidth: 520, maxWidth: .infinity)
-      Divider()
+    } pane: {
       CommitInspector(session: session, state: state)
-        .frame(width: 424)
     }
   }
 
