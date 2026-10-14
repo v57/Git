@@ -9,6 +9,7 @@ struct ContentView: View {
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.modelContext) private var context
   @Environment(\.openWindow) private var openWindow
+  @Environment(\.dismissWindow) private var dismissWindow
   @SceneStorage("selectedRepository") private var selectedPath: String?
 
   var body: some View {
@@ -61,9 +62,27 @@ struct ContentView: View {
     .task(id: selectedPath) {
       await library.activate(selectedPath, context: context)
       #if DEBUG
-        if let path = selectedPath { applyLaunchArguments(library.viewState(for: path), session: library.session(for: path)) }
+        // A screenshot scene's repository: its screen from the arguments, then the picture.
+        let scene = LaunchScene.shared
+        if let path = selectedPath, scene.includes(path) {
+          await applyLaunchArguments(library.viewState(for: path), session: library.session(for: path))
+          scene.loaded(welcome: false)
+        }
       #endif
     }
+    #if DEBUG
+      .task { LaunchScene.shared.prepare(library: library, context: context) }
+      // The next screenshot scene: its repositories are added again (SidebarView), and it may want the Welcome
+      // window instead.
+      .onChange(of: LaunchScene.shared.generation) {
+        selectedPath = nil
+        if LaunchScene.shared.flag("--welcome") {
+          openWindow(id: WelcomeWindow.id)
+        } else {
+          dismissWindow(id: WelcomeWindow.id)
+        }
+      }
+    #endif
     .onChange(of: scenePhase) { _, phase in
       guard phase == .active else { return }
       Task {
@@ -76,28 +95,29 @@ struct ContentView: View {
 
 #if DEBUG
   /// `--mode history|changes|stashes`, `--select-change <path>`, `--select-commit <index>`,
-  /// `--all-branches` and `--show-publish` set the first repository's view state at launch, for
-  /// screenshots.
+  /// `--all-branches` and `--show-publish` set the first repository's view state at launch (or a later
+  /// screenshot scene's), for screenshots. Returns once the history they ask for has loaded.
   @MainActor private func applyLaunchArguments(
     _ state: RepositoryViewState, session: RepositorySession
-  ) {
-    let arguments = ProcessInfo.processInfo.arguments
-    func value(_ name: String) -> String? {
-      arguments.firstIndex(of: name).flatMap { $0 + 1 < arguments.count ? arguments[$0 + 1] : nil }
-    }
-    if let mode = value("--mode").flatMap(RepositoryMode.init(rawValue:)) { state.mode = mode }
-    if let path = value("--select-change"), let status = session.status {
+  ) async {
+    let scene = LaunchScene.shared
+    if let mode = scene.value("--mode").flatMap(RepositoryMode.init(rawValue:)) { state.mode = mode }
+    if let path = scene.value("--select-change"), let status = session.status {
       if let change = (status.staged + status.unstaged).first(where: { $0.path == path }) {
         state.selectedChanges = [change.id]
       }
       if status.conflicted.contains(where: { $0.path == path }) { state.selectedConflict = path }
     }
-    if arguments.contains("--show-publish") { state.isPublishPresented = true }
-    if arguments.contains("--all-branches") {
-      session.logQuery = LogQuery(allBranches: true)
-    }
-    if let index = value("--select-commit").flatMap(Int.init), index < session.commits.count {
+    if scene.flag("--show-publish") { state.isPublishPresented = true }
+    // The index counts HEAD's history, loaded by `activate`.
+    if let index = scene.value("--select-commit").flatMap(Int.init), index < session.commits.count {
       state.selectedCommit = session.commits[index].id
+    }
+    if scene.flag("--all-branches") {
+      session.logQuery = LogQuery(allBranches: true)
+      // The query reloads the history in a task of its own.
+      try? await Task.sleep(for: .milliseconds(50))
+      for _ in 0..<100 where session.isLoadingCommits { try? await Task.sleep(for: .milliseconds(50)) }
     }
   }
 #endif

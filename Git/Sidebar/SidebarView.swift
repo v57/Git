@@ -96,11 +96,10 @@ struct SidebarView: View {
       let shown = repositories.filter { !$0.isHidden }.map(\.path)
       library.watchSummaries(of: shown)
       #if DEBUG
-        // --add-folder <path> (repeatable) imports folders at launch, for testing.
-        let arguments = ProcessInfo.processInfo.arguments
-        let folders = arguments.indices.dropLast().filter { arguments[$0] == "--add-folder" }
-          .map { URL(fileURLWithPath: arguments[$0 + 1]) }
-        if !folders.isEmpty, repositories.isEmpty { importFolders(folders) }
+        // --add-folder <path> (repeatable) imports folders at launch (or a screenshot scene's), for testing.
+        // With --welcome the Welcome window adds them.
+        let scene = LaunchScene.shared
+        if !scene.folders.isEmpty, repositories.isEmpty, !scene.flag("--welcome") { importFolders(scene.folders) }
       #endif
       await library.refreshSummaries(shown)
     }

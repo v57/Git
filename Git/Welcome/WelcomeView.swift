@@ -51,19 +51,37 @@ struct WelcomeWindow: View {
     .onChange(of: library.requestedSelection) { _, path in
       if path != nil { showMainWindow() }
     }
-    .task {
+    .task(id: sceneGeneration) {
       library.vaultProjects.start(context: context, library: library)
       #if DEBUG
         // --add-folder works here too, so the Recent list can be filled for screenshots.
-        let arguments = ProcessInfo.processInfo.arguments
-        let folders = arguments.indices.dropLast().filter { arguments[$0] == "--add-folder" }
-          .map { URL(fileURLWithPath: arguments[$0 + 1]) }
-        if !folders.isEmpty, repositories.isEmpty {
-          await library.importFolders(folders, into: context)
+        let scene = LaunchScene.shared
+        scene.prepare(library: library, context: context)
+        // A later screenshot scene in the main window, which adds its repositories.
+        if !scene.flag("--welcome"), sceneGeneration > 0 {
+          showMainWindow()
+          return
+        }
+        let saved = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
+        if !scene.folders.isEmpty, saved.isEmpty {
+          await library.importFolders(scene.folders, into: context)
         }
       #endif
-      await library.refreshSummaries(repositories.map(\.path))
+      let paths = ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).map(\.path)
+      await library.refreshSummaries(paths)
+      #if DEBUG
+        LaunchScene.shared.loaded(welcome: true)
+      #endif
     }
+  }
+
+  /// Sets the window up again for each screenshot scene opened in place.
+  private var sceneGeneration: Int {
+    #if DEBUG
+      LaunchScene.shared.generation
+    #else
+      0
+    #endif
   }
 
   // MARK: Left

@@ -12,6 +12,7 @@
 		A10000000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* GitHubKit */; };
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 		D39EDACC65EAD1D9FA7BB391 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 562DD26DC24C46D32E895A4E /* VaultKit */; };
+		DE5C2EE10000000000000001 /* DevScreenshots in Frameworks */ = {isa = PBXBuildFile; productRef = DE5C2EE10000000000000002 /* DevScreenshots */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
@@ -35,6 +36,7 @@
 				A10000000000000000000003 /* GitHubKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 				D39EDACC65EAD1D9FA7BB391 /* VaultKit in Frameworks */,
+				DE5C2EE10000000000000001 /* DevScreenshots in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -79,6 +81,7 @@
 				A10000000000000000000013 /* GitHubKit */,
 				D5C0DE000000000000000002 /* UpdateKit */,
 				562DD26DC24C46D32E895A4E /* VaultKit */,
+				DE5C2EE10000000000000002 /* DevScreenshots */,
 			);
 			productName = Git;
 			productReference = 000000000000000000000120 /* Git.app */;
@@ -113,6 +116,7 @@
 				A10000000000000000000022 /* XCRemoteSwiftPackageReference "Code" */,
 				D5C0DE000000000000000001 /* XCRemoteSwiftPackageReference "UpdateKit" */,
 				2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */,
+				DE5C2EE10000000000000003 /* XCRemoteSwiftPackageReference "Dev" */,
 			);
 			preferredProjectObjectVersion = 90;
 			productRefGroup = 000000000000000000000020 /* Products */;
@@ -392,6 +396,14 @@
 				kind = branch;
 			};
 		};
+		DE5C2EE10000000000000003 /* XCRemoteSwiftPackageReference "Dev" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/v57/Dev.git";
+			requirement = {
+				branch = main;
+				kind = branch;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -419,6 +431,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */;
 			productName = VaultKit;
+		};
+		DE5C2EE10000000000000002 /* DevScreenshots */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = DE5C2EE10000000000000003 /* XCRemoteSwiftPackageReference "Dev" */;
+			productName = DevScreenshots;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

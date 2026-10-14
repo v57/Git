@@ -185,10 +185,10 @@ private struct MergeMenu: View {
   }
 }
 
-/// Debug builds open a popover at launch with `--show-branches`, for screenshots.
+/// Debug builds open a popover at launch (or in a screenshot scene) with `--show-branches`, for screenshots.
 private func launchArgument(_ name: String) -> Bool {
   #if DEBUG
-    ProcessInfo.processInfo.arguments.contains(name)
+    LaunchScene.shared.flag(name)
   #else
     false
   #endif
