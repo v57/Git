@@ -9,7 +9,7 @@ public final class RepositorySession {
   public enum Activity: Sendable, Hashable {
     case staging, discarding, committing, fetching, pulling, pushing, switchingBranch, stashing,
       continuing, aborting, reverting, resetting, tagging, merging, resolving, checkingOut,
-      cherryPicking, squashing
+      cherryPicking, squashing, deletingBranch
 
     public var title: String {
       switch self {
@@ -31,6 +31,7 @@ public final class RepositorySession {
       case .checkingOut: "Checking out…"
       case .cherryPicking: "Cherry-picking…"
       case .squashing: "Squashing…"
+      case .deletingBranch: "Deleting branch…"
       }
     }
   }
@@ -56,6 +57,7 @@ public final class RepositorySession {
   /// Commits on HEAD that aren't pushed (to the upstream, or to any remote without one).
   public private(set) var unpushed: Set<String> = []
   public private(set) var lastFetched: Date?
+  public private(set) var deletingBranches: Set<Branch.ID> = []
   public private(set) var commits: [Commit] = []
   /// The branch graph, one row per commit, when the history isn't filtered.
   public private(set) var graph: [GraphRow] = []
@@ -102,6 +104,10 @@ public final class RepositorySession {
   /// The branch checked out in another worktree, if any.
   public func worktree(for branch: Branch) -> Worktree? {
     worktrees.first { $0.branch == branch.name && !$0.isCurrent }
+  }
+  public func upstream(of branch: Branch) -> Branch? {
+    guard let upstream = branch.upstream, !branch.isUpstreamGone else { return nil }
+    return remoteBranches.first { $0.name == upstream }
   }
   public var isBusy: Bool { activity != nil }
 
@@ -378,6 +384,16 @@ public final class RepositorySession {
   public func deleteBranch(_ branch: Branch, force: Bool = false) async {
     await perform(.switchingBranch, failureTitle: "Couldn't delete \(branch.name)") {
       try await $0.deleteBranch(branch.name, force: force)
+    }
+  }
+
+  public func deleteBranch(_ branch: Branch, andUpstream upstream: Branch) async {
+    let progress = progressHandler()
+    deletingBranches.insert(branch.id)
+    defer { deletingBranches.remove(branch.id) }
+    await perform(.deletingBranch, failureTitle: "Couldn't delete \(branch.name)") {
+      try await $0.deleteRemoteBranch(upstream, progress: progress)
+      try await $0.deleteBranch(branch.name, force: true)
     }
   }
 

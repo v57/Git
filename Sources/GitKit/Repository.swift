@@ -724,6 +724,24 @@ extension Repository {
     try await git(arguments, environment: GitCredentials.environment(), progress: progress)
   }
 
+  public func deleteRemoteBranch(_ branch: Branch, progress: (@Sendable (String) -> Void)? = nil)
+    async throws
+  {
+    guard let remote = branch.remoteName else {
+      throw GitError(message: "\(branch.name) isn't a remote branch.")
+    }
+    let ref = "refs/heads/\(branch.localName)"
+    do {
+      try await git(
+        ["push", "--progress", "--force-with-lease=\(ref):\(branch.sha)", remote, "--delete", ref],
+        progress: progress)
+    } catch let error as GitError where error.message.contains("(stale info)") {
+      throw GitError(
+        arguments: error.arguments, exitCode: error.exitCode,
+        message: "\(branch.name) has commits you haven't fetched. Fetch, look at them, and try again.")
+    }
+  }
+
   private func pushRemote(for branch: String) async throws -> String {
     for key in ["branch.\(branch).pushRemote", "remote.pushDefault", "branch.\(branch).remote"] {
       let value = try await git(["config", "--get", key], allowedExitCodes: [0, 1]).output

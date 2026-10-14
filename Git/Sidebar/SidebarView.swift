@@ -209,20 +209,7 @@ private struct RepositorySections: View {
     .sheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) { start in
       NewBranchSheet(session: session, startPoint: start.value)
     }
-    .confirmationDialog(
-      "Delete \(pendingDelete?.name ?? "")?",
-      isPresented: .init(get: { pendingDelete != nil }, set: { if !$0 { pendingDelete = nil } }),
-      titleVisibility: .visible
-    ) {
-      Button("Delete", role: .destructive) {
-        if let branch = pendingDelete { Task { await session.deleteBranch(branch) } }
-      }
-      Button("Force Delete", role: .destructive) {
-        if let branch = pendingDelete { Task { await session.deleteBranch(branch, force: true) } }
-      }
-    } message: {
-      Text("Delete refuses a branch that isn't merged; Force Delete removes it anyway.")
-    }
+    .branchDeletion($pendingDelete, session: session)
   }
 
   private var workspace: some View {
@@ -260,6 +247,7 @@ private struct RepositorySections: View {
   private func branchRow(_ branch: Branch) -> some View {
     let status = session.status
     let isMerged = !branch.isCurrent && branch.aheadOfHead == 0 && (branch.behindHead ?? 0) > 0
+    let isDeleting = session.deletingBranches.contains(branch.id)
     return SidebarRow(
       title: branch.name, systemImage: SidebarRow<EmptyView>.branchGlyph, isBold: branch.isCurrent
     ) {
@@ -282,6 +270,12 @@ private struct RepositorySections: View {
               .accessibilityLabel("Checked out")
               .transition(.scale.combined(with: .opacity))
           }
+        } else if isDeleting {
+          HStack(spacing: 4) {
+            ProgressView().controlSize(.mini)
+            Text("deleting…")
+          }
+          .foregroundStyle(.secondary)
         } else if isMerged {
           Text("merged").foregroundStyle(.secondary)
         } else if branch.ahead > 0 || branch.behind > 0 {
@@ -295,7 +289,7 @@ private struct RepositorySections: View {
       .font(.system(size: 11, weight: .medium).monospacedDigit())
       .fixedSize()
       .contentTransition(.numericText())
-      .animation(.app, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0])
+      .animation(.app, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0, isDeleting ? 1 : 0])
     } action: {
       if let worktree = session.worktree(for: branch) {
         library.open(worktree.url, into: context)
@@ -303,6 +297,7 @@ private struct RepositorySections: View {
         Task { await session.switchTo(branch) }
       }
     }
+    .disabled(isDeleting)
     .help(branch.isCurrent ? "Checked out" : "Switch to \(branch.name)")
     .contextMenu {
       if !branch.isCurrent {
