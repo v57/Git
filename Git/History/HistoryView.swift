@@ -345,10 +345,8 @@ private struct CommitRow: View {
           }
         }
         .frame(width: graphWidth, height: 44, alignment: .leading)
-        HStack(spacing: 6) {
-          ForEach(commit.refs.prefix(3), id: \.self) { ref in
-            RefPill(ref: ref)
-          }
+        RefsAndSubject {
+          RefPills(refs: commit.refs)
           Text(commit.subject)
             .fontWeight(isSelected ? .semibold : .regular)
             .lineLimit(1)
@@ -386,6 +384,55 @@ private struct CommitRow: View {
     .onHover { isHovered = $0 }
     .accessibilityAddTraits(isSelected ? .isSelected : [])
     .help(commit.message)
+  }
+}
+
+/// A row's refs, then its subject. The refs get the width the subject leaves them (it keeps
+/// `subjectMinWidth`, or less when it's shorter), so many refs never widen the row past its column.
+private struct RefsAndSubject: Layout {
+  var spacing: CGFloat = 6
+  var subjectMinWidth: CGFloat = 120
+
+  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+    let widths = widths(in: proposal.width, subviews)
+    let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
+    return CGSize(width: proposal.width ?? widths.total(spacing), height: height)
+  }
+
+  func placeSubviews(
+    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
+  ) {
+    let widths = widths(in: bounds.width, subviews)
+    var x = bounds.minX
+    if subviews.count > 1 {
+      subviews[0].place(
+        at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+        proposal: ProposedViewSize(width: widths.refs, height: nil))
+      if widths.refs > 0 { x += widths.refs + spacing }
+    }
+    subviews.last?.place(
+      at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
+      proposal: ProposedViewSize(width: widths.subject, height: nil))
+  }
+
+  private struct Widths {
+    var refs: CGFloat
+    var subject: CGFloat
+
+    func total(_ spacing: CGFloat) -> CGFloat { refs + (refs > 0 ? spacing : 0) + subject }
+  }
+
+  /// The last subview is the subject; the first, when there are two, the refs.
+  private func widths(in width: CGFloat?, _ subviews: Subviews) -> Widths {
+    guard let subject = subviews.last else { return Widths(refs: 0, subject: 0) }
+    let ideal = subject.sizeThatFits(.unspecified).width
+    guard subviews.count > 1 else { return Widths(refs: 0, subject: min(ideal, width ?? ideal)) }
+    guard let width else {
+      return Widths(refs: subviews[0].sizeThatFits(.unspecified).width, subject: ideal)
+    }
+    let budget = max(width - spacing - min(ideal, subjectMinWidth), 0)
+    let refs = subviews[0].sizeThatFits(ProposedViewSize(width: budget, height: nil)).width
+    return Widths(refs: refs, subject: max(width - refs - (refs > 0 ? spacing : 0), 0))
   }
 }
 

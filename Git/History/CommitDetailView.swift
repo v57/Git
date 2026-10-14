@@ -80,9 +80,15 @@ private struct CommitDetail: View {
   private var header: some View {
     VStack(alignment: .leading, spacing: 12) {
       if !commit.refs.isEmpty {
-        HStack(spacing: 6) {
-          ForEach(commit.refs.prefix(4), id: \.self) { ref in RefPill(ref: ref, height: 20) }
+        // Scrolls sideways when the refs are wider than the inspector, running to its edges.
+        ScrollView(.horizontal) {
+          HStack(spacing: 6) {
+            ForEach(commit.refs, id: \.self) { ref in RefPill(ref: ref, height: 20) }
+          }
+          .padding(.horizontal, 24)
         }
+        .scrollIndicators(.never)
+        .padding(.horizontal, -24)
       }
       Text(commit.subject)
         .font(.system(size: 18, weight: .semibold))

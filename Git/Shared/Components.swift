@@ -162,6 +162,8 @@ struct LineCountText: View {
 struct RefPill: View {
   let ref: RefLabel
   var height: CGFloat = 18
+  /// Shortens the name to the offered width instead of always showing all of it.
+  var truncates = false
 
   var body: some View {
     Text(title)
@@ -174,7 +176,7 @@ struct RefPill: View {
       .overlay {
         if ref.kind == .remoteBranch { Capsule().strokeBorder(.separator) }
       }
-      .fixedSize()
+      .fixedSize(horizontal: !truncates, vertical: true)
       .help(ref.name)
   }
 
@@ -194,6 +196,59 @@ struct RefPill: View {
     case .remoteBranch: .clear
     case .tag, .other: Color.primary.opacity(0.08)
     }
+  }
+}
+
+/// A commit's refs in the width they're offered: the ones that don't fit collapse into a “+N”
+/// pill. When not even the first fits, it's shortened while `minShortenedWidth` of it fits, so the
+/// row still names one ref; with less room only the count is left.
+struct RefPills: View {
+  let refs: [RefLabel]
+  var height: CGFloat = 18
+  var minShortenedWidth: CGFloat = 72
+
+  var body: some View {
+    if let first = refs.first {
+      ViewThatFits(in: .horizontal) {
+        ForEach(Array(stride(from: refs.count, through: 1, by: -1)), id: \.self) { shown in
+          HStack(spacing: 6) {
+            ForEach(refs.prefix(shown), id: \.self) { ref in RefPill(ref: ref, height: height) }
+            more(after: shown)
+          }
+        }
+        // ViewThatFits measures ideal widths, so the shortened pill offers its minimum as one.
+        HStack(spacing: 6) {
+          RefPill(ref: first, height: height, truncates: true)
+            .frame(idealWidth: minShortenedWidth)
+          more(after: 1)
+        }
+        more(after: 0)
+      }
+    }
+  }
+
+  @ViewBuilder
+  private func more(after shown: Int) -> some View {
+    if shown < refs.count {
+      MoreRefsPill(refs: Array(refs.dropFirst(shown)), height: height)
+    }
+  }
+}
+
+/// The refs a row has no room for, as a count; the tooltip names them.
+private struct MoreRefsPill: View {
+  let refs: [RefLabel]
+  let height: CGFloat
+
+  var body: some View {
+    Text("+\(refs.count)")
+      .font(.system(size: 11, weight: .semibold))
+      .padding(.horizontal, 7)
+      .frame(height: height)
+      .background(Color.primary.opacity(0.08), in: .capsule)
+      .fixedSize()
+      .help(refs.map(\.name).joined(separator: "\n"))
+      .accessibilityLabel("\(refs.count) more: \(refs.map(\.name).joined(separator: ", "))")
   }
 }
 
