@@ -448,9 +448,16 @@ struct NewBranchSheet: View {
   @State private var checkout = true
   @State private var isValid = false
 
+  private let suggestedName = "feature/my-change"
+
   var body: some View {
     Form {
-      TextField("Name", text: $name, prompt: Text("feature/my-change"))
+      TextField("Name", text: $name, prompt: Text(suggestedName))
+        .onKeyPress(.tab) {
+          guard name.isEmpty else { return .ignored }
+          name = suggestedName
+          return .handled
+        }
       LabeledContent(
         "From", value: startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")
       Toggle("Switch to the new branch", isOn: $checkout)

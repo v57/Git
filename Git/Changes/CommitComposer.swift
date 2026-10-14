@@ -11,8 +11,16 @@ struct CommitComposer: View {
   private enum Field { case summary, details }
 
   private var stagedCount: Int { session.status?.staged.count ?? 0 }
+  private var suggestedSummary: String? {
+    guard let staged = session.status?.staged, staged.count == 1 else { return nil }
+    return "Updated \(staged[0].fileName)"
+  }
+  private var commitSummary: String {
+    let summary = state.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    return summary.isEmpty ? suggestedSummary ?? "" : summary
+  }
   private var canCommit: Bool {
-    !state.summary.trimmingCharacters(in: .whitespaces).isEmpty
+    !commitSummary.isEmpty
       && (stagedCount > 0 || state.amend) && !session.isBusy
       && session.status?.conflicted.isEmpty != false
   }
@@ -21,11 +29,16 @@ struct CommitComposer: View {
     VStack(alignment: .leading, spacing: 10) {
       VStack(spacing: 0) {
         HStack(spacing: 8) {
-          TextField("Summary (required)", text: $state.summary)
+          TextField(suggestedSummary ?? "Summary (required)", text: $state.summary)
             .textFieldStyle(.plain)
             .fontWeight(.semibold)
             .focused($focusedField, equals: .summary)
             .onSubmit { focusedField = .details }
+            .onKeyPress(.tab) {
+              guard state.summary.isEmpty, let suggestedSummary else { return .ignored }
+              state.summary = suggestedSummary
+              return .handled
+            }
           if !state.summary.isEmpty {
             // Logs and tools cut summaries longer than about 50 characters.
             Text("\(state.summary.count)/50")
@@ -118,7 +131,7 @@ struct CommitComposer: View {
 
   private func commit(push: Bool) async {
     guard canCommit else { return }
-    let summary = state.summary.trimmingCharacters(in: .whitespacesAndNewlines)
+    let summary = commitSummary
     let details = state.details.trimmingCharacters(in: .whitespacesAndNewlines)
     let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
     let branch = session.status?.branch ?? "HEAD"
