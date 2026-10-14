@@ -21,7 +21,8 @@ struct ContentView: View {
         ZStack {
           RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
             .id(path)
-            .transition(.page)
+            // No rise: moving the whole screen makes the toolbar's glass border blink.
+            .transition(.opacity)
         }
         .animation(.app, value: path)
       } else {
