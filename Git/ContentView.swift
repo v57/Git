@@ -51,6 +51,12 @@ struct ContentView: View {
       Task { await library.createRepository(into: context) }
     }
     .task { library.vaultProjects.start(context: context, library: library) }
+    // A folder opened in Git (Shell's Open With, `open -a Git <folder>`): added if needed, then shown.
+    .onOpenURL { url in
+      guard url.isFileURL else { return }
+      library.open(url, into: context)
+    }
+    .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
     .task(id: selectedPath) {
       await library.activate(selectedPath, context: context)
       #if DEBUG
