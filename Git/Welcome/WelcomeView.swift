@@ -52,6 +52,7 @@ struct WelcomeWindow: View {
       if path != nil { showMainWindow() }
     }
     .task {
+      library.vaultProjects.start(context: context, library: library)
       #if DEBUG
         // --add-folder works here too, so the Recent list can be filled for screenshots.
         let arguments = ProcessInfo.processInfo.arguments

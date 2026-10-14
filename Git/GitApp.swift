@@ -3,6 +3,7 @@ import GitKit
 import SwiftData
 import SwiftUI
 import UpdateKit
+import VaultKit
 
 @main
 struct GitApp: App {
@@ -16,6 +17,13 @@ struct GitApp: App {
 
   init() {
     updater.start()
+    #if DEBUG
+      let syncs = !ProcessInfo.processInfo.arguments.contains("--in-memory")
+    #else
+      let syncs = true
+    #endif
+    // The repository list syncs with the other v57 apps and devices through the vault.
+    if syncs { Vault.shared.startSync() }
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
       // --light draws the app in light mode, for screenshots.

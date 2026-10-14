@@ -50,6 +50,7 @@ struct ContentView: View {
       library.isCreateRequested = false
       Task { await library.createRepository(into: context) }
     }
+    .task { library.vaultProjects.start(context: context, library: library) }
     .task(id: selectedPath) {
       await library.activate(selectedPath, context: context)
       #if DEBUG

@@ -3,14 +3,15 @@ import GitHubKit
 import GitKit
 
 extension GitHubAccount {
-  /// The app's account. Its token lives in the app's own keychain item. With access to private
-  /// repositories, git uses it for github.com over HTTPS instead of gh or osxkeychain; a token
-  /// limited to public repositories can't push to private ones, so git keeps the user's own
-  /// credentials then.
+  /// The app's account. Its token is the v57 apps' shared sign-in (`KeychainTokenStore.shared`, in
+  /// the shared keychain group and iCloud Keychain), so Markdown and Dev are signed in too. With
+  /// access to private repositories, git uses it for github.com over HTTPS instead of gh or
+  /// osxkeychain; a token limited to public repositories can't push to private ones, so git keeps
+  /// the user's own credentials then.
   static let app: GitHubAccount = {
     let account = GitHubAccount(
       // The "Git" OAuth App (github.com/settings/applications/3928259), with device flow on.
-      clientID: "Ov23liDnMAUwLO9o0eyX", store: KeychainTokenStore(service: "Git: GitHub account"))
+      clientID: "Ov23liDnMAUwLO9o0eyX", store: KeychainTokenStore.shared)
     account.onCredentialChange = { credential in
       let forGit = credential.flatMap { $0.permissions.repositories == .all ? $0 : nil }
       GitCredentials.set(
@@ -20,9 +21,17 @@ extension GitHubAccount {
       // Screenshots and test launches don't touch the keychain.
       if ProcessInfo.processInfo.arguments.contains("--in-memory") { return account }
     #endif
+    moveLegacyToken()
     account.restore()
     return account
   }()
+
+  /// Moves a token saved by builds before the shared sign-in into it.
+  private static func moveLegacyToken() {
+    let legacy = KeychainTokenStore(service: "Git: GitHub account")
+    guard (try? KeychainTokenStore.shared.load()) == nil, let credential = try? legacy.load() else { return }
+    if (try? KeychainTokenStore.shared.save(credential)) != nil { try? legacy.delete() }
+  }
 
   /// Starts the device flow, then copies the code and opens github.com's page to enter it.
   func signInInBrowser(requesting permissions: GitHubPermissions) {

@@ -87,6 +87,9 @@ struct CompletedOperation: Equatable {
   /// The repositories a sidebar fetch, pull or push failed in.
   var remoteFailure: RemoteFailure?
 
+  /// Shares the repository list with the other v57 apps through the vault.
+  @ObservationIgnored let vaultProjects = VaultProjects()
+
   private weak var activeSession: RepositorySession?
   /// The repository on screen.
   var openSession: RepositorySession? { activeSession }
@@ -116,6 +119,12 @@ struct CompletedOperation: Equatable {
         FetchDescriptor<SavedRepository>(predicate: #Predicate { $0.path == path }))
       saved?.first?.lastOpenedAt = .now
       try? context.save()
+    }
+    // The remote may have changed since the repository was published.
+    if let path, let context,
+      let saved = try? context.fetch(FetchDescriptor<SavedRepository>(predicate: #Predicate { $0.path == path })).first
+    {
+      Task { await vaultProjects.publish([saved], context: context) }
     }
     let session = path.map(session(for:))
     if activeSession !== session {
@@ -223,6 +232,7 @@ struct CompletedOperation: Equatable {
     }
     arrange(added + regrouped, new: Set(added.map(\.path)), context: context)
     try? context.save()
+    await vaultProjects.publish(added, context: context)
 
     let foundCount = found.values.reduce(0) { $0 + $1.count }
     if foundCount == 0 {
@@ -252,7 +262,22 @@ struct CompletedOperation: Equatable {
     }
     try? context.save()
     requestedSelection = path
-    Task { await refreshSummaries([path]) }
+    Task {
+      await vaultProjects.publish([saved], context: context)
+      await refreshSummaries([path])
+    }
+  }
+
+  /// Adds repositories another app put in the vault, without selecting them.
+  func adopt(_ paths: [String], into context: ModelContext) {
+    let added = paths.map { path in
+      let saved = SavedRepository(path: path, group: (path as NSString).deletingLastPathComponent)
+      context.insert(saved)
+      return saved
+    }
+    arrange(added, new: Set(paths), context: context)
+    try? context.save()
+    Task { await refreshSummaries(paths) }
   }
 
   /// Asks where to create a repository, runs `git init` there and adds it.
@@ -273,6 +298,7 @@ struct CompletedOperation: Equatable {
   }
 
   func remove(_ repositories: [SavedRepository], from context: ModelContext) {
+    vaultProjects.unpublish(repositories.map(\.path))
     for repository in repositories {
       sessions[repository.path]?.deactivate()
       sessions[repository.path] = nil

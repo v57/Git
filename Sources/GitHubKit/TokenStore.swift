@@ -8,17 +8,28 @@ public protocol TokenStore: Sendable {
   func delete() throws
 }
 
-/// One generic-password item in the login keychain, named after `service`.
+/// One generic-password item, named after `service`.
 ///
-/// The item is created by the app, so its access list trusts only the app's code signature:
-/// other processes get a macOS prompt instead of the token, unlike `gh auth token` or
-/// `git credential fill`, which hand theirs to any process that asks.
+/// Without an access group the item is in the login keychain and its access list trusts only the
+/// app's code signature: other processes get a macOS prompt instead of the token, unlike
+/// `gh auth token` or `git credential fill`, which hand theirs to any process that asks.
+///
+/// With an access group (`AUCR797TMH.dev.v57.shared`) the item is in the data-protection keychain,
+/// readable by every app signed by the team that lists the group, and synced through iCloud
+/// Keychain: one sign-in serves Git, Markdown and Dev on all the user's devices. A build that
+/// isn't entitled to the group (ad-hoc signed) keeps its own item instead.
 public struct KeychainTokenStore: TokenStore {
   public let service: String
+  public let accessGroup: String?
 
-  public init(service: String) {
+  public init(service: String, accessGroup: String? = nil) {
     self.service = service
+    self.accessGroup = accessGroup
   }
+
+  /// The v57 apps' shared GitHub sign-in.
+  public static let shared = KeychainTokenStore(
+    service: "dev.v57.github", accessGroup: "AUCR797TMH.dev.v57.shared")
 
   public func load() throws -> GitHubCredential? {
     var query = baseQuery
@@ -43,6 +54,7 @@ public struct KeychainTokenStore: TokenStore {
     item[kSecAttrLabel] = "\(service) (\(credential.login))"
     item[kSecAttrComment] = credential.scopes.sorted().joined(separator: " ")
     item[kSecValueData] = Data(credential.token.utf8)
+    if item[kSecAttrSynchronizable] != nil { item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock }
     try check(SecItemAdd(item as CFDictionary, nil))
   }
 
@@ -52,7 +64,22 @@ public struct KeychainTokenStore: TokenStore {
   }
 
   private var baseQuery: [CFString: Any] {
-    [kSecClass: kSecClassGenericPassword, kSecAttrService: service]
+    var query: [CFString: Any] = [kSecClass: kSecClassGenericPassword, kSecAttrService: service]
+    if let accessGroup, Self.isEntitled(to: accessGroup) {
+      query[kSecUseDataProtectionKeychain] = true
+      query[kSecAttrAccessGroup] = accessGroup
+      query[kSecAttrSynchronizable] = true
+    }
+    return query
+  }
+
+  /// Whether the app may use the group (a probe answers errSecMissingEntitlement otherwise).
+  private static func isEntitled(to group: String) -> Bool {
+    let query: [CFString: Any] = [
+      kSecClass: kSecClassGenericPassword, kSecAttrService: "dev.v57.github.probe",
+      kSecUseDataProtectionKeychain: true, kSecAttrAccessGroup: group,
+    ]
+    return SecItemCopyMatching(query as CFDictionary, nil) != errSecMissingEntitlement
   }
 
   private func check(_ status: OSStatus) throws {
