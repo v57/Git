@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -232,7 +233,7 @@ private struct RepositorySections: View {
             EmptyView()
           }
         } action: {
-          withAnimation(.app) {
+          withAnimation(.kit) {
             state.mode = mode
             // Changes again leaves the "Merge complete" screen.
             if mode == .changes { state.completedOperation = nil }
@@ -288,7 +289,7 @@ private struct RepositorySections: View {
       .font(.system(size: 11, weight: .medium).monospacedDigit())
       .fixedSize()
       .contentTransition(.numericText())
-      .animation(.app, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0, isDeleting ? 1 : 0])
+      .animation(.kit, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0, isDeleting ? 1 : 0])
     } action: {
       if let worktree = session.worktree(for: branch) {
         library.open(worktree.url, into: context)
@@ -390,8 +391,8 @@ struct SidebarRow<Trailing: View>: View {
         in: .rect(cornerRadius: 7, style: .continuous)
       )
       .contentShape(.rect(cornerRadius: 7, style: .continuous))
-      .animation(.app, value: isSelected)
-      .animation(.app, value: isHovered)
+      .animation(.kit, value: isSelected)
+      .animation(.kit, value: isHovered)
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
@@ -435,7 +436,7 @@ struct StatusMarks: View {
       }
     }
     .font(.system(size: 11, weight: .semibold).monospacedDigit())
-    .animation(.app, value: summary)
+    .animation(.kit, value: summary)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Self.description(summary))
   }

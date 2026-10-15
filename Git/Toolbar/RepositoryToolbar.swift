@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -97,8 +98,8 @@ private struct SyncButtons: View {
         }
       }
       .fontWeight(ahead > 0 ? .semibold : .regular)
-      .animation(.app, value: ahead)
-      .animation(.app, value: session.activity)
+      .animation(.kit, value: ahead)
+      .animation(.kit, value: session.activity)
     }
     .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
     .help(pushHelp)

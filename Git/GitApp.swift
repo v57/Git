@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftData
@@ -53,6 +54,7 @@ struct GitApp: App {
         .environment(library)
         .environment(github)
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
+        .componentKit(accent: .accentColor)
     }
     .defaultSize(width: 1440, height: 900)
     .defaultLaunchBehavior(Self.showsWelcomeAtLaunch ? .suppressed : .presented)
@@ -66,6 +68,7 @@ struct GitApp: App {
       WelcomeWindow()
         .environment(library)
         .environment(github)
+        .componentKit(accent: .accentColor)
     }
     .windowStyle(.hiddenTitleBar)
     .windowResizability(.contentSize)
@@ -76,6 +79,7 @@ struct GitApp: App {
     Settings {
       SettingsView()
         .environment(github)
+        .componentKit(accent: .accentColor)
     }
   }
 }

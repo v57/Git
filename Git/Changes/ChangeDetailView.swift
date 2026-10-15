@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -32,7 +33,7 @@ struct ChangeDetailView: View {
   var body: some View {
     Group {
       if session.status?.isClean == true {
-        WorkingTreeClean(branch: session.status?.branch ?? "HEAD") { withAnimation(.app) { state.mode = .history } }
+        WorkingTreeClean(branch: session.status?.branch ?? "HEAD") { withAnimation(.kit) { state.mode = .history } }
           .transition(.page)
       } else if let change, let loaded, loaded.target == target {
         VStack(spacing: 0) {
@@ -64,9 +65,9 @@ struct ChangeDetailView: View {
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
-    .animation(.app, value: state.lastCommit)
-    .animation(.app, value: loaded?.target)
-    .animation(.app, value: session.status?.isClean)
+    .animation(.kit, value: state.lastCommit)
+    .animation(.kit, value: loaded?.target)
+    .animation(.kit, value: session.status?.isClean)
     .task(
       id: LoadKey(
         target: target, revision: session.revision, dark: colorScheme == .dark,

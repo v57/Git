@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftData
@@ -25,7 +26,7 @@ struct ContentView: View {
             // No rise: moving the whole screen makes the toolbar's glass border blink.
             .transition(.opacity)
         }
-        .animation(.app, value: path)
+        .animation(.kit, value: path)
       } else {
         ContentUnavailableView {
           Label("No Repository Selected", systemImage: "folder")
@@ -38,7 +39,6 @@ struct ContentView: View {
       }
     }
     .frame(minWidth: 1100, minHeight: 600)
-    .tracking(.designTracking)
     .onChange(of: library.requestedSelection, initial: true) { _, path in
       guard let path else { return }
       selectedPath = path
@@ -147,7 +147,7 @@ struct RepositoryScreen: View {
         .id(kind)
         .transition(.page)
     }
-    .animation(.app, value: kind)
+    .animation(.kit, value: kind)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .navigationTitle(title)
       .navigationSubtitle(subtitle)

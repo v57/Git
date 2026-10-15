@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import SwiftUI
 
@@ -56,7 +57,7 @@ struct GitHubSignInSheet: View {
       .padding([.horizontal, .bottom], 28)
     }
     .frame(width: 540)
-    .animation(.app, value: step)
+    .animation(.kit, value: step)
     .onDisappear {
       if step == .waiting { account.cancelSignIn() } else { account.endSignIn() }
     }
@@ -118,7 +119,7 @@ private struct ChooseStep: View {
           .font(.system(size: 11))
           .foregroundStyle(.secondary)
           .contentTransition(.interpolate)
-          .animation(.app, value: requested)
+          .animation(.kit, value: requested)
         Spacer()
         Button("Cancel", action: cancel)
           .buttonStyle(.design(size: .small, padding: 14))
@@ -186,7 +187,7 @@ private struct PermissionToggle: View {
   @Binding var isOn: Bool
 
   var body: some View {
-    Toggle(isOn: $isOn.animation(.app)) {
+    Toggle(isOn: $isOn.animation(.kit)) {
       VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 6) {
           Text(permission.title).fontWeight(.semibold)
@@ -263,7 +264,7 @@ private struct WaitingStep: View {
               .font(.system(size: 12).monospacedDigit())
               .foregroundStyle(.secondary)
               .contentTransition(.numericText(countsDown: true))
-              .animation(.app, value: left)
+              .animation(.kit, value: left)
           }
         }
       }
@@ -388,7 +389,7 @@ private struct DoneStep: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
         .opacity(shown ? 1 : 0)
-        .animation(.app.delay(0.9), value: shown)
+        .animation(.kit.delay(0.9), value: shown)
       }
       HStack {
         Spacer()

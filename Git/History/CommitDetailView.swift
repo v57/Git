@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -18,7 +19,7 @@ struct CommitInspector: View {
           .transition(.opacity)
       }
     }
-    .animation(.app, value: state.selectedCommit)
+    .animation(.kit, value: state.selectedCommit)
     .frame(maxHeight: .infinity)
     .background(Color.primary.opacity(0.012))
   }
@@ -203,7 +204,7 @@ private struct CommitDetail: View {
               .background(
                 Color.primary.opacity(isSelected ? 0.06 : 0), in: .rect(cornerRadius: 7, style: .continuous)
               )
-              .animation(.app, value: isSelected)
+              .animation(.kit, value: isSelected)
               .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -255,7 +256,7 @@ private struct CommitDetail: View {
         }
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .animation(.app, value: loaded?.target)
+      .animation(.kit, value: loaded?.target)
       .clipShape(.rect(cornerRadius: 10))
       .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
     }

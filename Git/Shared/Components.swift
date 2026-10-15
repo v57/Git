@@ -1,22 +1,7 @@
 import AppKit
+import ComponentKit
 import GitKit
 import SwiftUI
-
-extension CGFloat {
-  /// The design's letter spacing: -0.01em of 13-point text, on every label.
-  static let designTracking: CGFloat = -0.13
-}
-
-extension Animation {
-  /// The one animation the app uses for page transitions, selection, icons and text.
-  static let app = Animation.smooth(duration: 0.25)
-}
-
-extension AnyTransition {
-  /// Screens and panels fade in with a small rise and fade out.
-  static let page = AnyTransition.asymmetric(
-    insertion: .opacity.combined(with: .offset(y: 6)), removal: .opacity)
-}
 
 /// The git branch glyph from the design: two commits on a line and a branch curving off.
 struct BranchGlyph: View {
@@ -136,7 +121,7 @@ struct ChangeKindBadge: View {
 
 /// "+12 −3" in green and red, monospaced.
 struct LineCountText: View {
-  let counts: LineCounts?
+  let counts: GitKit.LineCounts?
   var font: Font = .system(size: 11, design: .monospaced)
 
   var body: some View {
@@ -148,7 +133,7 @@ struct LineCountText: View {
           .contentTransition(.numericText(value: Double(removed)))
       }
       .font(font)
-      .animation(.app, value: counts)
+      .animation(.kit, value: counts)
       .accessibilityLabel("\(added) lines added, \(removed) removed")
     } else if counts != nil {
       Text("binary")
@@ -274,7 +259,7 @@ struct CountBadge: View {
     Text("\(count)")
       .font(.system(size: 11, weight: filled == nil ? .semibold : .bold).monospacedDigit())
       .contentTransition(.numericText(value: Double(count)))
-      .animation(.app, value: count)
+      .animation(.kit, value: count)
       .foregroundStyle(filled == nil ? AnyShapeStyle(.secondary) : AnyShapeStyle(.white))
       .padding(.horizontal, 6)
       .frame(minWidth: 20, minHeight: 18)
@@ -376,8 +361,8 @@ struct DesignButtonStyle: ButtonStyle {
         .opacity(isEnabled || kind == .primary ? 1 : 0.45)
         .contentShape(shape)
         .onHover { isHovered = $0 }
-        .animation(.app, value: isHovered)
-        .animation(.app, value: isEnabled)
+        .animation(.kit, value: isHovered)
+        .animation(.kit, value: isEnabled)
     }
 
     private var foreground: AnyShapeStyle {
@@ -436,7 +421,7 @@ struct DesignSegmented<Value: Hashable>: View {
       ForEach(options, id: \.value) { option in
         let isSelected = option.value == selection
         Button {
-          withAnimation(.app) { selection = option.value }
+          withAnimation(.kit) { selection = option.value }
         } label: {
           Text(option.title)
             .font(.system(size: 12, weight: isSelected ? .medium : .regular))

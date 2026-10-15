@@ -1,4 +1,5 @@
 import AppKit
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -46,7 +47,6 @@ struct WelcomeWindow: View {
         .frame(width: 860, height: 540)
         .ignoresSafeArea()
       }
-    .tracking(.designTracking)
     .sheet(isPresented: $library.isClonePresented) { CloneSheet() }
     .onChange(of: library.requestedSelection) { _, path in
       if path != nil { showMainWindow() }
@@ -172,7 +172,7 @@ struct WelcomeWindow: View {
           }
         }
         .padding(.horizontal, 14)
-        .animation(.app, value: recent.map(\.path))
+        .animation(.kit, value: recent.map(\.path))
       }
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .overlay {
@@ -190,7 +190,7 @@ struct WelcomeWindow: View {
       .foregroundStyle(.secondary)
       .frame(maxWidth: .infinity)
       .frame(height: 56)
-      .animation(.app, value: isDropTargeted)
+      .animation(.kit, value: isDropTargeted)
       .background(
         isDropTargeted ? Color.accentColor.opacity(0.08) : .clear,
         in: .rect(cornerRadius: 12, style: .continuous)
@@ -287,7 +287,7 @@ private struct WelcomeAction: View {
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
-    .animation(.app, value: isHovered)
+    .animation(.kit, value: isHovered)
   }
 }
 
@@ -344,7 +344,7 @@ private struct RecentRow: View {
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
-    .animation(.app, value: isHovered)
+    .animation(.kit, value: isHovered)
     .help(repository.path)
   }
 

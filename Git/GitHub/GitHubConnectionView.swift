@@ -1,3 +1,4 @@
+import ComponentKit
 import SwiftUI
 
 /// The Git and GitHub tiles joined by a line that shows how signing in is going: dashes while
@@ -27,7 +28,7 @@ struct GitHubConnectionView: View {
       .frame(width: tileSize * 2, height: 24)
       GitHubTile(size: tileSize, isPulsing: phase == .waiting)
     }
-    .animation(.app, value: phase)
+    .animation(.kit, value: phase)
     .accessibilityHidden(true)
   }
 }

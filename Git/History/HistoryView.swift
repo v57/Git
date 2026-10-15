@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -41,7 +42,7 @@ struct HistoryScreen: View {
       .font(.system(size: 12))
       .foregroundStyle(.secondary)
       .contentTransition(.numericText(value: Double(session.commits.count)))
-      .animation(.app, value: session.commits.count)
+      .animation(.kit, value: session.commits.count)
     }
     .padding(.horizontal, 16)
     .frame(height: 48)
@@ -135,7 +136,7 @@ private struct CommitTable: View {
         move(press.key == .downArrow ? 1 : -1, extending: press.modifiers.contains(.shift))
       }
       .onChange(of: state.selectedCommit) { _, id in
-        if let id { withAnimation(.app) { proxy.scrollTo(id) } }
+        if let id { withAnimation(.kit) { proxy.scrollTo(id) } }
       }
     }
     // A commit selected elsewhere (a tag in the sidebar) replaces a selection it isn't part of.
@@ -371,8 +372,8 @@ private struct CommitRow: View {
       .padding(.leading, 4)
       .padding(.trailing, 12)
       .frame(height: 44)
-      .animation(.app, value: isSelected)
-      .animation(.app, value: isHovered)
+      .animation(.kit, value: isSelected)
+      .animation(.kit, value: isHovered)
       .background(
         isSelected
           ? Color.accentColor.opacity(0.14) : Color.primary.opacity(isHovered ? 0.035 : 0),

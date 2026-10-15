@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -38,7 +39,7 @@ struct ConflictsScreen: View {
         .transition(.opacity)
       }
     }
-    .animation(.app, value: state.completedOperation)
+    .animation(.kit, value: state.completedOperation)
     .background { shortcuts }
     .task(id: LoadKey(revision: session.revision, paths: conflicted.map(\.path))) { await load() }
   }
@@ -143,7 +144,7 @@ struct ConflictsScreen: View {
     .padding(.trailing, 16)
     .padding(.vertical, 12)
     .background((isReady ? Color.green : Color.orange).opacity(0.1))
-    .animation(.app, value: left)
+    .animation(.kit, value: left)
   }
 
   private var operationName: String {
@@ -207,7 +208,7 @@ struct ConflictsScreen: View {
               .font(.system(size: 12))
               .foregroundStyle(.secondary)
               .contentTransition(.numericText(value: Double(totals.done)))
-              .animation(.app, value: totals.done)
+              .animation(.kit, value: totals.done)
           }
           ProgressBar(
             value: totals.total == 0 ? 1 : Double(totals.done) / Double(totals.total),
@@ -273,8 +274,8 @@ struct ConflictsScreen: View {
         isSelected ? Color.accentColor.opacity(0.14) : .clear,
         in: .rect(cornerRadius: 8, style: .continuous)
       )
-      .animation(.app, value: resolved)
-      .animation(.app, value: isSelected)
+      .animation(.kit, value: resolved)
+      .animation(.kit, value: isSelected)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
@@ -372,7 +373,7 @@ struct ConflictsScreen: View {
       .id(path)
       .transition(.page)
       }
-      .animation(.app, value: path)
+      .animation(.kit, value: path)
     } else {
       ContentUnavailableView("No Conflicts", systemImage: "checkmark.circle")
     }
@@ -447,7 +448,7 @@ private struct ProgressBar: View {
       }
     }
     .frame(height: 6)
-    .animation(.app, value: value)
+    .animation(.kit, value: value)
     .accessibilityElement()
     .accessibilityLabel("Conflicts resolved")
     .accessibilityValue("\(Int(value * 100)) percent")
@@ -526,7 +527,7 @@ private struct ConflictCard<Content: View>: View {
       RoundedRectangle(cornerRadius: 12)
         .strokeBorder((isResolved ? Color.green : Color.orange).opacity(0.45))
     }
-    .animation(.app, value: isResolved)
+    .animation(.kit, value: isResolved)
     .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)
   }
 }
@@ -565,7 +566,7 @@ private struct ConflictBlockCard: View {
             .transition(.opacity)
         }
       }
-      .animation(.app, value: resolution)
+      .animation(.kit, value: resolution)
     }
   }
 
@@ -732,8 +733,8 @@ private struct WholeFileCard: View {
   let content: ConflictContent
   let currentName: String
   let incomingName: String
-  let choice: ConflictSide?
-  let choose: (ConflictSide?) -> Void
+  let choice: GitKit.ConflictSide?
+  let choose: (GitKit.ConflictSide?) -> Void
   let editManually: () -> Void
 
   var body: some View {
@@ -799,7 +800,7 @@ private struct WholeFileCard: View {
     }
   }
 
-  private func choiceDescription(_ side: ConflictSide) -> String {
+  private func choiceDescription(_ side: GitKit.ConflictSide) -> String {
     switch (change.conflict, side) {
     case (.deletedByThem, .incoming), (.deletedByUs, .current), (.bothDeleted, _): "The file is deleted."
     case (.deletedByThem, .current), (.deletedByUs, .incoming): "The file is kept."

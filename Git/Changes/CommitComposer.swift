@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -45,14 +46,14 @@ struct CommitComposer: View {
               .font(.system(size: 11).monospacedDigit())
               .foregroundStyle(state.summary.count > 50 ? Color.orange : .secondary)
               .contentTransition(.numericText(value: Double(state.summary.count)))
-              .animation(.app, value: state.summary.count)
+              .animation(.kit, value: state.summary.count)
               .transition(.opacity)
               .help("Keep the summary to 50 characters so it isn't cut off in logs")
           }
         }
         .padding(.horizontal, 12)
         .frame(height: 38)
-        .animation(.app, value: state.summary.isEmpty)
+        .animation(.kit, value: state.summary.isEmpty)
         Divider().padding(.horizontal, 12)
         TextEditor(text: $state.details)
           .font(.body)
@@ -94,7 +95,7 @@ struct CommitComposer: View {
               .lineLimit(1)
               .truncationMode(.middle)
               .contentTransition(.numericText(value: Double(stagedCount)))
-              .animation(.app, value: commitTitle)
+              .animation(.kit, value: commitTitle)
             Text("⌘↩")
               .font(.system(size: 11))
               .opacity(0.85)

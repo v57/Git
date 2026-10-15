@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -92,7 +93,7 @@ struct RepositoryList: View {
           } isTargeted: { setTarget("end", $0) }
         if hiddenCount > 0 && filter.isEmpty {
           Button {
-            withAnimation(.app) { showsHidden.toggle() }
+            withAnimation(.kit) { showsHidden.toggle() }
           } label: {
             Text(showsHidden ? "Hide Hidden Repositories" : "Show \(hiddenCount) Hidden")
               .font(.system(size: 11, weight: .medium))
@@ -105,9 +106,9 @@ struct RepositoryList: View {
         }
       }
     }
-    .animation(.app, value: rows.map(\.item.id))
-    .animation(.app, value: rows.flatMap { $0.members.map(\.path) })
-    .animation(.app, value: selection)
+    .animation(.kit, value: rows.map(\.item.id))
+    .animation(.kit, value: rows.flatMap { $0.members.map(\.path) })
+    .animation(.kit, value: selection)
     .onChange(of: selection, initial: true) { _, path in
       if let path, !selected.contains(path) || selected.count == 1 {
         selected = [path]
@@ -135,7 +136,7 @@ struct RepositoryList: View {
   private func header(attention: [(name: String, summary: RepositorySummary)]) -> some View {
     HStack(spacing: 2) {
       Button {
-        withAnimation(.app) { isCollapsed.toggle() }
+        withAnimation(.kit) { isCollapsed.toggle() }
       } label: {
         HStack(spacing: 6) {
           Image(systemName: "chevron.right")
@@ -190,7 +191,7 @@ struct RepositoryList: View {
       isTargeted: dropTarget == id,
       help: groupHelp(group, members: visible)
     ) {
-      withAnimation(.app) { group.isCollapsed.toggle() }
+      withAnimation(.kit) { group.isCollapsed.toggle() }
       try? context.save()
     }
     .draggable(SidebarItem.dragURL(for: group)) {
@@ -366,7 +367,7 @@ struct RepositoryList: View {
     }
     if !result.repositories.isEmpty {
       let paths = expand(result.repositories, layout: layout)
-      withAnimation(.app) { library.move(paths, into: groupID, before: before, context: context) }
+      withAnimation(.kit) { library.move(paths, into: groupID, before: before, context: context) }
     }
     if !result.folders.isEmpty {
       Task { await library.importFolders(result.folders, into: context) }
@@ -476,9 +477,9 @@ private struct GroupHeader: View {
         in: .rect(cornerRadius: 7, style: .continuous)
       )
       .contentShape(Rectangle())
-      .animation(.app, value: isHovered)
-      .animation(.app, value: isTargeted)
-      .animation(.app, value: group.isCollapsed)
+      .animation(.kit, value: isHovered)
+      .animation(.kit, value: isTargeted)
+      .animation(.kit, value: group.isCollapsed)
     }
     .buttonStyle(.plain)
     .onHover { isHovered = $0 }
@@ -543,9 +544,9 @@ struct RepositoryRow: View {
       }
       .padding(.horizontal, 8)
       .frame(height: 30)
-      .animation(.app, value: isCurrent)
-      .animation(.app, value: isHovered)
-      .animation(.app, value: isSelected)
+      .animation(.kit, value: isCurrent)
+      .animation(.kit, value: isHovered)
+      .animation(.kit, value: isSelected)
       .background {
         if isCurrent {
           RoundedRectangle(cornerRadius: 7, style: .continuous)

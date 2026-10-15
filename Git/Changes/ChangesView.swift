@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -79,7 +80,7 @@ private struct ChangeList: View {
       }
       .padding(.horizontal, 10)
       .padding(.vertical, 6)
-      .animation(.app, value: status)
+      .animation(.kit, value: status)
     }
     .onChange(of: status, initial: true) { _, status in
       guard let status else { return }
@@ -134,7 +135,7 @@ private struct ChangeList: View {
         .font(.system(size: 11, weight: .semibold))
         .foregroundStyle(.secondary)
         .contentTransition(.numericText(value: Double(count)))
-        .animation(.app, value: count)
+        .animation(.kit, value: count)
       Spacer()
       if count > 0 {
         Button("Discard All…", action: discard)
@@ -192,7 +193,7 @@ private struct ChangeList: View {
 /// A changed file: checkbox, status, name over folder, and line counts.
 private struct ChangeRow: View {
   let change: FileChange
-  let lines: LineCounts?
+  let lines: GitKit.LineCounts?
   let isSelected: Bool
   let toggle: () -> Void
   let select: () -> Void
@@ -231,7 +232,7 @@ private struct ChangeRow: View {
       isSelected ? Color.accentColor.opacity(0.14) : .clear,
       in: .rect(cornerRadius: 7, style: .continuous)
     )
-    .animation(.app, value: isSelected)
+    .animation(.kit, value: isSelected)
     .help(change.path)
   }
 }

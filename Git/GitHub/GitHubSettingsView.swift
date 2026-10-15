@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import SwiftUI
 
@@ -16,7 +17,7 @@ struct GitHubSettingsView: View {
           signedOut.transition(.page)
         }
       }
-      .animation(.app, value: account.isSignedIn)
+      .animation(.kit, value: account.isSignedIn)
     }
     .padding(.horizontal, 28)
     .padding(.vertical, 22)
