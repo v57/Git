@@ -17,6 +17,7 @@ struct ContentView: View {
     @Bindable var library = library
     NavigationSplitView {
       SidebarView(selection: $selectedPath)
+        .toolbar(removing: .sidebarToggle)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     } detail: {
       if let path = selectedPath {

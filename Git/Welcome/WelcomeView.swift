@@ -302,7 +302,7 @@ private struct RecentRow: View {
   var body: some View {
     Button(action: open) {
       HStack(spacing: 12) {
-        RepositoryIcon(name: repository.name, size: 34)
+        Avatar(name: repository.name, kind: .thing, size: 34)
         VStack(alignment: .leading, spacing: 1) {
           HStack(spacing: 8) {
             Text(repository.name).fontWeight(.semibold)

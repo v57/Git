@@ -29,57 +29,6 @@ struct BranchGlyph: View {
   }
 }
 
-/// A circle with a person's initials, in a color picked from their name.
-struct Avatar: View {
-  let name: String
-  let size: CGFloat
-
-  private static let palette: [Color] = [.purple, .orange, .blue, .teal, .pink, .indigo, .green, .brown]
-
-  var body: some View {
-    Text(initials)
-      .font(.system(size: size * 0.4, weight: .bold))
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(StableColor.pick(name, from: Self.palette).gradient, in: .circle)
-      .accessibilityHidden(true)
-  }
-
-  private var initials: String {
-    let words = name.split(whereSeparator: { $0 == " " || $0 == "." || $0 == "-" })
-    let letters = words.prefix(2).compactMap(\.first).map { String($0).uppercased() }
-    return letters.isEmpty ? "?" : letters.joined()
-  }
-}
-
-/// A rounded square with a repository's initial, in a color picked from its name.
-struct RepositoryIcon: View {
-  let name: String
-  let size: CGFloat
-
-  private static let palette: [Color] = [.blue, .purple, .teal, .orange, .pink, .indigo, .green, .brown]
-
-  var body: some View {
-    Text(name.first.map { String($0).uppercased() } ?? "?")
-      .font(.system(size: size * 0.55, weight: .bold, design: .rounded))
-      .foregroundStyle(.white)
-      .frame(width: size, height: size)
-      .background(
-        StableColor.pick(name, from: Self.palette).gradient,
-        in: .rect(cornerRadius: size * 0.28, style: .continuous)
-      )
-      .accessibilityHidden(true)
-  }
-}
-
-enum StableColor {
-  /// A color that stays the same for `key` across launches (unlike `hashValue`).
-  static func pick(_ key: String, from palette: [Color]) -> Color {
-    let hash = key.unicodeScalars.reduce(UInt32(5381)) { ($0 &* 33) &+ $1.value }
-    return palette[Int(hash % UInt32(palette.count))]
-  }
-}
-
 /// A file's status letter on a tinted tile: M, A, D, R, U…
 struct ChangeKindBadge: View {
   let kind: ChangeKind
