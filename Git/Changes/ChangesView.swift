@@ -24,11 +24,17 @@ struct ChangesScreen: View {
   }
 }
 
-/// "Staged · 2" and "Unstaged · 3", each with its rows and Stage All / Unstage All.
+/// "Staged · 2" and "Unstaged · 3", each with its rows, Discard All and Stage All / Unstage All.
 private struct ChangeList: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
-  @State private var pendingDiscard: [FileChange] = []
+  @State private var pendingDiscard: PendingDiscard?
+
+  /// Changes waiting for the user to confirm discarding them, all from one area.
+  private struct PendingDiscard {
+    var changes: [FileChange]
+    var area: ChangeArea
+  }
 
   private var status: WorkingTreeStatus? { session.status }
 
@@ -39,6 +45,8 @@ private struct ChangeList: View {
         if let status {
           sectionHeader("Staged", count: status.staged.count, action: "Unstage All") {
             Task { await session.unstageAll() }
+          } discard: {
+            pendingDiscard = PendingDiscard(changes: status.staged, area: .staged)
           }
           if status.staged.isEmpty, !status.isClean {
             Text("Tick a file below to include it in the next commit.")
@@ -58,6 +66,8 @@ private struct ChangeList: View {
           }
           sectionHeader("Unstaged", count: status.unstaged.count, action: "Stage All") {
             Task { await session.stageAll() }
+          } discard: {
+            pendingDiscard = PendingDiscard(changes: status.unstaged, area: .unstaged)
           }
           .padding(.top, 10)
           ForEach(status.unstaged) { change in
@@ -86,26 +96,38 @@ private struct ChangeList: View {
     }
     .confirmationDialog(
       discardTitle,
-      isPresented: .init(get: { !pendingDiscard.isEmpty }, set: { if !$0 { pendingDiscard = [] } }),
-      titleVisibility: .visible
-    ) {
+      isPresented: .init(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }),
+      titleVisibility: .visible, presenting: pendingDiscard
+    ) { pending in
       Button("Discard Changes", role: .destructive) {
-        let changes = pendingDiscard
-        Task { await session.discard(changes) }
+        Task {
+          if pending.area == .staged {
+            await session.discardStaged(pending.changes)
+          } else {
+            await session.discard(pending.changes)
+          }
+        }
       }
-    } message: {
-      Text("Changes to tracked files are lost. New files are moved to the Trash.")
+    } message: { pending in
+      let files = pending.changes.count == 1 ? "the file" : "these files"
+      Text(
+        pending.area == .staged
+          ? "Staged and unstaged changes to \(files) are lost. New files are moved to the Trash."
+          : "Unstaged changes are lost; staged changes are kept. New files are moved to the Trash.")
     }
   }
 
   private var discardTitle: String {
-    pendingDiscard.count == 1
-      ? "Discard changes to \(pendingDiscard[0].fileName)?"
-      : "Discard changes to \(pendingDiscard.count) files?"
+    guard let pending = pendingDiscard else { return "" }
+    let area = pending.area == .staged ? "staged" : "unstaged"
+    return pending.changes.count == 1
+      ? "Discard changes to \(pending.changes[0].fileName)?"
+      : "Discard \(area) changes to \(pending.changes.count) files?"
   }
 
   private func sectionHeader(
-    _ title: String, count: Int, action: String, perform: @escaping () -> Void
+    _ title: String, count: Int, action: String, perform: @escaping () -> Void,
+    discard: @escaping () -> Void
   ) -> some View {
     HStack {
       Text("\(title) · \(count)")
@@ -115,6 +137,11 @@ private struct ChangeList: View {
         .animation(.app, value: count)
       Spacer()
       if count > 0 {
+        Button("Discard All…", action: discard)
+          .buttonStyle(.borderless)
+          .font(.system(size: 12, weight: .medium))
+          .foregroundStyle(.secondary)
+          .disabled(session.isBusy)
         Button(action, action: perform)
           .buttonStyle(.borderless)
           .font(.system(size: 12, weight: .medium))
@@ -150,7 +177,9 @@ private struct ChangeList: View {
       Button("Unstage") { Task { await session.unstage([change]) } }
     } else {
       Button("Stage") { Task { await session.stage([change]) } }
-      Button("Discard Changes…", role: .destructive) { pendingDiscard = [change] }
+    }
+    Button("Discard Changes…", role: .destructive) {
+      pendingDiscard = PendingDiscard(changes: [change], area: change.area)
     }
     Divider()
     let url = session.repository.url.appendingPathComponent(change.path)

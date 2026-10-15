@@ -103,9 +103,11 @@ struct ChangeDetailView: View {
 
   /// Discards a file's staged and unstaged changes.
   private func discardAll(_ change: FileChange) async {
-    if change.area == .staged { await session.unstage([change]) }
-    guard let unstaged = session.status?.unstaged.first(where: { $0.path == change.path }) else { return }
-    await session.discard([unstaged])
+    if change.area == .staged {
+      await session.discardStaged([change])
+    } else {
+      await session.discard([change])
+    }
   }
 
   private struct LoadKey: Hashable {

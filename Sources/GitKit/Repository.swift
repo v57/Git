@@ -352,6 +352,15 @@ extension Repository {
     }
   }
 
+  /// Throws away staged changes along with the same files' working-tree changes: the files are
+  /// unstaged, then discarded, so files new in the index are moved to the Trash.
+  public func discardStaged(_ changes: [FileChange]) async throws {
+    let paths = Set(changes.flatMap { [$0.originalPath, $0.path].compactMap { $0 } })
+    try await unstage(paths.sorted())
+    let unstaged = try await status().unstaged.filter { paths.contains($0.path) }
+    try await discard(unstaged)
+  }
+
   /// Stages the `lines` of an unstaged diff.
   public func stageLines(_ lines: Set<Int>, of diff: FileDiff) async throws {
     try await apply(diff, lines: lines, direction: .forward, arguments: ["--cached"])

@@ -306,6 +306,12 @@ public final class RepositorySession {
     }
   }
 
+  public func discardStaged(_ changes: [FileChange]) async {
+    await perform(.discarding, failureTitle: "Couldn't discard changes") {
+      try await $0.discardStaged(changes)
+    }
+  }
+
   public func stageLines(_ lines: Set<Int>, of diff: FileDiff) async {
     await perform(.staging, failureTitle: "Couldn't stage lines") {
       try await $0.stageLines(lines, of: diff)

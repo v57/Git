@@ -289,6 +289,26 @@ struct TempRepo {
     #expect(try await temp.repo.status().isClean)
   }
 
+  @Test func discardStagedDropsIndexAndWorkingTreeChanges() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try temp.write("old.txt", "old\n")
+    try await temp.commitAll("init")
+    try temp.write("a.txt", "staged\n")
+    try temp.write("added.txt", "added\n")
+    try await temp.repo.git(["mv", "old.txt", "moved.txt"])
+    try await temp.repo.stage(["a.txt", "added.txt"])
+    try temp.write("a.txt", "staged\nand more\n")
+    let status = try await temp.repo.status()
+    try await temp.repo.discardStaged(status.staged)
+    #expect(try temp.read("a.txt") == "a\n")
+    #expect(try temp.read("old.txt") == "old\n")
+    for name in ["added.txt", "moved.txt"] {
+      #expect(!FileManager.default.fileExists(atPath: temp.root.appendingPathComponent(name).path))
+    }
+    #expect(try await temp.repo.status().isClean)
+  }
+
   @Test func pushFetchPull() async throws {
     let remote = try await TempRepo(bare: true)
     let parent = remote.root.deletingLastPathComponent()
