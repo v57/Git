@@ -34,7 +34,8 @@ private struct ChangeList: View {
 
   var body: some View {
     ScrollView {
-      VStack(alignment: .leading, spacing: 0) {
+      // Lazy: with hundreds of changes, an eager stack updates every row on each scrolled frame.
+      LazyVStack(alignment: .leading, spacing: 0) {
         if let status {
           sectionHeader("Staged", count: status.staged.count, action: "Unstage All") {
             Task { await session.unstageAll() }
