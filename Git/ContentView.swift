@@ -150,7 +150,7 @@ struct RepositoryScreen: View {
     .animation(.kit, value: kind)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .navigationTitle(title)
-      .toolbar(removing: .title)
+      .kitHidesSystemTitle()
       // Once the operation is done, the toolbar goes back to the Changes items.
       .toolbar {
         RepositoryToolbar(

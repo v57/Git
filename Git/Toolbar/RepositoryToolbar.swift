@@ -16,12 +16,12 @@ struct RepositoryToolbar: ToolbarContent {
   let search: Binding<String>?
 
   var body: some ToolbarContent {
-    PlainToolbarItem(placement: .navigation) {
+    KitToolbarItem(placement: .navigation) {
       KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.isBusy ? .working : .idle)
         .padding(.leading, 6)
     }
     if screen == .conflicts {
-      PlainToolbarItem(placement: .primaryAction) {
+      KitToolbarItem(placement: .primaryAction) {
         ToolGroup {
           Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
           Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
@@ -29,7 +29,7 @@ struct RepositoryToolbar: ToolbarContent {
         .allowsHitTesting(false)
       }
     } else {
-      PlainToolbarItem(placement: .primaryAction) {
+      KitToolbarItem(placement: .primaryAction) {
         HStack(spacing: KitMetrics.gutter) {
           ToolGroup { SyncButtons(session: session, state: state) }
           ToolGroup {
@@ -75,21 +75,6 @@ struct RepositoryToolbar: ToolbarContent {
     case .history: .blue
     case .stashes: .indigo
     case .conflicts: .red
-    }
-  }
-}
-
-/// A toolbar item drawn by the kit alone: without the shared glass behind it (macOS 26).
-struct PlainToolbarItem<Content: View>: ToolbarContent {
-  let placement: ToolbarItemPlacement
-  @ViewBuilder let content: () -> Content
-
-  var body: some ToolbarContent {
-    if #available(macOS 26, *) {
-      ToolbarItem(placement: placement) { content() }
-        .sharedBackgroundVisibility(.hidden)
-    } else {
-      ToolbarItem(placement: placement) { content() }
     }
   }
 }
