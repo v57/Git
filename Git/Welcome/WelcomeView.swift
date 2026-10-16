@@ -192,51 +192,43 @@ struct CloneSheet: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      Form {
-        TextField("URL", text: $remote, prompt: Text("https://github.com/owner/repository.git"))
-          .onChange(of: remote) {
-            if !isNameEdited { name = Self.name(from: remote) }
-          }
-        TextField("Name", text: .init(get: { name }, set: { name = $0; isNameEdited = true }))
-        LabeledContent("Location") {
-          HStack {
-            Text((location as NSString).abbreviatingWithTildeInPath)
-              .lineLimit(1)
-              .truncationMode(.head)
-            Button("Choose…", action: chooseLocation)
-          }
-        }
-        if cloning != nil {
-          LabeledContent("Progress") {
-            Text(progress.line ?? "Starting…")
-              .font(.caption.monospaced())
-              .lineLimit(1)
-              .truncationMode(.tail)
-          }
-        }
-        if let error {
-          Text(error)
-            .foregroundStyle(.red)
-            .textSelection(.enabled)
+    KitSheet(
+      title: "Clone Repository", meta: "Copies a repository from GitHub, GitLab or any URL.",
+      systemImage: "arrow.down", status: cloning == nil ? .idle : .working, width: 480
+    ) {
+      FormCard {
+        FormRow(
+          "Repository URL", help: "GitHub, GitLab or any Git URL", systemImage: "link",
+          field: TextField("https://github.com/owner/repository.git", text: $remote)
+            .onChange(of: remote) {
+              if !isNameEdited { name = Self.name(from: remote) }
+            })
+        FormRow(
+          "Name", systemImage: "character.cursor.ibeam",
+          error: name.contains("/") ? "A name can't contain “/”" : nil,
+          field: TextField("repository", text: .init(get: { name }, set: { name = $0; isNameEdited = true })))
+        FormRow("Location", help: (location as NSString).abbreviatingWithTildeInPath, systemImage: "folder", hue: .teal) {
+          Button("Choose…", action: chooseLocation).buttonStyle(.kit)
         }
       }
-      .formStyle(.grouped)
       .disabled(cloning != nil)
-      HStack {
-        Spacer()
-        Button("Cancel") {
-          cloning?.cancel()
-          dismiss()
-        }
-        .keyboardShortcut(.cancelAction)
-        Button("Clone", action: clone)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!canClone)
+    } footer: {
+      if cloning != nil {
+        SheetStatus(progress.line ?? "Starting…", systemImage: "arrow.down", status: .working)
+      } else if let error {
+        SheetStatus(error, systemImage: "exclamationmark.triangle", hue: .red, status: .failed)
       }
-      .padding([.horizontal, .bottom], 20)
+      Spacer(minLength: 0)
+      Button("Cancel") {
+        cloning?.cancel()
+        dismiss()
+      }
+      .keyboardShortcut(.cancelAction)
+      Button("Clone", action: clone)
+        .buttonStyle(.kitPrimary)
+        .keyboardShortcut(.defaultAction)
+        .disabled(!canClone)
     }
-    .frame(width: 480)
   }
 
   /// `https://host/owner/repo.git` or `git@host:owner/repo.git` → `repo`.

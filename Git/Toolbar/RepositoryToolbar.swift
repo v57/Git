@@ -447,25 +447,27 @@ private struct StashSheet: View {
   @State private var includeUntracked = true
 
   var body: some View {
-    Form {
-      TextField("Message", text: $message, prompt: Text("Optional"))
-      Toggle("Include untracked files", isOn: $includeUntracked)
-    }
-    .formStyle(.grouped)
-    .frame(width: 380)
-    .navigationTitle("Stash Changes")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Stash") {
-          let message = message
-          let includeUntracked = includeUntracked
-          Task { await session.stash(message: message, includeUntracked: includeUntracked) }
-          dismiss()
+    KitSheet(
+      title: "Stash Changes", meta: "Puts your uncommitted changes aside, so you can switch branches.",
+      systemImage: "archivebox", hue: .indigo
+    ) {
+      FormCard {
+        FormRow("Message", help: "Optional", systemImage: "text.alignleft", field: TextField("WIP on \(session.status?.branch ?? "HEAD")", text: $message))
+        FormRow("Include untracked files", help: "New files go into the stash too", systemImage: "doc.badge.plus", hue: .teal) {
+          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).labelsHidden()
         }
       }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Stash") {
+        let message = message
+        let includeUntracked = includeUntracked
+        Task { await session.stash(message: message, includeUntracked: includeUntracked) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
     }
   }
 }
@@ -484,39 +486,41 @@ struct NewBranchSheet: View {
   private let suggestedName = "feature/my-change"
 
   var body: some View {
-    Form {
-      TextField("Name", text: $name, prompt: Text(suggestedName))
-        .onKeyPress(.tab) {
-          guard name.isEmpty else { return .ignored }
-          name = suggestedName
-          return .handled
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    KitSheet(
+      title: "New Branch", meta: "From \(startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")",
+      systemImage: "arrow.triangle.branch", hue: .orange
+    ) {
+      FormCard {
+        FormRow(
+          "Name", help: "Tab fills in \(suggestedName)", systemImage: "character.cursor.ibeam",
+          error: !trimmed.isEmpty && !isValid ? "Not a valid or free branch name" : nil,
+          field: TextField(suggestedName, text: $name)
+            .onKeyPress(.tab) {
+              guard name.isEmpty else { return .ignored }
+              name = suggestedName
+              return .handled
+            })
+        FormRow("Switch to the new branch", systemImage: "arrow.right.circle", hue: .blue) {
+          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).labelsHidden()
         }
-      LabeledContent(
-        "From", value: startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")
-      Toggle("Switch to the new branch", isOn: $checkout)
+      }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Create") {
+        let checkout = checkout
+        Task { await session.createBranch(trimmed, from: startPoint, checkout: checkout) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
-    .formStyle(.grouped)
-    .frame(width: 400)
-    .navigationTitle("New Branch")
     .task(id: name) {
-      let trimmed = name.trimmingCharacters(in: .whitespaces)
       isValid =
         await session.repository.isValidBranchName(trimmed)
         && !session.localBranches.contains { $0.name == trimmed }
-    }
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Create") {
-          let name = name.trimmingCharacters(in: .whitespaces)
-          let checkout = checkout
-          Task { await session.createBranch(name, from: startPoint, checkout: checkout) }
-          dismiss()
-        }
-        .disabled(!isValid)
-      }
     }
   }
 }
@@ -531,31 +535,31 @@ struct NewTagSheet: View {
   @State private var isValid = false
 
   var body: some View {
-    Form {
-      TextField("Name", text: $name, prompt: Text("v1.0.0"))
-      TextField("Message", text: $message, prompt: Text("Optional, makes an annotated tag"))
-      LabeledContent("Commit", value: "\(commit.shortID) \(commit.subject)")
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    KitSheet(title: "New Tag", meta: "\(commit.shortID) \(commit.subject)", systemImage: "tag", hue: .gray) {
+      FormCard {
+        FormRow(
+          "Name", systemImage: "character.cursor.ibeam",
+          error: !trimmed.isEmpty && !isValid ? "Not a valid tag name" : nil,
+          field: TextField("v1.0.0", text: $name))
+        FormRow(
+          "Message", help: "Optional, makes an annotated tag", systemImage: "text.alignleft",
+          field: TextField("Release notes", text: $message))
+      }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Create") {
+        let message = message
+        Task { await session.createTag(trimmed, at: commit, message: message) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
-    .formStyle(.grouped)
-    .frame(width: 420)
-    .navigationTitle("New Tag")
     .task(id: name) {
-      let trimmed = name.trimmingCharacters(in: .whitespaces)
       isValid = await session.repository.isValidTagName(trimmed)
-    }
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Create") {
-          let name = name.trimmingCharacters(in: .whitespaces)
-          let message = message
-          Task { await session.createTag(name, at: commit, message: message) }
-          dismiss()
-        }
-        .disabled(!isValid)
-      }
     }
   }
 }
@@ -637,52 +641,33 @@ private struct DeleteEverywhereSheet: View {
   }
 
   var body: some View {
-    Form {
-      Section {
-        LabeledContent("Local", value: branch.name)
-        LabeledContent("On \(remote)", value: upstream.name)
-      } footer: {
-        Text(
-          "\(upstream.name) is deleted for everyone who uses \(remote), and only if nobody pushed "
-            + "to it since you last fetched.")
-      }
-      if !warnings.isEmpty {
-        Section {
-          ForEach(warnings, id: \.self) { warning in
-            Label {
-              Text(warning)
-            } icon: {
-              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            }
-          }
+    KitSheet(
+      title: "Delete Local and \(remote)",
+      meta: "\(upstream.name) is deleted for everyone who uses \(remote), and only if nobody pushed to it since you last fetched.",
+      systemImage: "trash", hue: .red
+    ) {
+      FormCard {
+        FormRow("Local", help: branch.name, systemImage: "arrow.triangle.branch", hue: .orange)
+        FormRow("On \(remote)", help: upstream.name, systemImage: "cloud", hue: .blue)
+        ForEach(warnings, id: \.self) { warning in
+          FormRow(warning, systemImage: "exclamationmark.triangle", hue: .orange)
         }
       }
-      Section {
-        TextField("Branch name", text: $confirmation, prompt: Text(branch.name))
-          .labelsHidden()
-      } header: {
-        HStack(spacing: 0) {
-          Text("Type ")
-          Text(branch.name)
-          Text(" to confirm")
-        }
-        .textSelection(.enabled)
+      FormCard {
+        FormRow(
+          "Type \(branch.name) to confirm", systemImage: "character.cursor.ibeam", hue: .red,
+          field: TextField(branch.name, text: $confirmation))
       }
-    }
-    .formStyle(.grouped)
-    .frame(width: 440)
-    .navigationTitle("Delete Local and \(remote)")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Delete", role: .destructive) {
+        Task { await session.deleteBranch(branch, andUpstream: upstream) }
+        dismiss()
       }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Delete", role: .destructive) {
-          Task { await session.deleteBranch(branch, andUpstream: upstream) }
-          dismiss()
-        }
-        .disabled(!isConfirmed)
-      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isConfirmed)
     }
   }
 }

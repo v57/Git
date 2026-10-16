@@ -686,43 +686,42 @@ private struct SquashSheet: View {
   }
 
   var body: some View {
-    Form {
-      TextField("Summary", text: $summary)
-      TextField("Description", text: $details, axis: .vertical)
-        .lineLimit(4...12)
-      if let oldest = commits.last, let newest = commits.first {
-        LabeledContent("Commits", value: "\(oldest.shortID) … \(newest.shortID)")
-        LabeledContent("Author", value: oldest.authorName)
+    let isValid = !summary.trimmingCharacters(in: .whitespaces).isEmpty && !session.isBusy
+    KitSheet(
+      title: "Squash \(commits.count) Commits",
+      meta: commits.last.map { oldest in
+        "\(oldest.shortID) … \(commits.first?.shortID ?? "") become one commit by \(oldest.authorName)."
+      },
+      systemImage: "square.stack.3d.down.right", hue: .purple, width: 520
+    ) {
+      FormCard {
+        FormRow("Summary", systemImage: "character.cursor.ibeam", field: TextField("Summary", text: $summary))
+        FormRow(
+          "Description", systemImage: "text.alignleft",
+          field: TextField("Description", text: $details, axis: .vertical).lineLimit(4...12))
       }
       if !commits.allSatisfy(session.isUnpushed) {
-        Label(
-          "Some of these commits are already pushed. Afterwards, Force Push replaces them on "
-            + "the remote.", systemImage: "exclamationmark.triangle"
-        )
-        .foregroundStyle(.secondary)
+        Banner(
+          "Some of these commits are already pushed.",
+          message: "Afterwards, Force Push replaces them on the remote.",
+          systemImage: "exclamationmark.triangle", hue: .orange)
       }
-    }
-    .formStyle(.grouped)
-    .frame(width: 480)
-    .navigationTitle("Squash \(commits.count) Commits")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Squash") {
-          let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-          let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
-          let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
-          let (session, commits, squashed) = (session, commits, squashed)
-          Task {
-            if let sha = await session.squash(commits, message: message) { squashed(sha) }
-          }
-          dismiss()
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Squash") {
+        let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
+        let (session, commits, squashed) = (session, commits, squashed)
+        Task {
+          if let sha = await session.squash(commits, message: message) { squashed(sha) }
         }
-        .disabled(summary.trimmingCharacters(in: .whitespaces).isEmpty || session.isBusy)
+        dismiss()
       }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
   }
 }
-
