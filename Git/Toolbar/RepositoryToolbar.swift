@@ -3,37 +3,106 @@ import GitKit
 import SwiftData
 import SwiftUI
 
-/// The window toolbar for a repository, as in the design: Fetch, Pull and Push (with the number
-/// of commits to push), then Branch, Merge and Stash. While conflicts are being resolved it shows
-/// the keyboard shortcuts instead.
+/// The window toolbar for a repository, as in the design: the screen's live title, then Fetch,
+/// Pull and Push (with the number of commits to push) and Branch, Merge and Stash as tool cards.
+/// While conflicts are being resolved it shows the keyboard shortcuts instead.
 struct RepositoryToolbar: ToolbarContent {
   let session: RepositorySession
   let state: RepositoryViewState
   let screen: RepositoryScreenKind
+  let title: String
+  let meta: [String]
+  /// History's search text, which shows the search field.
+  let search: Binding<String>?
 
   var body: some ToolbarContent {
+    PlainToolbarItem(placement: .navigation) {
+      KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.isBusy ? .working : .idle)
+        .padding(.leading, 6)
+    }
     if screen == .conflicts {
-      ToolbarItem(placement: .primaryAction) {
-        Text("⌥⌘← Use Current · ⌥⌘→ Use Incoming")
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 8)
+      PlainToolbarItem(placement: .primaryAction) {
+        ToolGroup {
+          Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
+          Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
+        }
+        .allowsHitTesting(false)
       }
     } else {
-      ToolbarItemGroup(placement: .primaryAction) {
-        SyncButtons(session: session, state: state)
-      }
-      // Sets Fetch, Pull and Push apart from Branch, Merge and Stash.
-      if #available(macOS 26, *) {
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-      }
-      ToolbarItemGroup(placement: .primaryAction) {
-        BranchToolbarButton(session: session)
-        if screen == .history {
-          MergeMenu(session: session)
+      PlainToolbarItem(placement: .primaryAction) {
+        HStack(spacing: KitMetrics.gutter) {
+          ToolGroup { SyncButtons(session: session, state: state) }
+          ToolGroup {
+            BranchToolbarButton(session: session)
+            if screen == .history {
+              MergeMenu(session: session)
+            }
+            StashMenu(session: session)
+          }
+          if let search {
+            KitSearchField(
+              text: search, prompt: "Message, author, hash",
+              status: session.isLoadingCommits && !search.wrappedValue.isEmpty ? .working : .idle
+            )
+            .frame(width: 240)
+          }
         }
-        StashMenu(session: session)
       }
+    }
+  }
+
+  /// The screen's glyph, or the running operation's while one runs.
+  private var titleImage: String {
+    switch session.activity {
+    case .fetching: return "arrow.clockwise"
+    case .pulling: return "arrow.down.to.line"
+    case .pushing: return "arrow.up.to.line"
+    case .committing: return "checkmark"
+    case .some: break
+    case nil: break
+    }
+    switch screen {
+    case .changes: return "pencil"
+    case .history: return "clock"
+    case .stashes: return "archivebox"
+    case .conflicts: return "arrow.triangle.merge"
+    }
+  }
+
+  private var titleHue: Hue {
+    switch screen {
+    case .changes: .orange
+    case .history: .blue
+    case .stashes: .indigo
+    case .conflicts: .red
+    }
+  }
+}
+
+/// A toolbar item drawn by the kit alone: without the shared glass behind it (macOS 26).
+struct PlainToolbarItem<Content: View>: ToolbarContent {
+  let placement: ToolbarItemPlacement
+  @ViewBuilder let content: () -> Content
+
+  var body: some ToolbarContent {
+    if #available(macOS 26, *) {
+      ToolbarItem(placement: placement) { content() }
+        .sharedBackgroundVisibility(.hidden)
+    } else {
+      ToolbarItem(placement: placement) { content() }
+    }
+  }
+}
+
+/// A shortcut's keys and what it does, for the conflict screen's toolbar.
+private struct ShortcutLabel: View {
+  let keys: String
+  let title: String
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Keycaps(keys)
+      Text(title).kitFont(.caption)
     }
   }
 }
@@ -53,23 +122,13 @@ private struct SyncButtons: View {
   private var hasUpstream: Bool { session.status?.upstream != nil }
 
   var body: some View {
-    Button {
+    Button(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise") {
       Task { await session.fetch() }
-    } label: {
-      Label(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise")
-        .labelStyle(.titleAndIcon)
-        .contentTransition(.interpolate)
-        .symbolEffect(.rotate, isActive: session.activity == .fetching)
     }
     .disabled(session.remotes.isEmpty || session.isBusy)
     .help(fetchHelp)
-    Button {
+    Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
       Task { await session.pull() }
-    } label: {
-      Label(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line")
-        .labelStyle(.titleAndIcon)
-        .contentTransition(.interpolate)
-        .symbolEffect(.pulse, isActive: session.activity == .pulling)
     }
     .disabled(!hasUpstream || session.isBusy)
     .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
@@ -81,25 +140,15 @@ private struct SyncButtons: View {
         Task { await session.push() }
       }
     } label: {
-      HStack(spacing: 6) {
-        Image(systemName: "arrow.up.to.line")
-          .symbolEffect(.pulse, isActive: session.activity == .pushing)
-        Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
-          .contentTransition(.interpolate)
-        if ahead > 0 {
-          Text("\(ahead)")
-            .font(.system(size: 11, weight: .bold).monospacedDigit())
-            .contentTransition(.numericText(value: Double(ahead)))
-            .transition(.scale.combined(with: .opacity))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 5)
-            .frame(minWidth: 18, minHeight: 18)
-            .background(Color.accentColor, in: .capsule)
+      Label {
+        HStack(spacing: 5) {
+          Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
+          if ahead > 0 { Count(ahead, .attention).transition(.opacity) }
         }
+      } icon: {
+        Image(systemName: "arrow.up.to.line")
       }
-      .fontWeight(ahead > 0 ? .semibold : .regular)
       .animation(.kit, value: ahead)
-      .animation(.kit, value: session.activity)
     }
     .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
     .help(pushHelp)
@@ -141,12 +190,7 @@ private struct BranchToolbarButton: View {
   @State private var isPresented = launchArgument("--show-branches")
 
   var body: some View {
-    Button {
-      isPresented.toggle()
-    } label: {
-      Label("Branch", systemImage: "arrow.triangle.branch")
-        .labelStyle(.titleAndIcon)
-    }
+    Button("Branch", systemImage: "arrow.triangle.branch") { isPresented.toggle() }
     .help("Switch or create a branch")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       BranchPopover(session: session, isPresented: $isPresented)
@@ -178,9 +222,7 @@ private struct MergeMenu: View {
       }
     } label: {
       Label("Merge", systemImage: "arrow.triangle.merge")
-        .labelStyle(.titleAndIcon)
     }
-    .menuIndicator(.hidden)
     .disabled(session.isBusy || session.status?.branch == nil)
     .help("Merge a branch into \(current)")
   }
@@ -386,9 +428,7 @@ struct StashMenu: View {
       }
     } label: {
       Label("Stash", systemImage: "archivebox")
-        .labelStyle(.titleAndIcon)
     }
-    .menuIndicator(.hidden)
     .help("Stash changes")
     .disabled(session.isBusy)
     .sheet(isPresented: $isStashing) {

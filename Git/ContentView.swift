@@ -151,12 +151,13 @@ struct RepositoryScreen: View {
     .animation(.kit, value: kind)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .navigationTitle(title)
-      .navigationSubtitle(subtitle)
+      .toolbar(removing: .title)
       // Once the operation is done, the toolbar goes back to the Changes items.
       .toolbar {
         RepositoryToolbar(
           session: session, state: state,
-          screen: kind == .conflicts && session.status?.operation == nil ? .changes : kind)
+          screen: kind == .conflicts && session.status?.operation == nil ? .changes : kind,
+          title: title, meta: subtitle, search: kind == .history ? $search : nil)
       }
       .modifier(HistorySearch(isOn: kind == .history, text: $search, session: session))
       .onChange(of: session.revision) {
@@ -200,27 +201,27 @@ struct RepositoryScreen: View {
     kind == .conflicts && state.completedOperation == nil ? "Resolve Conflicts" : state.mode.title
   }
 
-  private var subtitle: String {
+  private var subtitle: [String] {
     let branch = session.status?.branch ?? session.status?.headOID.map { String($0.prefix(7)) } ?? "No commits"
     if kind == .conflicts, let operation = session.status?.operation {
-      return OperationText.title(operation, source: session.operationSource, branch: session.status?.branch)
+      return [OperationText.title(operation, source: session.operationSource, branch: session.status?.branch)]
     }
     let status = session.status
     switch state.mode {
     case .changes:
       let count = status?.changeCount ?? 0
-      return count == 0 ? "\(branch) · clean" : "\(branch) · \(count) changed file\(count == 1 ? "" : "s")"
+      return [branch, count == 0 ? "clean" : "\(count) changed file\(count == 1 ? "" : "s")"]
     case .history, .stashes:
       var parts = [branch]
       if let ahead = status?.ahead, ahead > 0 { parts.append("\(ahead) commit\(ahead == 1 ? "" : "s") to push") }
       if let behind = status?.behind, behind > 0 { parts.append("\(behind) to pull") }
       if parts.count == 1 { parts.append(status?.upstream == nil ? "not published" : "up to date") }
-      return parts.joined(separator: " · ")
+      return parts
     }
   }
 }
 
-/// The toolbar search field of History: message, author or hash.
+/// History's search (the field is in the toolbar): message, author or hash, as you type.
 private struct HistorySearch: ViewModifier {
   let isOn: Bool
   @Binding var text: String
@@ -229,7 +230,6 @@ private struct HistorySearch: ViewModifier {
   func body(content: Content) -> some View {
     if isOn {
       content
-        .searchable(text: $text, placement: .toolbar, prompt: "Message, author, hash")
         .task(id: text) {
           // Search as you type, after a short pause.
           try? await Task.sleep(for: .milliseconds(300))
