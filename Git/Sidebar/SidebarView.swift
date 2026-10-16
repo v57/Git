@@ -168,7 +168,7 @@ private struct RepositorySections: View {
           SidebarRow(remote, systemImage: "cloud") {
             if let date = session.lastFetched { Text("fetched \(date.agoFormatted)") }
           }
-          .onRowTap { Task { await session.fetch() } }
+          .action { Task { await session.fetch() } }
           .help("Fetch \(remote)")
         }
       } accessory: {
@@ -182,12 +182,12 @@ private struct RepositorySections: View {
       KitSection("Tags", meta: tagsMeta, systemImage: "tag", hue: .gray) {
         ForEach(tags.prefix(filter.isEmpty ? 12 : 100)) { tag in
           SidebarRow(tag.name, systemImage: "tag")
-            .onRowTap {
+            .action {
               state.mode = .history
               state.selectedCommit = tag.commit
             }
             .contextMenu {
-              Button("Copy Name") { copyToPasteboard(tag.name) }
+              Button("Copy Name") { KitPasteboard.copy(tag.name) }
             }
         }
       } accessory: {
@@ -203,7 +203,7 @@ private struct RepositorySections: View {
           SidebarRow(worktree.name, systemImage: "folder") {
             Text(worktree.branch ?? "").lineLimit(1).truncationMode(.middle)
           }
-          .onRowTap {
+          .action {
             if !worktree.isCurrent { library.open(worktree.url, into: context) }
           }
         }
@@ -284,7 +284,7 @@ private struct RepositorySections: View {
     return SidebarRow(branch.name, systemImage: "arrow.triangle.branch") {
       BranchMarks(branch: branch, operation: session.status?.operation, isDeleting: isDeleting)
     }
-    .onRowTap {
+    .action {
       if let worktree = session.worktree(for: branch) {
         library.open(worktree.url, into: context)
       } else if !branch.isCurrent {
@@ -304,7 +304,7 @@ private struct RepositorySections: View {
       }
       Button("New Branch from \(branch.name)…") { branchStart = branch.name }
       Divider()
-      Button("Copy Name") { copyToPasteboard(branch.name) }
+      Button("Copy Name") { KitPasteboard.copy(branch.name) }
       if !branch.isCurrent {
         Divider()
         Button("Delete…", role: .destructive) { pendingDelete = branch }
@@ -388,15 +388,6 @@ extension RepositoryMode {
     case .history: "2"
     case .stashes: "3"
     }
-  }
-}
-
-extension View {
-  /// Runs `action` when the row is clicked (or activated with VoiceOver), for sidebar rows that
-  /// do something instead of being selected.
-  func onRowTap(_ action: @escaping () -> Void) -> some View {
-    simultaneousGesture(TapGesture().onEnded(action))
-      .accessibilityAction { action() }
   }
 }
 

@@ -16,12 +16,12 @@ struct RepositoryToolbar: ToolbarContent {
   let search: Binding<String>?
 
   var body: some ToolbarContent {
-    PlainToolbarItem(placement: .navigation) {
+    KitToolbarItem(placement: .navigation) {
       KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.isBusy ? .working : .idle)
         .padding(.leading, 6)
     }
     if screen == .conflicts {
-      PlainToolbarItem(placement: .primaryAction) {
+      KitToolbarItem(placement: .primaryAction) {
         ToolGroup {
           Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
           Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
@@ -29,7 +29,7 @@ struct RepositoryToolbar: ToolbarContent {
         .allowsHitTesting(false)
       }
     } else {
-      PlainToolbarItem(placement: .primaryAction) {
+      KitToolbarItem(placement: .primaryAction) {
         HStack(spacing: KitMetrics.gutter) {
           ToolGroup { SyncButtons(session: session, state: state) }
           ToolGroup {
@@ -75,21 +75,6 @@ struct RepositoryToolbar: ToolbarContent {
     case .history: .blue
     case .stashes: .indigo
     case .conflicts: .red
-    }
-  }
-}
-
-/// A toolbar item drawn by the kit alone: without the shared glass behind it (macOS 26).
-struct PlainToolbarItem<Content: View>: ToolbarContent {
-  let placement: ToolbarItemPlacement
-  @ViewBuilder let content: () -> Content
-
-  var body: some ToolbarContent {
-    if #available(macOS 26, *) {
-      ToolbarItem(placement: placement) { content() }
-        .sharedBackgroundVisibility(.hidden)
-    } else {
-      ToolbarItem(placement: placement) { content() }
     }
   }
 }
@@ -376,7 +361,7 @@ struct BranchPopover: View {
         Button("Delete…", role: .destructive) { pendingDelete = branch }
           .disabled(worktree != nil)
       }
-      Button("Copy Name") { copyToPasteboard(branch.name) }
+      Button("Copy Name") { KitPasteboard.copy(branch.name) }
     }
   }
 }
@@ -454,7 +439,7 @@ private struct StashSheet: View {
       FormCard {
         FormRow("Message", help: "Optional", systemImage: "text.alignleft", field: TextField("WIP on \(session.status?.branch ?? "HEAD")", text: $message))
         FormRow("Include untracked files", help: "New files go into the stash too", systemImage: "doc.badge.plus", hue: .teal) {
-          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).labelsHidden()
+          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).kitLabelsHidden()
         }
       }
     } footer: {
@@ -502,7 +487,7 @@ struct NewBranchSheet: View {
               return .handled
             })
         FormRow("Switch to the new branch", systemImage: "arrow.right.circle", hue: .blue) {
-          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).labelsHidden()
+          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).kitLabelsHidden()
         }
       }
     } footer: {
@@ -580,35 +565,49 @@ private struct BranchDeletion: ViewModifier {
   let session: RepositorySession
   @Binding var pending: Branch?
   @State private var everywhere: Everywhere?
+  /// The branch last asked about, so the sheet keeps its text while it closes.
+  @State private var asked: Branch?
+
+  private var branch: Branch? { pending ?? asked }
 
   func body(content: Content) -> some View {
     content
-      .confirmationDialog(
-        "Delete \(pending?.name ?? "")?",
+      .onChange(of: pending) { if let pending { asked = pending } }
+      .kitConfirmation(
+        "Delete \(branch?.name ?? "")?",
         isPresented: .init(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-        titleVisibility: .visible, presenting: pending
-      ) { branch in
-        Button("Delete", role: .destructive) { Task { await session.deleteBranch(branch) } }
-        Button("Force Delete", role: .destructive) {
-          Task { await session.deleteBranch(branch, force: true) }
-        }
-        if let upstream = session.upstream(of: branch) {
-          Button("Delete Local and \(upstream.remoteName ?? "Remote")…", role: .destructive) {
-            everywhere = Everywhere(branch: branch, upstream: upstream)
-          }
-        }
-      } message: { branch in
-        if let upstream = session.upstream(of: branch) {
-          Text(
-            "Delete refuses a branch that isn't merged; Force Delete removes it anyway. "
-              + "Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name).")
-        } else {
-          Text("Delete refuses a branch that isn't merged; Force Delete removes it anyway.")
-        }
-      }
+        message: message, systemImage: "trash", buttons: buttons)
       .sheet(item: $everywhere) { item in
         DeleteEverywhereSheet(session: session, branch: item.branch, upstream: item.upstream)
       }
+  }
+
+  /// Delete Local and Remote… (with an upstream), Force Delete, and Delete, which Return presses.
+  private var buttons: [KitConfirmationButton] {
+    guard let branch else { return [] }
+    var buttons: [KitConfirmationButton] = []
+    if let upstream = session.upstream(of: branch) {
+      // AppKit queues this sheet until the confirmation's is gone.
+      buttons.append(
+        KitConfirmationButton("Delete Local and \(upstream.remoteName ?? "Remote")…", role: .destructive) {
+          everywhere = Everywhere(branch: branch, upstream: upstream)
+        })
+    }
+    buttons.append(
+      KitConfirmationButton("Force Delete", role: .destructive) {
+        Task { await session.deleteBranch(branch, force: true) }
+      })
+    buttons.append(
+      KitConfirmationButton("Delete", role: .destructive, isDefault: true) {
+        Task { await session.deleteBranch(branch) }
+      })
+    return buttons
+  }
+
+  private var message: String {
+    let message = "Delete refuses a branch that isn't merged; Force Delete removes it anyway."
+    guard let branch, let upstream = session.upstream(of: branch) else { return message }
+    return message + " Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name)."
   }
 }
 

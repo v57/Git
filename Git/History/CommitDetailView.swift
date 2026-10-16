@@ -63,8 +63,8 @@ private struct CommitDetail: View {
           Button("Create Branch from Commit…") { branchStart = commit }
           Button("Create Tag…") { tagTarget = commit }
           Divider()
-          Button("Copy SHA") { copyToPasteboard(commit.id) }
-          Button("Copy Message") { copyToPasteboard(commit.message) }
+          Button("Copy SHA") { KitPasteboard.copy(commit.id) }
+          Button("Copy Message") { KitPasteboard.copy(commit.message) }
         } label: {
           Image(systemName: "ellipsis")
         }
@@ -112,7 +112,7 @@ private struct CommitDetail: View {
         }
         .help("\(commit.authorName) <\(commit.authorEmail)>")
         Spacer()
-        Button(commit.shortID, systemImage: "doc.on.doc") { copyToPasteboard(commit.id) }
+        Button(commit.shortID, systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
           .buttonStyle(.kitPlain)
           .monospaced()
           .help("Copy \(commit.id)")

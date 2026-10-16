@@ -1,33 +1,6 @@
-import AppKit
 import ComponentKit
 import GitKit
 import SwiftUI
-
-/// The git branch glyph from the design: two commits on a line and a branch curving off.
-struct BranchGlyph: View {
-  var size: CGFloat = 16
-
-  var body: some View {
-    Canvas { context, canvas in
-      let s = canvas.width / 16
-      var path = Path()
-      path.addEllipse(in: CGRect(x: 3.5 * s, y: 2 * s, width: 3 * s, height: 3 * s))
-      path.addEllipse(in: CGRect(x: 3.5 * s, y: 11 * s, width: 3 * s, height: 3 * s))
-      path.addEllipse(in: CGRect(x: 9.5 * s, y: 3.5 * s, width: 3 * s, height: 3 * s))
-      path.move(to: CGPoint(x: 5 * s, y: 5 * s))
-      path.addLine(to: CGPoint(x: 5 * s, y: 11 * s))
-      path.move(to: CGPoint(x: 11 * s, y: 6.5 * s))
-      path.addCurve(
-        to: CGPoint(x: 5 * s, y: 11 * s), control1: CGPoint(x: 11 * s, y: 9.5 * s),
-        control2: CGPoint(x: 5 * s, y: 9 * s))
-      context.stroke(
-        path, with: .style(.foreground),
-        style: StrokeStyle(lineWidth: 1.4 * s, lineCap: .round, lineJoin: .round))
-    }
-    .frame(width: size, height: size)
-    .accessibilityHidden(true)
-  }
-}
 
 /// A file's status letter on a tinted tile: M, A, D, R, U…
 struct ChangeKindBadge: View {
@@ -96,9 +69,4 @@ extension Date {
     if calendar.isDateInYesterday(self) { return "Yesterday" }
     return formatted(.dateTime.month(.abbreviated).day())
   }
-}
-
-func copyToPasteboard(_ string: String) {
-  NSPasteboard.general.clearContents()
-  NSPasteboard.general.setString(string, forType: .string)
 }

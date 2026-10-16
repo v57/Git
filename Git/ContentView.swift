@@ -149,8 +149,10 @@ struct RepositoryScreen: View {
     }
     .animation(.kit, value: kind)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
+      // The commit toast (Undo, Push), for this repository only.
+      .kitToasts()
       .navigationTitle(title)
-      .toolbar(removing: .title)
+      .kitHidesSystemTitle()
       // Once the operation is done, the toolbar goes back to the Changes items.
       .toolbar {
         RepositoryToolbar(

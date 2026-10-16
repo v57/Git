@@ -8,6 +8,7 @@ struct CommitComposer: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
   @FocusState private var focusedField: Field?
+  @Environment(\.showToast) private var showToast
 
   private enum Field { case summary, details }
 
@@ -136,14 +137,44 @@ struct CommitComposer: View {
     state.summary = ""
     state.details = ""
     state.amend = false
-    if push {
-      if await session.push(force: false) {
-        state.lastCommit = "Committed and pushed “\(summary)” to \(session.status?.upstream ?? branch)"
-      } else {
-        state.lastCommit = "Committed “\(summary)” to \(branch)"
-      }
+    if push, await session.push(force: false) {
+      showToast(Toast(
+        "Committed and pushed “\(summary)” to \(session.status?.upstream ?? branch)", systemImage: "checkmark",
+        duration: .seconds(20)))
     } else {
-      state.lastCommit = "Committed “\(summary)” to \(branch)"
+      showCommitToast("Committed “\(summary)” to \(branch)")
+    }
+  }
+
+  /// "Committed “…” to main" with Undo, and Push (Publish… without a remote).
+  private func showCommitToast(_ message: String) {
+    let session = session
+    let state = state
+    let undo: @MainActor () -> Void = {
+      Task {
+        guard let undone = await session.undoLastCommit() else { return }
+        if state.summary.isEmpty && state.details.isEmpty {
+          let parts = undone.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
+          state.summary = parts.first.map(String.init) ?? ""
+          state.details = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
+        }
+      }
+    }
+    if session.remotes.isEmpty {
+      showToast(Toast(message, systemImage: "checkmark", duration: .seconds(20), action: "Publish…", undo: undo) {
+        state.isPublishPresented = true
+      })
+    } else {
+      let ahead = session.status?.ahead ?? 0
+      showToast(Toast(
+        message, systemImage: "checkmark", duration: .seconds(20), action: ahead > 0 ? "Push \(ahead)" : "Push",
+        undo: undo
+      ) {
+        Task {
+          guard await session.push() else { return }
+          showToast(Toast("Pushed to \(session.status?.upstream ?? "the remote")", systemImage: "checkmark"))
+        }
+      })
     }
   }
 }
