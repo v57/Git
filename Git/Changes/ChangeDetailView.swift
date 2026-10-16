@@ -3,8 +3,7 @@ import GitKit
 import SwiftUI
 
 /// The diff of the selected change: a header with Discard and Stage File, and each hunk as a
-/// card with Stage Hunk. Lines can be selected to stage, unstage or discard just them. After a
-/// commit, a toast offers Undo and Push.
+/// card with Stage Hunk. Lines can be selected to stage, unstage or discard just them.
 struct ChangeDetailView: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
@@ -66,14 +65,6 @@ struct ChangeDetailView: View {
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .kitPane(.secondary)
-    .overlay(alignment: .bottom) {
-      if let message = state.lastCommit {
-        CommitToast(session: session, state: state, message: message)
-          .padding(.bottom, 24)
-          .transition(.move(edge: .bottom).combined(with: .opacity))
-      }
-    }
-    .animation(.kit, value: state.lastCommit)
     .animation(.kit, value: loaded?.target)
     .animation(.kit, value: session.status?.isClean)
     .task(
@@ -197,64 +188,6 @@ struct ChangeDetailView: View {
     return .unstaged(
       stage: { lines in Task { await session.stageLines(lines, of: diff) } },
       discard: { lines in confirmDiscard = lines })
-  }
-}
-
-/// "✓ Committed “…” to main" with Undo and Push.
-private struct CommitToast: View {
-  let session: RepositorySession
-  @Bindable var state: RepositoryViewState
-  let message: String
-
-  private var ahead: Int { session.status?.ahead ?? 0 }
-
-  var body: some View {
-    HStack(spacing: 10) {
-      LiveIcon(systemImage: "checkmark", hue: .green, status: .done, size: 24)
-      Text(message)
-        .lineLimit(1)
-        .contentTransition(.interpolate)
-      if !message.hasPrefix("Committed and pushed") {
-        HStack(spacing: 6) {
-          Button("Undo") {
-            Task {
-              guard let undone = await session.undoLastCommit() else { return }
-              if state.summary.isEmpty && state.details.isEmpty {
-                let parts = undone.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false)
-                state.summary = parts.first.map(String.init) ?? ""
-                state.details = parts.count > 1 ? parts[1].trimmingCharacters(in: .whitespacesAndNewlines) : ""
-              }
-              state.lastCommit = nil
-            }
-          }
-          .buttonStyle(.kitPlain)
-          if session.remotes.isEmpty {
-            Button("Publish…") { state.isPublishPresented = true }
-              .buttonStyle(.kitPrimary)
-          } else {
-            Button(ahead > 0 ? "Push \(ahead)" : "Push") {
-              Task {
-                if await session.push() {
-                  state.lastCommit = "Pushed to \(session.status?.upstream ?? "the remote")"
-                }
-              }
-            }
-            .buttonStyle(.kitPrimary)
-          }
-        }
-      }
-    }
-    .controlSize(.small)
-    .padding(.leading, 8)
-    .padding(.trailing, 6)
-    .padding(.vertical, 6)
-    .kitSurface(.floating, cornerRadius: KitMetrics.radiusXL)
-    .task(id: message) {
-      // Hide after 20 seconds; a cancelled wait (the view was rebuilt) keeps the toast.
-      do { try await Task.sleep(for: .seconds(20)) } catch { return }
-      if state.lastCommit == message { state.lastCommit = nil }
-    }
-    .accessibilityElement(children: .contain)
   }
 }
 

@@ -43,8 +43,6 @@ struct CompletedOperation: Equatable {
   var summary = ""
   var details = ""
   var amend = false
-  /// The commit just made, for the toast with Undo and Push.
-  var lastCommit: String?
   /// The Publish sheet, for a repository without a remote.
   var isPublishPresented = false
 
