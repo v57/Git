@@ -439,7 +439,7 @@ private struct StashSheet: View {
       FormCard {
         FormRow("Message", help: "Optional", systemImage: "text.alignleft", field: TextField("WIP on \(session.status?.branch ?? "HEAD")", text: $message))
         FormRow("Include untracked files", help: "New files go into the stash too", systemImage: "doc.badge.plus", hue: .teal) {
-          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).labelsHidden()
+          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).kitLabelsHidden()
         }
       }
     } footer: {
@@ -487,7 +487,7 @@ struct NewBranchSheet: View {
               return .handled
             })
         FormRow("Switch to the new branch", systemImage: "arrow.right.circle", hue: .blue) {
-          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).labelsHidden()
+          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).kitLabelsHidden()
         }
       }
     } footer: {

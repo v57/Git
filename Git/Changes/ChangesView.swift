@@ -237,11 +237,13 @@ private struct ChangeRow: View {
 
   var body: some View {
     HStack(spacing: 8) {
-      // The kit's checkbox shows its label even with `.labelsHidden()`, so the label is for VoiceOver only.
-      Toggle(isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })) { EmptyView() }
-        .toggleStyle(.kitCheckbox)
-        .fixedSize()
-        .accessibilityLabel((change.area == .staged ? "Unstage " : "Stage ") + change.fileName)
+      Toggle(
+        (change.area == .staged ? "Unstage " : "Stage ") + change.fileName,
+        isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })
+      )
+      .toggleStyle(.kitCheckbox)
+      .kitLabelsHidden()
+      .fixedSize()
       ChangeKindBadge(kind: change.kind)
       VStack(alignment: .leading, spacing: 1) {
         Text(change.fileName)
