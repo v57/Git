@@ -44,7 +44,7 @@ struct CommitComposer: View {
             // Logs and tools cut summaries longer than about 50 characters.
             Text("\(state.summary.count)/50")
               .font(.system(size: 11).monospacedDigit())
-              .foregroundStyle(state.summary.count > 50 ? Color.orange : .secondary)
+              .foregroundStyle(state.summary.count > 50 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
               .contentTransition(.numericText(value: Double(state.summary.count)))
               .animation(.kit, value: state.summary.count)
               .transition(.opacity)
@@ -54,7 +54,7 @@ struct CommitComposer: View {
         .padding(.horizontal, 12)
         .frame(height: 38)
         .animation(.kit, value: state.summary.isEmpty)
-        Divider().padding(.horizontal, 12)
+        Rectangle().fill(.kitSeparator).frame(height: 1).padding(.horizontal, 12)
         TextEditor(text: $state.details)
           .font(.body)
           .focused($focusedField, equals: .details)
@@ -72,19 +72,17 @@ struct CommitComposer: View {
             }
           }
       }
-      .background(Color(nsColor: .textBackgroundColor), in: .rect(cornerRadius: 10))
-      .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+      .kitSurface(.card)
       Toggle("Amend last commit", isOn: $state.amend)
-        .toggleStyle(.checkbox)
-        .font(.system(size: 12))
+        .toggleStyle(.kitCheckbox)
         .disabled(session.status?.isUnborn ?? true)
         .help("Replace the last commit with the staged changes and this message")
         .onChange(of: state.amend) { _, amend in
           if amend { Task { await prefillAmendMessage() } }
         }
-      HStack(spacing: 8) {
+      HStack(spacing: KitMetrics.gutter) {
         Button("Commit & Push") { Task { await commit(push: true) } }
-          .buttonStyle(.design(size: .large))
+          .buttonStyle(.kit)
           .keyboardShortcut(.return, modifiers: [.command, .shift])
           .disabled(!canCommit || session.remotes.isEmpty)
         Button {
@@ -98,19 +96,17 @@ struct CommitComposer: View {
               .animation(.kit, value: commitTitle)
             Text("⌘↩")
               .font(.system(size: 11))
-              .opacity(0.85)
+              .opacity(0.75)
           }
           .frame(maxWidth: .infinity)
         }
-        .buttonStyle(.design(.primary, size: .large))
+        .buttonStyle(.kitPrimary)
         .keyboardShortcut(.return, modifiers: .command)
         .disabled(!canCommit)
       }
+      .controlSize(.large)
     }
-    .padding(.horizontal, 16)
-    .padding(.top, 14)
-    .padding(.bottom, 16)
-    .background(Color.primary.opacity(0.015))
+    .padding(KitMetrics.gutter)
   }
 
   private var commitTitle: String {

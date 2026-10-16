@@ -35,12 +35,9 @@ struct ChangeKindBadge: View {
   var size: CGFloat = 18
 
   var body: some View {
-    Text(kind == .untracked ? "A" : kind.letter)
-      .font(.system(size: size * 0.56, weight: .bold))
-      .foregroundStyle(color)
-      .frame(width: size, height: size)
-      .background(color.opacity(0.16), in: .rect(cornerRadius: size * 0.28, style: .continuous))
+    Tile(letters: kind == .untracked ? "A" : kind.letter, hue: hue, size: size)
       .help(Self.name(kind))
+      .accessibilityElement()
       .accessibilityLabel(Self.name(kind))
   }
 
@@ -57,7 +54,7 @@ struct ChangeKindBadge: View {
     }
   }
 
-  private var color: Color {
+  private var hue: Hue {
     switch kind {
     case .added, .untracked: .green
     case .modified, .typeChanged: .blue
