@@ -1,4 +1,5 @@
 import AppKit
+import ComponentKit
 import GitHubKit
 import GitKit
 
@@ -44,8 +45,7 @@ extension GitHubAccount {
   }
 
   func copy(_ code: DeviceCode) {
-    NSPasteboard.general.clearContents()
-    NSPasteboard.general.setString(code.userCode, forType: .string)
+    KitPasteboard.copy(code.userCode)
   }
 }
 

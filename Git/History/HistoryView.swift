@@ -378,7 +378,7 @@ private struct CommitList: View {
     }
     Divider()
     Button("Copy SHAs") {
-      copyToPasteboard(
+      KitPasteboard.copy(
         session.commits.filter { selected.contains($0.id) }.map(\.id).joined(separator: "\n"))
     }
   }
@@ -397,8 +397,8 @@ private struct CommitList: View {
     Button("Create Branch from Commit…") { branchStart = commit }
     Button("Create Tag…") { tagTarget = commit }
     Divider()
-    Button("Copy SHA") { copyToPasteboard(commit.id) }
-    Button("Copy Message") { copyToPasteboard(commit.message) }
+    Button("Copy SHA") { KitPasteboard.copy(commit.id) }
+    Button("Copy Message") { KitPasteboard.copy(commit.message) }
   }
 }
 

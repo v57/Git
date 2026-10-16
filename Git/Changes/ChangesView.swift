@@ -173,7 +173,7 @@ private struct ChangeList: View {
     let url = session.repository.url.appendingPathComponent(change.path)
     Button("Open") { NSWorkspace.shared.open(url) }
     Button("Show in Finder") { RepositoryLibrary.reveal(url) }
-    Button("Copy Path") { copyToPasteboard(change.path) }
+    Button("Copy Path") { KitPasteboard.copy(change.path) }
   }
 }
 

@@ -187,7 +187,7 @@ private struct RepositorySections: View {
               state.selectedCommit = tag.commit
             }
             .contextMenu {
-              Button("Copy Name") { copyToPasteboard(tag.name) }
+              Button("Copy Name") { KitPasteboard.copy(tag.name) }
             }
         }
       } accessory: {
@@ -304,7 +304,7 @@ private struct RepositorySections: View {
       }
       Button("New Branch from \(branch.name)…") { branchStart = branch.name }
       Divider()
-      Button("Copy Name") { copyToPasteboard(branch.name) }
+      Button("Copy Name") { KitPasteboard.copy(branch.name) }
       if !branch.isCurrent {
         Divider()
         Button("Delete…", role: .destructive) { pendingDelete = branch }

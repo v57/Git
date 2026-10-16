@@ -361,7 +361,7 @@ struct BranchPopover: View {
         Button("Delete…", role: .destructive) { pendingDelete = branch }
           .disabled(worktree != nil)
       }
-      Button("Copy Name") { copyToPasteboard(branch.name) }
+      Button("Copy Name") { KitPasteboard.copy(branch.name) }
     }
   }
 }
