@@ -16,9 +16,14 @@ struct WelcomeWindow: View {
   @Environment(\.dismissWindow) private var dismissWindow
   @AppStorage(showAtLaunchKey) private var showAtLaunch = true
   @Query(sort: \SavedRepository.name) private var repositories: [SavedRepository]
+  @State private var search = ""
 
+  /// The repositories, last opened first, that match the search by name or folder.
   private var recent: [SavedRepository] {
-    repositories.sorted { ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt) }
+    let query = search.trimmingCharacters(in: .whitespaces)
+    return repositories
+      .filter { query.isEmpty || $0.name.localizedCaseInsensitiveContains(query) || $0.path.localizedCaseInsensitiveContains(query) }
+      .sorted { ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt) }
   }
 
   /// The safe-area inset of a hidden title bar.
@@ -42,11 +47,14 @@ struct WelcomeWindow: View {
       .task(id: sceneGeneration) { await prepare() }
   }
 
-  /// The window's own close button (in the title bar) closes it, so the kit's isn't shown.
+  /// The kit's round close button stands in for the window's own buttons.
   private var welcome: some View {
     KitWelcome(
-      appName: "Git", showAtLaunch: $showAtLaunch, emptyTitle: "No Repositories",
-      emptyMessage: "Repositories you open appear here.",
+      appName: "Git", showAtLaunch: $showAtLaunch,
+      emptyTitle: search.isEmpty ? "No Repositories" : "No Matches",
+      emptyMessage: search.isEmpty ? "Repositories you open appear here." : "No repository is named “\(search)”.",
+      searchText: $search, searchPrompt: "Search Repositories",
+      close: { dismissWindow(id: Self.id) },
       onDrop: { urls in
         Task {
           if let first = await library.importFolders(urls, into: context).first {
