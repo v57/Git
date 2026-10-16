@@ -565,35 +565,49 @@ private struct BranchDeletion: ViewModifier {
   let session: RepositorySession
   @Binding var pending: Branch?
   @State private var everywhere: Everywhere?
+  /// The branch last asked about, so the sheet keeps its text while it closes.
+  @State private var asked: Branch?
+
+  private var branch: Branch? { pending ?? asked }
 
   func body(content: Content) -> some View {
     content
-      .confirmationDialog(
-        "Delete \(pending?.name ?? "")?",
+      .onChange(of: pending) { if let pending { asked = pending } }
+      .kitConfirmation(
+        "Delete \(branch?.name ?? "")?",
         isPresented: .init(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-        titleVisibility: .visible, presenting: pending
-      ) { branch in
-        Button("Delete", role: .destructive) { Task { await session.deleteBranch(branch) } }
-        Button("Force Delete", role: .destructive) {
-          Task { await session.deleteBranch(branch, force: true) }
-        }
-        if let upstream = session.upstream(of: branch) {
-          Button("Delete Local and \(upstream.remoteName ?? "Remote")…", role: .destructive) {
-            everywhere = Everywhere(branch: branch, upstream: upstream)
-          }
-        }
-      } message: { branch in
-        if let upstream = session.upstream(of: branch) {
-          Text(
-            "Delete refuses a branch that isn't merged; Force Delete removes it anyway. "
-              + "Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name).")
-        } else {
-          Text("Delete refuses a branch that isn't merged; Force Delete removes it anyway.")
-        }
-      }
+        message: message, systemImage: "trash", buttons: buttons)
       .sheet(item: $everywhere) { item in
         DeleteEverywhereSheet(session: session, branch: item.branch, upstream: item.upstream)
       }
+  }
+
+  /// Delete Local and Remote… (with an upstream), Force Delete, and Delete, which Return presses.
+  private var buttons: [KitConfirmationButton] {
+    guard let branch else { return [] }
+    var buttons: [KitConfirmationButton] = []
+    if let upstream = session.upstream(of: branch) {
+      // AppKit queues this sheet until the confirmation's is gone.
+      buttons.append(
+        KitConfirmationButton("Delete Local and \(upstream.remoteName ?? "Remote")…", role: .destructive) {
+          everywhere = Everywhere(branch: branch, upstream: upstream)
+        })
+    }
+    buttons.append(
+      KitConfirmationButton("Force Delete", role: .destructive) {
+        Task { await session.deleteBranch(branch, force: true) }
+      })
+    buttons.append(
+      KitConfirmationButton("Delete", role: .destructive, isDefault: true) {
+        Task { await session.deleteBranch(branch) }
+      })
+    return buttons
+  }
+
+  private var message: String {
+    let message = "Delete refuses a branch that isn't merged; Force Delete removes it anyway."
+    guard let branch, let upstream = session.upstream(of: branch) else { return message }
+    return message + " Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name)."
   }
 }
 
