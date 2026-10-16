@@ -132,7 +132,7 @@ private struct CommitList: View {
   var body: some View {
     ScrollViewReader { proxy in
       ScrollView {
-        VStack(alignment: .leading, spacing: 0) {
+        LazyVStack(alignment: .leading, spacing: 0) {
           filterBar
           cards
         }
@@ -220,57 +220,61 @@ private struct CommitList: View {
 
   // MARK: Cards
 
+  /// To pull, To push and the history, each a card over lazy rows (the header, the commits and,
+  /// while more load, the loading row), so a long history lays out only the rows on screen.
   @ViewBuilder
   private var cards: some View {
     let layout = layout
     let upstream = session.status?.upstream ?? "the upstream"
     if !layout.toPull.isEmpty {
-      CommitCard(
+      let count = layout.toPull.count + 1
+      CommitCardHeader(
         title: "To pull", count: Count(layout.toPull.count), meta: ["from \(upstream)", authors(layout.toPull)],
         systemImage: "arrow.down", hue: .gray, lanes: [], graphWidth: layout.graphWidth
       ) {
-        rows(layout.toPull, layout: layout, kind: .toPull)
-      } accessory: {
         Button("Pull", systemImage: "arrow.down") { Task { await session.pull() } }
           .buttonStyle(.kit)
           .controlSize(.small)
           .disabled(session.isBusy)
       }
+      .kitCardSlice(0, of: count)
+      rows(layout.toPull, layout: layout, kind: .toPull, cardSize: count)
       LaneGap(lanes: layout.lanes(into: layout.toPush.first ?? layout.rest.first), dashed: true)
     }
     if !layout.toPush.isEmpty {
-      CommitCard(
+      let count = layout.toPush.count + 1
+      CommitCardHeader(
         title: "To push", count: Count(layout.toPush.count, .attention),
         meta: ["to \(upstream)", authors(layout.toPush)], systemImage: "arrow.up", hue: .accent,
         lanes: layout.lanes(into: layout.toPush.first), graphWidth: layout.graphWidth
       ) {
-        rows(layout.toPush, layout: layout, kind: .toPush)
-      } accessory: {
         Button("Push", systemImage: "arrow.up") { Task { await session.push() } }
           .buttonStyle(.kitPrimary)
           .controlSize(.small)
           .disabled(session.isBusy)
       }
+      .kitCardSlice(0, of: count)
+      rows(layout.toPush, layout: layout, kind: .toPush, cardSize: count)
       LaneGap(lanes: layout.lanes(into: layout.rest.first), dashed: false)
     }
     if !layout.rest.isEmpty || session.isLoadingCommits {
-      CommitCard(
+      let count = layout.rest.count + (session.isLoadingCommits ? 2 : 1)
+      CommitCardHeader(
         title: historyTitle, count: nil, meta: historyMeta, systemImage: historyImage, hue: .accent,
         lanes: layout.lanes(into: layout.rest.first), graphWidth: layout.graphWidth
       ) {
-        LazyVStack(spacing: 0) {
-          rows(layout.rest, layout: layout, kind: .history)
-          if session.isLoadingCommits {
-            HStack(spacing: 8) {
-              LiveIcon(systemImage: "clock", hue: .gray, status: .working, size: 18)
-              Text("Loading older commits").kitFont(.caption)
-            }
-            .padding(.leading, layout.graphWidth + 8)
-            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
-          }
-        }
-      } accessory: {
         EmptyView()
+      }
+      .kitCardSlice(0, of: count)
+      rows(layout.rest, layout: layout, kind: .history, cardSize: count)
+      if session.isLoadingCommits {
+        HStack(spacing: 8) {
+          LiveIcon(systemImage: "clock", hue: .gray, status: .working, size: 18)
+          Text("Loading older commits").kitFont(.caption)
+        }
+        .padding(.leading, layout.graphWidth + 8)
+        .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
+        .kitCardSlice(count - 1, of: count)
       }
     }
   }
@@ -301,8 +305,9 @@ private struct CommitList: View {
     return names.count > 2 ? "\(names[0]), \(names[1]) and \(names.count - 2) more" : names.joined(separator: ", ")
   }
 
-  private func rows(_ commits: [Commit], layout: HistoryLayout, kind: CommitRow.Kind) -> some View {
-    ForEach(commits) { commit in
+  /// The commits as rows 1… of a card of `cardSize` rows (row 0 is its header).
+  private func rows(_ commits: [Commit], layout: HistoryLayout, kind: CommitRow.Kind, cardSize: Int) -> some View {
+    ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
       CommitRow(
         commit: commit, graph: layout.graph[commit.id], graphWidth: layout.graphWidth, kind: kind,
         isHead: commit.id == session.status?.headOID, isUnpushed: kind == .toPush,
@@ -310,6 +315,7 @@ private struct CommitList: View {
         isFocused: isFocused, maxRefs: width < 720 ? 1 : 2
       )
       .onTapGesture { click(commit) }
+      .kitCardSlice(index + 1, of: cardSize)
       .id(commit.id)
       .contextMenu {
         if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
@@ -403,8 +409,8 @@ private struct CommitList: View {
 }
 
 
-/// A card of commits: the rich header (with the lanes that run on behind it) and its rows.
-private struct CommitCard<Rows: View, Accessory: View>: View {
+/// A card's header: the rich header, with the lanes that run on behind it.
+private struct CommitCardHeader<Accessory: View>: View {
   let title: String
   let count: Count?
   let meta: [String]
@@ -412,32 +418,25 @@ private struct CommitCard<Rows: View, Accessory: View>: View {
   let hue: Hue
   let lanes: [Lane]
   let graphWidth: CGFloat
-  @ViewBuilder let rows: () -> Rows
   @ViewBuilder let accessory: () -> Accessory
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      RichHeader(
-        Text(title),
-        // On the window's ground, so the lanes behind the header don't show through the tile.
-        icon: {
-          Tile(systemImage: systemImage, hue: hue, size: 24)
-            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.kitWindow))
-        },
-        meta: { MetaLine(meta) },
-        accessory: {
-          HStack(spacing: 8) {
-            if let count { count }
-            accessory()
-          }
+    RichHeader(
+      Text(title),
+      // On the window's ground, so the lanes behind the header don't show through the tile.
+      icon: {
+        Tile(systemImage: systemImage, hue: hue, size: 24)
+          .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.kitWindow))
+      },
+      meta: { MetaLine(meta) },
+      accessory: {
+        HStack(spacing: 8) {
+          if let count { count }
+          accessory()
         }
-      )
-      .background(alignment: .leading) { LaneLines(lanes: lanes, dashed: false).frame(width: graphWidth) }
-      .padding([.horizontal, .top], KitMetrics.cardPadding)
-      VStack(spacing: 0) { rows() }
-        .padding([.horizontal, .bottom], KitMetrics.cardPadding)
-    }
-    .kitSurface(.card)
+      }
+    )
+    .background(alignment: .leading) { LaneLines(lanes: lanes, dashed: false).frame(width: graphWidth) }
   }
 }
 
