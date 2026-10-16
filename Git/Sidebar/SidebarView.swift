@@ -147,7 +147,7 @@ private struct RepositorySections: View {
     let branches = session.localBranches.filter { matches($0.name) }
       .sorted { $0.isCurrent && !$1.isCurrent }
     if !branches.isEmpty {
-      KitSection("Branches", meta: branchesMeta, systemImage: "arrow.triangle.branch", hue: .orange) {
+      KitSection("Branches", meta: branchesMeta, hue: .orange, glyph: { BranchGlyph() }) {
         ForEach(branches) { branch in branchRow(branch) }
       } accessory: {
         Button("New Branch", systemImage: "plus") { branchStart = session.status?.branch ?? "HEAD" }
@@ -238,7 +238,7 @@ private struct RepositorySections: View {
         }
       },
       icon: {
-        LiveIcon(systemImage: "arrow.triangle.branch", hue: .blue, status: session.isRefreshing ? .working : .idle)
+        SizedLiveIcon(hue: .blue, status: session.isRefreshing ? .working : .idle) { BranchGlyph() }
       },
       meta: { WorkspaceMeta(status: status) },
       accessory: { EmptyView() })
@@ -281,7 +281,7 @@ private struct RepositorySections: View {
 
   private func branchRow(_ branch: Branch) -> some View {
     let isDeleting = session.deletingBranches.contains(branch.id)
-    return SidebarRow(branch.name, systemImage: "arrow.triangle.branch") {
+    return SidebarRow(branch.name, glyph: { BranchGlyph() }) {
       BranchMarks(branch: branch, operation: session.status?.operation, isDeleting: isDeleting)
     }
     .action {
