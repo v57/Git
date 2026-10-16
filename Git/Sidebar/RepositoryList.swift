@@ -216,8 +216,9 @@ struct RepositoryList: View {
       repository: repository, summary: library.summaries[repository.path],
       isCurrent: repository.path == selection, isSelected: isMulti,
       activity: library.remoteActivity[repository.path]
-    )
-    .onRowTap { click(repository.path, layout: layout) }
+    ) {
+      click(repository.path, layout: layout)
+    }
     .opacity(repository.isHidden ? 0.5 : 1)
     .overlay(alignment: .top) { InsertionLine(isShown: dropTarget == repository.path) }
     .draggable(repository.url) {
@@ -400,8 +401,8 @@ private struct DragPreview: View {
   }
 }
 
-/// A group, laid out like a repository row: a folder tile, the name over its note, and its
-/// repositories' summed state. Click collapses it; the chevron shows while collapsed or hovered.
+/// A group, laid out like a repository row: the kit's disclosure, a folder tile, the name over its
+/// note, and its repositories' summed state. Click collapses it.
 private struct GroupHeader: View {
   let group: SavedGroup
   let summary: RepositorySummary
@@ -409,7 +410,6 @@ private struct GroupHeader: View {
   let isTargeted: Bool
   let help: String
   let toggle: () -> Void
-  @State private var isHovered = false
 
   var body: some View {
     SidebarRow(group.name, subtitle: group.note.isEmpty ? nil : group.note) {
@@ -417,19 +417,11 @@ private struct GroupHeader: View {
         name: group.name, kind: .thing, systemImage: group.isCollapsed ? "folder" : "folder.fill",
         hue: StableHue.pick(group.name), status: isBusy ? .working : .idle, size: 18)
     } trailing: {
-      HStack(spacing: 6) {
-        StatusMarks(summary: summary)
-        Image(systemName: "chevron.down")
-          .font(.system(size: 9, weight: .bold))
-          .foregroundStyle(.kitTertiary)
-          .rotationEffect(.degrees(group.isCollapsed ? -90 : 0))
-          .opacity(isHovered || group.isCollapsed ? 1 : 0)
-      }
+      StatusMarks(summary: summary)
     }
-    .onRowTap(toggle)
-    .onHover { isHovered = $0 }
+    .disclosure(isExpanded: .init(get: { !group.isCollapsed }, set: { if $0 == group.isCollapsed { toggle() } }))
+    .action(toggle)
     .kitDropTarget(isTargeted)
-    .animation(.kit, value: isHovered)
     .animation(.kit, value: group.isCollapsed)
     .help(help)
     .accessibilityLabel("\(group.name), \(StatusMarks.description(summary))")
@@ -437,14 +429,16 @@ private struct GroupHeader: View {
   }
 }
 
-/// A repository: its letter tile, name and state. The open one is a raised card; others selected
-/// with it are tinted.
+/// A repository: its letter tile, name and state. The open one is the kit's current row; others
+/// selected with it are tinted.
 struct RepositoryRow: View {
   let repository: SavedRepository
   let summary: RepositorySummary?
   let isCurrent: Bool
   var isSelected = false
   var activity: RemoteAction?
+  /// What a click does: open it, or (⌘, ⇧) select it with others.
+  let action: () -> Void
 
   var body: some View {
     SidebarRow(repository.name) {
@@ -460,11 +454,11 @@ struct RepositoryRow: View {
         StatusMarks(summary: summary)
       }
     }
+    .isCurrent(isCurrent && !isSelected)
+    .action(action)
     .background {
       if isSelected {
         RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(Hue.accent.soft())
-      } else if isCurrent {
-        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
       }
     }
     .animation(.kit, value: isCurrent)
