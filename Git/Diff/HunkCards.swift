@@ -4,14 +4,15 @@ import SwiftUI
 
 /// A diff as the kit's hunk cards, headed by the function each hunk is in, on the panel ground.
 /// Unstaged hunks stage a line (the + on hover), the selected lines or the whole hunk; staged
-/// hunks fold to their header with Unstage. Diffs too long for cards fall back to `DiffView`.
+/// hunks fold to their header with Unstage, and unstage a line or the selected lines the same way.
+/// The cards draw their lines lazily and scroll long lines sideways, so any diff fits.
 struct HunkCards: View {
   enum Mode {
     /// A commit's diff: nothing to stage.
     case readOnly
     /// Unstaged changes: lines and hunks stage.
     case unstaged(stage: (Set<Int>) -> Void, discard: (Set<Int>) -> Void)
-    /// Staged changes: hunks unstage.
+    /// Staged changes: lines and hunks unstage.
     case staged(unstage: (Set<Int>) -> Void)
   }
 
@@ -20,18 +21,9 @@ struct HunkCards: View {
   /// Selected lines, by GitKit's line ids.
   @Binding var selection: Set<Int>
 
-  /// Above this many lines, the cards (which lay out every line of a hunk) give way to the
-  /// lazily drawn `DiffView`.
-  static let maxLines = 2_000
-
   var body: some View {
-    if content.diff.lineCount > Self.maxLines {
-      DiffView(content: content, selection: $selection, changesOnly: true)
-        .clipShape(.rect(cornerRadius: KitMetrics.radiusCard, style: .continuous))
-    } else {
-      LazyVStack(spacing: 10) {
-        ForEach(content.diff.hunks) { hunk in card(hunk) }
-      }
+    LazyVStack(spacing: 10) {
+      ForEach(content.diff.hunks) { hunk in card(hunk) }
     }
   }
 
@@ -42,11 +34,11 @@ struct HunkCards: View {
     let range = "@@ -\(Self.range(hunk.oldStart, hunk.oldCount)) +\(Self.range(hunk.newStart, hunk.newCount)) @@"
     switch mode {
     case .readOnly:
-      HunkCard(header: header, range: range, lines: lines)
+      HunkCard(header: header, range: range, lines: lines, overflow: .scroll)
     case .unstaged(let stage, let discard):
       HunkCard(
         header: header, range: range, lines: lines, selection: kitSelection(hunk),
-        stage: { chosen in stage(Set(chosen.compactMap { ids(hunk)[$0.id] })) }
+        stage: { chosen in stage(gitIDs(chosen, in: hunk)) }, overflow: .scroll
       )
       .contextMenu {
         Button("Discard Hunk…", role: .destructive) { discard(PatchBuilder.lines(in: hunk)) }
@@ -54,7 +46,8 @@ struct HunkCards: View {
     case .staged(let unstage):
       HunkCard(
         header: header, range: range, lines: lines, isStaged: true, summary: summary(hunk),
-        unstage: { unstage(PatchBuilder.lines(in: hunk)) })
+        selection: kitSelection(hunk), unstage: { unstage(PatchBuilder.lines(in: hunk)) },
+        unstageLines: { chosen in unstage(gitIDs(chosen, in: hunk)) }, overflow: .scroll)
     }
   }
 
@@ -80,6 +73,12 @@ struct HunkCards: View {
   private func ids(_ hunk: DiffHunk) -> [String: Int] {
     Dictionary(
       hunk.lines.map { ("\($0.oldLine ?? -1):\($0.newLine ?? -1)", $0.id) }, uniquingKeysWith: { a, _ in a })
+  }
+
+  /// GitKit's line ids for the kit's lines.
+  private func gitIDs(_ lines: [ComponentKit.DiffLine], in hunk: DiffHunk) -> Set<Int> {
+    let ids = ids(hunk)
+    return Set(lines.compactMap { ids[$0.id] })
   }
 
   private func kitSelection(_ hunk: DiffHunk) -> Binding<Set<String>> {

@@ -133,7 +133,7 @@ struct ChangeDetailView: View {
         ignoreWhitespace: hideWhitespace)
       guard !Task.isCancelled else { return }
       if result?.diff != loaded?.diff { selection = [] }
-      loaded = result?.spaced(by: 14)
+      loaded = result
     } catch {
       guard !Task.isCancelled else { return }
       loaded = nil
@@ -178,16 +178,11 @@ struct ChangeDetailView: View {
     .frame(height: 52)
   }
 
+  /// Discard Lines for unstaged lines; the hunk cards stage and unstage the selected lines themselves.
   @ViewBuilder
   private func lineButtons(change: FileChange, diff: FileDiff) -> some View {
-    let lines = selection
-    if change.area == .staged {
-      Button("Unstage Lines") {
-        Task { await session.unstageLines(lines, of: diff) }
-        selection = []
-      }
-      .buttonStyle(.kit)
-    } else {
+    if change.area != .staged {
+      let lines = selection
       Button("Discard Lines…", role: .destructive) { confirmDiscard = lines }
         .buttonStyle(.kit)
     }
