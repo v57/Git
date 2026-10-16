@@ -299,6 +299,7 @@ struct ConflictsScreen: View {
                     ConflictBlockCard(
                       block: block, count: file.blocks.count, context: ConflictContext.describe(block, in: file),
                       currentName: currentName(block),
+                      order: session.status?.operation == .rebase ? .incomingFirst : .currentFirst,
                       resolution: .init(
                         get: { state.conflictChoices[path]?[block.id] },
                         set: { state.conflictChoices[path, default: [:]][block.id] = $0 })
@@ -452,14 +453,16 @@ private struct CommonText: View {
   }
 }
 
-/// One conflict block as the kit's conflict card: Current, Incoming or Both, then the result.
-/// Both keeps Current first; the context menu also puts Incoming first.
+/// One conflict block as the kit's conflict card: Current, Incoming or Both, then the result, with
+/// the common ancestor on demand (diff3 and zdiff3 conflict styles). A rebase shows Incoming first,
+/// and Both keeps it first.
 private struct ConflictBlockCard: View {
   let block: ConflictBlock
   let count: Int
   /// Where the block sits, e.g. "refresh()" or "stored properties".
   let context: String?
   let currentName: String
+  let order: ConflictOrder
   @Binding var resolution: ConflictResolution?
   let editManually: () -> Void
 
@@ -482,7 +485,7 @@ private struct ConflictBlockCard: View {
         switch choice {
         case .current: resolution = .current
         case .incoming: resolution = .incoming
-        case .both: resolution = .currentThenIncoming
+        case .both: resolution = order == .incomingFirst ? .incomingThenCurrent : .currentThenIncoming
         case nil: resolution = nil
         }
       })
@@ -491,23 +494,12 @@ private struct ConflictBlockCard: View {
   var body: some View {
     ConflictCard(
       title: "Conflict \(block.id + 1) of \(count)",
-      resolvedTitle: resolution == .incomingThenCurrent ? "Kept both, Incoming first" : "Conflict resolved",
       meta: [lineRange, context ?? ""],
       current: ComponentKit.ConflictSide("Current", ref: currentName, code: Self.code(block.current)),
       incoming: ComponentKit.ConflictSide("Incoming", ref: block.incomingLabel, code: Self.code(block.incoming)),
-      choice: choice, edit: editManually
+      ancestor: block.base.map { ComponentKit.ConflictSide("Base", code: Self.code($0)) },
+      order: order, choice: choice, edit: editManually
     )
-    .contextMenu {
-      Button("Use Current") { resolution = .current }
-      Button("Use Incoming") { resolution = .incoming }
-      Divider()
-      Button("Current, Then Incoming") { resolution = .currentThenIncoming }
-      Button("Incoming, Then Current") { resolution = .incomingThenCurrent }
-      if resolution != nil {
-        Divider()
-        Button("Undo Choice") { resolution = nil }
-      }
-    }
   }
 
   /// A side's text without its final newline.
