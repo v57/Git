@@ -156,15 +156,13 @@ private struct SyncButtons: View {
       Button("Force Push…") { confirmForcePush = true }
         .disabled(!hasUpstream)
     }
-    .confirmationDialog(
+    .kitConfirmation(
       "Force push \(session.status?.branch ?? "")?", isPresented: $confirmForcePush,
-      titleVisibility: .visible
+      message: "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
+        + "if someone else pushed since your last fetch.",
+      systemImage: "arrow.up.to.line", confirm: "Force Push"
     ) {
-      Button("Force Push", role: .destructive) { Task { await session.push(force: true) } }
-    } message: {
-      Text(
-        "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
-          + "if someone else pushed since your last fetch.")
+      Task { await session.push(force: true) }
     }
   }
 
@@ -284,33 +282,42 @@ struct BranchPopover: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        FilterField(text: $filter, prompt: "Filter branches")
+      HStack(spacing: KitMetrics.gutter) {
+        KitSearchField(text: $filter, prompt: "Filter branches")
         Button("New Branch…") { isCreating = true }
+          .buttonStyle(.kit)
       }
       .padding(10)
-      Divider()
-      List {
-        Section("Branches") {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 2) {
+          sectionTitle("Branches")
           ForEach(localBranches) { branch in
             row(branch)
           }
-        }
-        if !remoteBranches.isEmpty {
-          Section("Remote Branches") {
+          if !remoteBranches.isEmpty {
+            sectionTitle("Remote Branches")
             ForEach(remoteBranches) { branch in
               row(branch)
             }
           }
         }
+        .padding([.horizontal, .bottom], 10)
       }
-      .listStyle(.inset)
     }
     .frame(width: 400, height: 440)
+    .background(.kitPanel)
     .sheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
     .branchDeletion($pendingDelete, session: session)
+  }
+
+  private func sectionTitle(_ title: String) -> some View {
+    Text(title)
+      .kitFont(.sectionHeader)
+      .padding(.horizontal, 8)
+      .padding(.top, 8)
+      .padding(.bottom, 4)
   }
 
   private func row(_ branch: Branch) -> some View {
@@ -318,7 +325,7 @@ struct BranchPopover: View {
     let divergence = divergenceText(
       ahead: branch.aheadOfHead, behind: branch.behindHead, base: current)
     let isDeleting = session.deletingBranches.contains(branch.id)
-    return Button {
+    return BranchRow {
       if let worktree {
         // A branch checked out in another worktree can't be checked out here; open that one.
         library.open(worktree.url, into: context)
@@ -326,41 +333,38 @@ struct BranchPopover: View {
         Task { await session.switchTo(branch) }
       }
       isPresented = false
-    } label: {
+    } content: {
       HStack(spacing: 8) {
         Image(systemName: branch.isCurrent ? "checkmark" : worktree != nil ? "folder" : "arrow.triangle.branch")
-          .foregroundStyle(branch.isCurrent ? Color.accentColor : .secondary)
+          .foregroundStyle(branch.isCurrent ? AnyShapeStyle(.kitAccent) : AnyShapeStyle(.kitSecondary))
           .frame(width: 16)
         VStack(alignment: .leading, spacing: 1) {
           Text(branch.name).lineLimit(1).truncationMode(.middle)
-          HStack(spacing: 6) {
+          HStack(spacing: 4) {
             if isDeleting {
-              ProgressView().controlSize(.mini)
+              LiveIcon(systemImage: "trash", hue: .gray, status: .working, size: 12)
               Text("Deleting…")
             } else if branch.isCurrent {
               Text("Current")
             } else if let divergence {
               Text(divergence)
-                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? Color.orange : .secondary)
+                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
             } else if branch.aheadOfHead == 0 {
               Text("Merged into \(current)")
             }
             if let worktree { Text("· in \(worktree.name)") }
           }
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .kitFont(.caption)
         }
         Spacer(minLength: 4)
         UpstreamBadge(branch: branch)
         if let date = branch.date {
           Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-            .font(.caption)
-            .foregroundStyle(.tertiary)
+            .kitFont(.caption)
+            .foregroundStyle(.kitTertiary)
         }
       }
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
     .disabled(isDeleting)
     .contextMenu {
       if !branch.isCurrent, !branch.isRemote {
@@ -372,10 +376,7 @@ struct BranchPopover: View {
         Button("Delete…", role: .destructive) { pendingDelete = branch }
           .disabled(worktree != nil)
       }
-      Button("Copy Name") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(branch.name, forType: .string)
-      }
+      Button("Copy Name") { copyToPasteboard(branch.name) }
     }
   }
 }
@@ -387,16 +388,11 @@ private struct UpstreamBadge: View {
   var body: some View {
     if branch.isUpstreamGone {
       Image(systemName: "icloud.slash")
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.kitSecondary)
         .help("The upstream branch was deleted")
     } else if branch.ahead > 0 || branch.behind > 0 {
-      HStack(spacing: 3) {
-        if branch.behind > 0 { Text("↓\(branch.behind)") }
-        if branch.ahead > 0 { Text("↑\(branch.ahead)") }
-      }
-      .font(.caption.monospacedDigit())
-      .foregroundStyle(.secondary)
-      .help("Against \(branch.upstream ?? "its upstream")")
+      SyncCounts(ahead: branch.ahead, behind: branch.behind)
+        .help("Against \(branch.upstream ?? "its upstream")")
     }
   }
 }
@@ -434,16 +430,12 @@ struct StashMenu: View {
     .sheet(isPresented: $isStashing) {
       StashSheet(session: session)
     }
-    .confirmationDialog(
+    .kitConfirmation(
       "Drop this stash?",
       isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
-      titleVisibility: .visible
+      message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
     ) {
-      Button("Drop", role: .destructive) {
-        if let stash = pendingDrop { Task { await session.dropStash(stash) } }
-      }
-    } message: {
-      Text(pendingDrop?.message ?? "")
+      if let stash = pendingDrop { Task { await session.dropStash(stash) } }
     }
   }
 }
@@ -695,31 +687,24 @@ private struct DeleteEverywhereSheet: View {
   }
 }
 
-// MARK: - Shared controls
-
-/// A rounded filter field with a clear button.
-struct FilterField: View {
-  @Binding var text: String
-  let prompt: String
+/// A row of the Branch popover: hover fills it, a click acts on it.
+private struct BranchRow<Content: View>: View {
+  let action: () -> Void
+  @ViewBuilder let content: () -> Content
+  @State private var isHovered = false
 
   var body: some View {
-    HStack(spacing: 5) {
-      Image(systemName: "line.3.horizontal.decrease")
-        .foregroundStyle(.secondary)
-      TextField(prompt, text: $text)
-        .textFieldStyle(.plain)
-      if !text.isEmpty {
-        Button {
-          text = ""
-        } label: {
-          Image(systemName: "xmark.circle.fill")
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
+    HStack(spacing: 8) { content() }
+      .padding(.horizontal, 8)
+      .frame(minHeight: 44)
+      .background {
+        if isHovered { RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover) }
       }
-    }
-    .padding(.horizontal, 7)
-    .padding(.vertical, 5)
-    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 6))
+      .contentShape(Rectangle())
+      .onTapGesture(perform: action)
+      .onHover { isHovered = $0 }
+      .animation(.kitFast, value: isHovered)
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isButton)
   }
 }

@@ -29,13 +29,12 @@ struct ContentView: View {
         }
         .animation(.kit, value: path)
       } else {
-        ContentUnavailableView {
-          Label("No Repository Selected", systemImage: "folder")
-        } description: {
-          Text("Choose a repository in the sidebar.")
-        } actions: {
-          Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }
+        EmptyState(
+          systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
+        ) {
+          Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }.buttonStyle(.kit)
         }
+        .kitPane(.content)
         .navigationTitle("Git")
       }
     }

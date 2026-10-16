@@ -279,24 +279,3 @@ extension DiffView where HunkActions == EmptyView {
     }
   }
 }
-
-/// Placeholder content for diffs that have no lines to show.
-struct DiffPlaceholder: View {
-  let diff: FileDiff
-
-  var body: some View {
-    if diff.isBinary {
-      ContentUnavailableView("Binary File", systemImage: "doc.zipper", description: Text(diff.path))
-    } else if diff.isRename && diff.hunks.isEmpty {
-      ContentUnavailableView(
-        "Renamed", systemImage: "arrow.right",
-        description: Text("\(diff.oldPath ?? "") → \(diff.newPath ?? "")"))
-    } else if diff.isModeChangeOnly {
-      ContentUnavailableView(
-        "Mode Changed", systemImage: "lock.shield",
-        description: Text("\(diff.oldMode ?? "") → \(diff.newMode ?? "")"))
-    } else {
-      ContentUnavailableView("No Changes", systemImage: "equal", description: Text(diff.path))
-    }
-  }
-}
