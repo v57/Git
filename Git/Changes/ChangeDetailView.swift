@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -32,31 +33,39 @@ struct ChangeDetailView: View {
   var body: some View {
     Group {
       if session.status?.isClean == true {
-        WorkingTreeClean(branch: session.status?.branch ?? "HEAD") { withAnimation(.app) { state.mode = .history } }
-          .transition(.page)
+        EmptyState(
+          systemImage: "checkmark", title: "Working tree clean",
+          message: "Nothing left to commit on \(session.status?.branch ?? "HEAD")."
+        ) {
+          Button("View History") { withKitAnimation { state.mode = .history } }.buttonStyle(.kit)
+        }
+        .transition(.page)
       } else if let change, let loaded, loaded.target == target {
         VStack(spacing: 0) {
           header(change, diff: loaded.diff)
-          Divider()
           if loaded.diff.hunks.isEmpty {
             DiffPlaceholder(diff: loaded.diff)
           } else {
-            DiffView(content: loaded, selection: $selection, changesOnly: true, cards: true) { hunk in
-              hunkButtons(hunk, change: change, diff: loaded.diff)
+            ScrollView {
+              HunkCards(content: loaded, mode: hunkMode(change, diff: loaded.diff), selection: $selection)
+                .padding([.horizontal, .bottom], KitMetrics.gutter)
+                .padding(.bottom, 72)
             }
           }
         }
         .id(loaded.target)
         .transition(.page)
       } else if change != nil, !isLoading {
-        ContentUnavailableView("No Changes", systemImage: "equal")
+        EmptyState(systemImage: "equal", title: "No Changes")
       } else if change == nil {
-        ContentUnavailableView("No File Selected", systemImage: "doc.text")
+        EmptyState(systemImage: "doc.text", title: "No File Selected", message: "Pick a file to see its changes.")
       } else {
-        ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+        LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
+          .frame(maxWidth: .infinity, maxHeight: .infinity)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
+    .kitPane(.secondary)
     .overlay(alignment: .bottom) {
       if let message = state.lastCommit {
         CommitToast(session: session, state: state, message: message)
@@ -64,9 +73,9 @@ struct ChangeDetailView: View {
           .transition(.move(edge: .bottom).combined(with: .opacity))
       }
     }
-    .animation(.app, value: state.lastCommit)
-    .animation(.app, value: loaded?.target)
-    .animation(.app, value: session.status?.isClean)
+    .animation(.kit, value: state.lastCommit)
+    .animation(.kit, value: loaded?.target)
+    .animation(.kit, value: session.status?.isClean)
     .task(
       id: LoadKey(
         target: target, revision: session.revision, dark: colorScheme == .dark,
@@ -75,29 +84,23 @@ struct ChangeDetailView: View {
       await load()
     }
     .onChange(of: target) { selection = [] }
-    .confirmationDialog(
+    .kitConfirmation(
       "Discard the selected lines?",
       isPresented: .init(get: { confirmDiscard != nil }, set: { if !$0 { confirmDiscard = nil } }),
-      titleVisibility: .visible
+      message: "The working-tree changes on these lines are lost.", systemImage: "trash",
+      confirm: "Discard Lines"
     ) {
-      Button("Discard Lines", role: .destructive) {
-        if let lines = confirmDiscard, let diff = loaded?.diff {
-          Task { await session.discardLines(lines, of: diff) }
-          selection = []
-        }
+      if let lines = confirmDiscard, let diff = loaded?.diff {
+        Task { await session.discardLines(lines, of: diff) }
+        selection = []
       }
-    } message: {
-      Text("The working-tree changes on these lines are lost.")
     }
-    .confirmationDialog(
+    .kitConfirmation(
       "Discard changes to \(change?.fileName ?? "")?", isPresented: $confirmDiscardFile,
-      titleVisibility: .visible
+      message: "Staged and unstaged changes to the file are lost. New files are moved to the Trash.",
+      systemImage: "trash", confirm: "Discard Changes"
     ) {
-      Button("Discard Changes", role: .destructive) {
-        if let change { Task { await discardAll(change) } }
-      }
-    } message: {
-      Text("Staged and unstaged changes to the file are lost. New files are moved to the Trash.")
+      if let change { Task { await discardAll(change) } }
     }
   }
 
@@ -142,29 +145,23 @@ struct ChangeDetailView: View {
 
   private func header(_ change: FileChange, diff: FileDiff) -> some View {
     HStack(spacing: 10) {
-      ChangeKindBadge(kind: change.kind, size: 20)
-      (Text(change.directory.isEmpty ? "" : change.directory + "/").foregroundStyle(.secondary)
-        + Text(change.fileName).fontWeight(.semibold))
-        .font(.system(size: 12.5, design: .monospaced))
+      ChangeKindBadge(kind: change.kind)
+      (Text(change.directory.isEmpty ? "" : change.directory + "/").foregroundStyle(.kitSecondary)
+        + Text(change.fileName))
+        .kitFont(.mono)
         .lineLimit(1)
         .truncationMode(.head)
         .textSelection(.enabled)
-      LineCountText(
-        counts: LineCounts(added: diff.additions, removed: diff.deletions),
-        font: .system(size: 12, design: .monospaced))
+      Diffstat(added: diff.additions, removed: diff.deletions)
       Spacer()
       if !selection.isEmpty, diff.supportsLineSelection {
-        Text("\(selection.count) selected")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        Count(selection.count == 1 ? "1 line" : "\(selection.count) lines")
         lineButtons(change: change, diff: diff)
       } else if diff.ignoresWhitespace {
-        Text("Whitespace hidden: stage whole files")
-          .font(.caption)
-          .foregroundStyle(.secondary)
+        Text("Whitespace hidden: stage whole files").kitFont(.caption)
       }
-      Button("Discard…") { confirmDiscardFile = true }
-        .buttonStyle(.design(.destructive))
+      Button("Discard…", role: .destructive) { confirmDiscardFile = true }
+        .buttonStyle(.kit)
       Button(change.area == .staged ? "Unstage File" : "Stage File") {
         Task {
           if change.area == .staged {
@@ -174,10 +171,10 @@ struct ChangeDetailView: View {
           }
         }
       }
-      .buttonStyle(.design)
+      .buttonStyle(.kit)
     }
     .disabled(session.isBusy)
-    .padding(.horizontal, 20)
+    .padding(.horizontal, 14)
     .frame(height: 52)
   }
 
@@ -189,65 +186,22 @@ struct ChangeDetailView: View {
         Task { await session.unstageLines(lines, of: diff) }
         selection = []
       }
-      .buttonStyle(.design)
+      .buttonStyle(.kit)
     } else {
-      Button("Discard Lines…") { confirmDiscard = lines }
-        .buttonStyle(.design(.destructive))
-      Button("Stage Lines") {
-        Task { await session.stageLines(lines, of: diff) }
-        selection = []
-      }
-      .buttonStyle(.design(.primary))
+      Button("Discard Lines…", role: .destructive) { confirmDiscard = lines }
+        .buttonStyle(.kit)
     }
   }
 
-  @ViewBuilder
-  private func hunkButtons(_ hunk: DiffHunk, change: FileChange, diff: FileDiff) -> some View {
-    let lines = PatchBuilder.lines(in: hunk)
-    if diff.supportsLineSelection {
-      if change.area == .staged {
-        Button("Unstage Hunk") { Task { await session.unstageLines(lines, of: diff) } }
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(Color.accentColor)
-      } else {
-        Button("Stage Hunk") { Task { await session.stageLines(lines, of: diff) } }
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(Color.accentColor)
-          .contextMenu {
-            Button("Discard Hunk…", role: .destructive) { confirmDiscard = lines }
-          }
-      }
+  /// What the hunk cards offer: staging lines and hunks, or unstaging staged hunks.
+  private func hunkMode(_ change: FileChange, diff: FileDiff) -> HunkCards.Mode {
+    guard diff.supportsLineSelection else { return .readOnly }
+    if change.area == .staged {
+      return .staged(unstage: { lines in Task { await session.unstageLines(lines, of: diff) } })
     }
-  }
-}
-
-/// Nothing to commit: a check mark and a way to History.
-private struct WorkingTreeClean: View {
-  let branch: String
-  let showHistory: () -> Void
-  @State private var appeared = false
-
-  var body: some View {
-    VStack(spacing: 10) {
-      Image(systemName: "checkmark")
-        .font(.system(size: 26, weight: .semibold))
-        .foregroundStyle(.green)
-        .symbolEffect(.bounce, options: .nonRepeating, value: appeared)
-        .onAppear { appeared = true }
-        .frame(width: 56, height: 56)
-        .background(Color.green.opacity(0.15), in: .circle)
-        .accessibilityHidden(true)
-      Text("Working tree clean")
-        .font(.system(size: 17, weight: .semibold))
-        .padding(.top, 4)
-      Text("Nothing left to commit on \(branch).")
-        .foregroundStyle(.secondary)
-      Button("View History", action: showHistory)
-        .buttonStyle(.link)
-        .fontWeight(.medium)
-        .padding(.top, 6)
-    }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
+    return .unstaged(
+      stage: { lines in Task { await session.stageLines(lines, of: diff) } },
+      discard: { lines in confirmDiscard = lines })
   }
 }
 
@@ -260,11 +214,8 @@ private struct CommitToast: View {
   private var ahead: Int { session.status?.ahead ?? 0 }
 
   var body: some View {
-    HStack(spacing: 12) {
-      Image(systemName: "checkmark")
-        .font(.system(size: 13, weight: .bold))
-        .foregroundStyle(.green)
-        .symbolEffect(.bounce, options: .nonRepeating, value: message)
+    HStack(spacing: 10) {
+      LiveIcon(systemImage: "checkmark", hue: .green, status: .done, size: 24)
       Text(message)
         .lineLimit(1)
         .contentTransition(.interpolate)
@@ -281,10 +232,10 @@ private struct CommitToast: View {
               state.lastCommit = nil
             }
           }
-          .buttonStyle(ToastButtonStyle(prominent: false))
+          .buttonStyle(.kitPlain)
           if session.remotes.isEmpty {
             Button("Publish…") { state.isPublishPresented = true }
-              .buttonStyle(ToastButtonStyle(prominent: true))
+              .buttonStyle(.kitPrimary)
           } else {
             Button(ahead > 0 ? "Push \(ahead)" : "Push") {
               Task {
@@ -293,39 +244,22 @@ private struct CommitToast: View {
                 }
               }
             }
-            .buttonStyle(ToastButtonStyle(prominent: true))
+            .buttonStyle(.kitPrimary)
           }
         }
       }
     }
-    .foregroundStyle(.white)
-    .padding(.leading, 14)
-    .padding(.trailing, 8)
-    .padding(.vertical, 8)
-    .background(Color.black.opacity(0.85), in: .rect(cornerRadius: 14, style: .continuous))
-    .shadow(color: .black.opacity(0.22), radius: 15, y: 10)
+    .controlSize(.small)
+    .padding(.leading, 8)
+    .padding(.trailing, 6)
+    .padding(.vertical, 6)
+    .kitSurface(.floating, cornerRadius: KitMetrics.radiusXL)
     .task(id: message) {
       // Hide after 20 seconds; a cancelled wait (the view was rebuilt) keeps the toast.
       do { try await Task.sleep(for: .seconds(20)) } catch { return }
       if state.lastCommit == message { state.lastCommit = nil }
     }
     .accessibilityElement(children: .contain)
-  }
-}
-
-private struct ToastButtonStyle: ButtonStyle {
-  let prominent: Bool
-
-  func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .fontWeight(prominent ? .semibold : .medium)
-      .padding(.horizontal, 12)
-      .frame(height: 28)
-      .background(
-        prominent ? Color.accentColor : Color.white.opacity(0.14),
-        in: .rect(cornerRadius: 8, style: .continuous)
-      )
-      .opacity(configuration.isPressed ? 0.75 : 1)
   }
 }
 

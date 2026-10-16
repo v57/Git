@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftUI
@@ -37,77 +38,68 @@ struct PublishRepositorySheet: View {
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 0) {
-      Form {
-        if account.isSignedIn {
-          Section {
+    KitSheet(
+      title: "Publish to GitHub", meta: "Creates github.com/\(owner)/\(repositoryName) and pushes \(branch) to it as origin.",
+      systemImage: "icloud.and.arrow.up", status: creating == nil ? .idle : .working, width: 480
+    ) {
+      if account.isSignedIn {
+        FormCard(footer: footerText) {
+          FormRow("Owner", systemImage: "person", hue: .indigo) {
             Picker("Owner", selection: $organization) {
               Text(account.user?.login ?? "").tag(String?.none)
               ForEach(account.organizations) { organization in
                 Text(organization.login).tag(Optional(organization.login))
               }
             }
-            if !account.permissions.organizations {
-              GrantHint(text: "Only organizations where your membership is public are listed.") {
-                grant(.organizations)
-              }
-            }
-            TextField("Name", text: $name)
-            TextField("Description", text: $description, prompt: Text("Optional"))
-            Picker("Visibility", selection: $isPrivate) {
-              Text("Private").tag(true)
-              Text("Public").tag(false)
-            }
-            .pickerStyle(.segmented)
-            if needsPrivateAccess {
-              GrantHint(text: "Git can only create public repositories with your current permissions.") {
-                grant(.privateRepositories)
-              }
-            }
-          } header: {
-            Text("Publish to GitHub")
-          } footer: {
-            footer
+            .labelsHidden()
+            .fixedSize()
           }
-        } else {
-          Section("Publish to GitHub") {
-            HStack {
-              Text("Sign in to GitHub to create a repository for this one.")
-                .foregroundStyle(.secondary)
-              Spacer()
-              Button("Sign In…") { signInRequest = GitHubSignInRequest(permissions: .recommended) }
+          if !account.permissions.organizations {
+            GrantHint(text: "Only organizations where your membership is public are listed.") {
+              grant(.organizations)
+            }
+          }
+          FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
+          FormRow(
+            "Description", help: "Optional", systemImage: "text.alignleft",
+            field: TextField("Description", text: $description))
+          FormRow("Visibility", help: visibilityText, systemImage: isPrivate ? "lock" : "globe", hue: .teal) {
+            KitSegmented(selection: $isPrivate, options: [("Private", true), ("Public", false)])
+          }
+          if needsPrivateAccess {
+            GrantHint(text: "Git can only create public repositories with your current permissions.") {
+              grant(.privateRepositories)
             }
           }
         }
-        if let error {
-          Text(error)
-            .foregroundStyle(.red)
-            .textSelection(.enabled)
+        .disabled(creating != nil)
+      } else {
+        FormCard {
+          FormRow("Sign in to GitHub", help: "To create a repository for this one.", systemImage: "person.crop.circle") {
+            Button("Sign In…") { signInRequest = GitHubSignInRequest(permissions: .recommended) }.buttonStyle(.kit)
+          }
         }
       }
-      .formStyle(.grouped)
-      .disabled(creating != nil)
-      HStack {
-        if creating != nil {
-          ProgressView().controlSize(.small)
-          Text("Creating \(owner)/\(repositoryName)…")
-            .foregroundStyle(.secondary)
-        }
-        Spacer()
-        Button("Cancel") {
-          creating?.cancel()
-          dismiss()
-        }
-        .keyboardShortcut(.cancelAction)
-        Button("Publish", action: publish)
-          .keyboardShortcut(.defaultAction)
-          .disabled(!canPublish)
+      if let error {
+        Banner("Couldn’t publish", message: error, systemImage: "exclamationmark.triangle", hue: .red)
       }
-      .padding([.horizontal, .bottom], 20)
+    } footer: {
+      if creating != nil {
+        SheetStatus("Creating \(owner)/\(repositoryName)…", systemImage: "icloud.and.arrow.up", status: .working)
+      }
+      Spacer(minLength: 0)
+      Button("Cancel") {
+        creating?.cancel()
+        dismiss()
+      }
+      .keyboardShortcut(.cancelAction)
+      Button("Publish", action: publish)
+        .buttonStyle(.kitPrimary)
+        .keyboardShortcut(.defaultAction)
+        .disabled(!canPublish)
     }
-    .frame(width: 480)
-    .animation(.app, value: account.isSignedIn)
-    .animation(.app, value: needsPrivateAccess)
+    .animation(.kit, value: account.isSignedIn)
+    .animation(.kit, value: needsPrivateAccess)
     .sheet(item: $signInRequest) { GitHubSignInSheet(permissions: $0.permissions) }
     // Picks up organizations joined since sign-in.
     .task(id: account.isSignedIn) { await account.refresh() }
@@ -120,19 +112,14 @@ struct PublishRepositorySheet: View {
     signInRequest = GitHubSignInRequest(permissions: account.permissions.union(permission.permissions))
   }
 
-  private var footer: some View {
-    VStack(alignment: .leading, spacing: 4) {
-      Text(visibilityText)
-      Text("Creates github.com/\(owner)/\(repositoryName) and pushes \(branch) to it as origin.")
-      if account.isSignedIn && account.permissions.repositories != .all {
-        Text("Pushing uses your own git credentials, since Git’s access is limited to public repositories.")
-      }
-      if session.headCommit == nil {
-        Text("Commit something first: there is nothing to push yet.")
-          .foregroundStyle(.orange)
-      }
+  /// What else publishing does, under the form.
+  private var footerText: String? {
+    var lines: [String] = []
+    if account.isSignedIn && account.permissions.repositories != .all {
+      lines.append("Pushing uses your own git credentials, since Git’s access is limited to public repositories.")
     }
-    .foregroundStyle(.secondary)
+    if session.headCommit == nil { lines.append("Commit something first: there is nothing to push yet.") }
+    return lines.isEmpty ? nil : lines.joined(separator: " ")
   }
 
   private var visibilityText: String {
@@ -174,13 +161,8 @@ private struct GrantHint: View {
   let grant: () -> Void
 
   var body: some View {
-    HStack {
-      Text(text)
-        .font(.system(size: 12))
-        .foregroundStyle(.secondary)
-      Spacer()
-      Button("Grant…", action: grant)
-        .controlSize(.small)
+    FormRow("Needs a permission", help: text, systemImage: "key", hue: .orange) {
+      Button("Grant…", action: grant).buttonStyle(.kit)
     }
   }
 }

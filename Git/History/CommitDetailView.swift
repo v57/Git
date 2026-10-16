@@ -1,8 +1,9 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
-/// The selected commit, as in the design's inspector: refs, message, author and sha, actions,
-/// the changed files with their line counts, and the selected file's diff.
+/// The selected commit, as in the design's inspector: the message with the refs, the author and
+/// sha, the changed files with their line counts, the actions, and the selected file's hunks.
 struct CommitInspector: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
@@ -12,15 +13,15 @@ struct CommitInspector: View {
       if let id = state.selectedCommit, let commit = session.commits.first(where: { $0.id == id }) {
         CommitDetail(session: session, commit: commit, state: state)
           .id(commit.id)
-          .transition(.page)
+          .transition(.detail)
       } else {
-        ContentUnavailableView("No Commit Selected", systemImage: "clock")
+        EmptyState(systemImage: "clock", title: "No Commit Selected", message: "Pick a commit to see what it changed.")
+          .kitPane(.secondary)
           .transition(.opacity)
       }
     }
-    .animation(.app, value: state.selectedCommit)
+    .animation(.kit, value: state.selectedCommit)
     .frame(maxHeight: .infinity)
-    .background(Color.primary.opacity(0.012))
   }
 }
 
@@ -43,105 +44,20 @@ private struct CommitDetail: View {
   }
 
   var body: some View {
-    VStack(spacing: 0) {
-      header
-      Divider()
+    KitInspector(width: nil) {
+      InspectorHeader(commit.subject, meta: headerMeta, systemImage: "smallcircle.filled.circle", hue: .blue) {
+        ForEach(RefChip.Ref.arranged(commit.refs.map(RefChip.Ref.init))) { ref in
+          RefChip(ref, maxWidth: nil).controlSize(.small)
+        }
+      }
+      author
       fileList
-      diffPreview
-    }
-    .task { await loadFiles() }
-    .task(id: DiffKey(file: selectedFile, dark: colorScheme == .dark)) { await loadDiff() }
-    .confirmationDialog(
-      "Check out \(commit.shortID)?", isPresented: $confirmCheckout, titleVisibility: .visible
-    ) {
-      Button("Check Out") { Task { await session.checkout(commit) } }
-    } message: {
-      Text("You'll be on this commit without a branch. Create a branch to keep work you do here.")
-    }
-    .confirmationDialog(
-      "Revert \(commit.shortID)?", isPresented: $confirmRevert, titleVisibility: .visible
-    ) {
-      Button("Revert") { Task { await session.revert(commit) } }
-    } message: {
-      Text("A new commit undoes the changes of “\(commit.subject)”.")
-    }
-    .sheet(item: $branchStart) { commit in NewBranchSheet(session: session, startPoint: commit.id) }
-    .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
-    .sheet(isPresented: $showsFullDiff) { fullDiff }
-  }
-
-  private struct DiffKey: Hashable {
-    var file: CommitFile?
-    var dark: Bool
-  }
-
-  // MARK: Header
-
-  private var header: some View {
-    VStack(alignment: .leading, spacing: 12) {
-      if !commit.refs.isEmpty {
-        // Scrolls sideways when the refs are wider than the inspector, running to its edges.
-        ScrollView(.horizontal) {
-          HStack(spacing: 6) {
-            ForEach(commit.refs, id: \.self) { ref in RefPill(ref: ref, height: 20) }
-          }
-          .padding(.horizontal, 24)
-        }
-        .scrollIndicators(.never)
-        .padding(.horizontal, -24)
-      }
-      Text(commit.subject)
-        .font(.system(size: 18, weight: .semibold))
-        .fixedSize(horizontal: false, vertical: true)
-        .textSelection(.enabled)
-      if !commit.body.isEmpty {
-        ScrollView {
-          Text(commit.body)
-            .foregroundStyle(.secondary)
-            .lineSpacing(3)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .textSelection(.enabled)
-        }
-        .frame(maxHeight: 110)
-        .fixedSize(horizontal: false, vertical: true)
-      }
-      HStack(spacing: 10) {
-        Avatar(name: commit.authorName, size: 32)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(commit.authorName).fontWeight(.semibold)
-          Text(commit.authorDate.historyFormatted)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-        }
-        .help("\(commit.authorName) <\(commit.authorEmail)>")
-        Spacer()
-        Button {
-          copyToPasteboard(commit.id)
-        } label: {
-          HStack(spacing: 6) {
-            Text(commit.shortID)
-            Image(systemName: "square.on.square")
-              .resizable()
-              .scaledToFit()
-              .frame(width: 13, height: 13)
-              .foregroundStyle(.secondary)
-          }
-          .font(.system(size: 12, design: .monospaced))
-        }
-        .buttonStyle(.design(size: .small, padding: 8))
-        .help("Copy \(commit.id)")
-        .accessibilityLabel("Copy commit hash")
-      }
-      .padding(.top, 2)
-      HStack(spacing: 8) {
+      ActionBar {
         Button("Check Out") { confirmCheckout = true }
-          .buttonStyle(.design)
           .disabled(session.isBusy || commit.id == session.status?.headOID)
         Button("Revert…") { confirmRevert = true }
-          .buttonStyle(.design)
           .disabled(session.isBusy)
         Button("Cherry-Pick") { Task { await session.cherryPick(commit) } }
-          .buttonStyle(.design)
           .disabled(session.isBusy || commit.id == session.status?.headOID)
         Menu {
           Button("Create Branch from Commit…") { branchStart = commit }
@@ -150,22 +66,72 @@ private struct CommitDetail: View {
           Button("Copy SHA") { copyToPasteboard(commit.id) }
           Button("Copy Message") { copyToPasteboard(commit.message) }
         } label: {
-          DesignButtonLabel(width: 32) {
-            Image(systemName: "ellipsis")
-          }
+          Image(systemName: "ellipsis")
         }
-        .menuStyle(.button)
-        .buttonStyle(.plain)
         .menuIndicator(.hidden)
         .fixedSize()
         .accessibilityLabel("More actions")
       }
-      .padding(.top, 4)
+      diffPreview
     }
-    .padding(.horizontal, 24)
-    .padding(.top, 20)
-    .padding(.bottom, 18)
-    .frame(maxWidth: .infinity, alignment: .leading)
+    .task { await loadFiles() }
+    .task(id: DiffKey(file: selectedFile, dark: colorScheme == .dark)) { await loadDiff() }
+    .kitConfirmation(
+      "Check out \(commit.shortID)?", isPresented: $confirmCheckout,
+      message: "You'll be on this commit without a branch. Create a branch to keep work you do here.",
+      systemImage: "arrow.uturn.backward", confirm: "Check Out", role: nil
+    ) {
+      Task { await session.checkout(commit) }
+    }
+    .kitConfirmation(
+      "Revert \(commit.shortID)?", isPresented: $confirmRevert,
+      message: "A new commit undoes the changes of “\(commit.subject)”.",
+      systemImage: "arrow.uturn.backward", confirm: "Revert", role: nil
+    ) {
+      Task { await session.revert(commit) }
+    }
+    .sheet(item: $branchStart) { commit in NewBranchSheet(session: session, startPoint: commit.id) }
+    .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
+    .sheet(isPresented: $showsFullDiff) { fullDiff }
+  }
+
+  private var headerMeta: [String] {
+    let count = files?.count
+    return [commit.shortID, count.map { $0 == 1 ? "1 file changed" : "\($0) files changed" } ?? ""]
+  }
+
+  // MARK: Author
+
+  private var author: some View {
+    VStack(alignment: .leading, spacing: 8) {
+      HStack(spacing: 10) {
+        Avatar(name: commit.authorName, size: 32)
+        VStack(alignment: .leading, spacing: 1) {
+          Text(commit.authorName).kitFont(.headline)
+          Text(commit.authorDate.historyFormatted).kitFont(.caption)
+        }
+        .help("\(commit.authorName) <\(commit.authorEmail)>")
+        Spacer()
+        Button(commit.shortID, systemImage: "doc.on.doc") { copyToPasteboard(commit.id) }
+          .buttonStyle(.kitPlain)
+          .monospaced()
+          .help("Copy \(commit.id)")
+          .accessibilityLabel("Copy commit hash")
+      }
+      if !commit.body.isEmpty {
+        ScrollView {
+          Text(commit.body)
+            .foregroundStyle(.kitSecondary)
+            .lineSpacing(3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .textSelection(.enabled)
+        }
+        .frame(maxHeight: 110)
+        .fixedSize(horizontal: false, vertical: true)
+      }
+    }
+    .padding(10)
+    .kitSurface(.card)
   }
 
   // MARK: Files
@@ -174,52 +140,26 @@ private struct CommitDetail: View {
     let files = files ?? []
     let added = files.compactMap(\.lines?.added).reduce(0, +)
     let removed = files.compactMap(\.lines?.removed).reduce(0, +)
-    return VStack(alignment: .leading, spacing: 6) {
-      HStack(alignment: .firstTextBaseline) {
-        Text(files.count == 1 ? "1 File Changed" : "\(files.count) Files Changed")
-          .fontWeight(.semibold)
-        Spacer()
-        LineCountText(counts: LineCounts(added: added, removed: removed), font: .system(size: 12, design: .monospaced))
-      }
-      .padding(.bottom, 4)
-      ScrollView {
-        VStack(spacing: 0) {
-          ForEach(files) { file in
-            let isSelected = file.id == selectedFile?.id
-            Button {
-              state.selectedCommitFile = file.id
-            } label: {
-              HStack(spacing: 10) {
-                ChangeKindBadge(kind: file.kind)
-                (Text(file.fileName).fontWeight(.medium)
-                  + Text("  \(file.directory)").font(.system(size: 12)).foregroundStyle(.secondary))
-                  .lineLimit(1)
-                  .truncationMode(.tail)
-                Spacer(minLength: 4)
-                LineCountText(counts: file.lines)
-              }
-              .padding(.horizontal, 8)
-              .frame(height: 30)
-              .background(
-                Color.primary.opacity(isSelected ? 0.06 : 0), in: .rect(cornerRadius: 7, style: .continuous)
-              )
-              .animation(.app, value: isSelected)
-              .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
-          }
+    return KitSection(
+      Text("Files"),
+      content: {
+        ForEach(files) { file in
+          FileRow(
+            file: file, isSelected: file.id == selectedFile?.id
+          )
+          .onTapGesture { state.selectedCommitFile = file.id }
         }
-      }
-      .frame(maxHeight: min(CGFloat(files.count) * 30, 210))
-      .padding(.horizontal, -8)
-    }
-    .padding(.horizontal, 24)
-    .padding(.top, 16)
-    .padding(.bottom, 12)
-    .overlay {
-      if self.files == nil { ProgressView().controlSize(.small) }
-    }
+      },
+      icon: {
+        LiveIcon(systemImage: "doc.text", hue: .green, status: self.files == nil ? .working : .idle)
+      },
+      meta: {
+        HStack(spacing: 6) {
+          Text(files.count == 1 ? "1 changed" : "\(files.count) changed")
+          if !files.isEmpty { Diffstat(added: added, removed: removed) }
+        }
+      },
+      accessory: { EmptyView() })
   }
 
   // MARK: Diff
@@ -228,59 +168,52 @@ private struct CommitDetail: View {
     VStack(alignment: .leading, spacing: 8) {
       HStack {
         Text(selectedFile?.path ?? "")
-          .font(.system(size: 12, design: .monospaced))
+          .kitFont(.mono)
           .lineLimit(1)
           .truncationMode(.head)
         Spacer()
         Button("Open Diff") { showsFullDiff = true }
-          .buttonStyle(.link)
-          .font(.system(size: 12, weight: .medium))
+          .buttonStyle(.kitPlain)
           .disabled(loaded == nil)
       }
+      .padding(.horizontal, 6)
       Group {
         if let loaded, loaded.target.path == selectedFile?.path {
           Group {
             if loaded.diff.hunks.isEmpty {
               DiffPlaceholder(diff: loaded.diff)
             } else {
-              DiffView(content: loaded, selection: $selection)
+              HunkCards(content: loaded, selection: $selection)
             }
           }
           .id(loaded.target)
           .transition(.opacity)
         } else if files?.isEmpty == true {
-          ContentUnavailableView("No Changes", systemImage: "equal")
+          EmptyState(systemImage: "equal", title: "No Changes")
         } else {
-          ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+          LiveIcon(systemImage: "doc.text", hue: .gray, status: .working, size: 24)
+            .frame(maxWidth: .infinity, minHeight: 120)
         }
       }
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .animation(.app, value: loaded?.target)
-      .clipShape(.rect(cornerRadius: 10))
-      .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(.separator))
+      .animation(.kit, value: loaded?.target)
     }
-    .padding(.horizontal, 24)
-    .padding(.top, 4)
-    .padding(.bottom, 24)
   }
 
   private var fullDiff: some View {
-    VStack(spacing: 0) {
-      HStack {
-        Text(loaded?.diff.path ?? "")
-          .font(.system(size: 13, design: .monospaced))
-        LineCountText(counts: loaded.map { LineCounts(added: $0.diff.additions, removed: $0.diff.deletions) })
-        Spacer()
-        Button("Done") { showsFullDiff = false }
-          .keyboardShortcut(.defaultAction)
-      }
-      .padding(12)
-      Divider()
+    KitSheet(
+      title: loaded?.diff.path ?? "", meta: loaded.map { "+\($0.diff.additions) −\($0.diff.deletions)" },
+      systemImage: "doc.text", width: 900, onClose: { showsFullDiff = false }
+    ) {
       if let loaded {
-        DiffView(content: loaded, selection: $selection)
+        ScrollView { HunkCards(content: loaded, selection: $selection) }
+          .frame(minHeight: 560)
       }
     }
-    .frame(minWidth: 900, minHeight: 620)
+  }
+
+  private struct DiffKey: Hashable {
+    var file: CommitFile?
+    var dark: Bool
   }
 
   private func loadFiles() async {
@@ -314,5 +247,42 @@ private struct CommitDetail: View {
       guard !Task.isCancelled else { return }
       session.report(error, title: "Couldn't load the diff")
     }
+  }
+}
+
+/// A changed file in the inspector: its change's tile, name and folder, and its line counts.
+private struct FileRow: View {
+  let file: CommitFile
+  let isSelected: Bool
+  @State private var isHovered = false
+
+  var body: some View {
+    HStack(spacing: 8) {
+      ChangeKindBadge(kind: file.kind)
+      (Text(file.fileName).fontWeight(isSelected ? .medium : .regular)
+        + Text("  \(file.directory)").foregroundStyle(.kitSecondary).font(.system(size: 11)))
+        .lineLimit(1)
+        .truncationMode(.tail)
+      Spacer(minLength: 4)
+      if let lines = file.lines {
+        Diffstat(added: lines.added, removed: lines.removed)
+      } else {
+        Text("binary").kitFont(.caption)
+      }
+    }
+    .padding(.horizontal, 6)
+    .frame(height: 32)
+    .background {
+      if isSelected {
+        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
+      } else if isHovered {
+        RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover)
+      }
+    }
+    .contentShape(Rectangle())
+    .onHover { isHovered = $0 }
+    .animation(.kit, value: isSelected)
+    .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
   }
 }

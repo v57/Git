@@ -25,6 +25,14 @@ struct RepositoryCommands: Commands {
     CommandGroup(after: .toolbar) {
       HideWhitespaceToggle()
     }
+    CommandGroup(before: .sidebar) {
+      ForEach(RepositoryMode.allCases) { mode in
+        Button(mode.title) { state?.mode = mode }
+          .keyboardShortcut(mode.shortcut, modifiers: .command)
+          .disabled(state == nil)
+      }
+      Divider()
+    }
     CommandMenu("Repository") {
       Button("Refresh") { run { await $0.refresh() } }
         .keyboardShortcut("r")

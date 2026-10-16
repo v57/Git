@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -17,9 +18,9 @@ struct ChangesScreen: View {
       VStack(spacing: 0) {
         ChangeList(session: session, state: state)
           .frame(maxHeight: .infinity)
-        Divider()
         CommitComposer(session: session, state: state)
       }
+      .kitPane(.secondary)
     }
   }
 }
@@ -40,46 +41,50 @@ private struct ChangeList: View {
 
   var body: some View {
     ScrollView {
-      // Lazy: with hundreds of changes, an eager stack updates every row on each scrolled frame.
-      LazyVStack(alignment: .leading, spacing: 0) {
+      VStack(alignment: .leading, spacing: KitMetrics.gutter) {
         if let status {
-          sectionHeader("Staged", count: status.staged.count, action: "Unstage All") {
+          let stagedLines = lines(status.staged)
+          ChangeCard(
+            title: "Staged", systemImage: "tray", hue: .green,
+            meta: fileCount(status.staged.count), lines: stagedLines,
+            action: "Unstage All", isBusy: session.isBusy, isEmpty: status.staged.isEmpty
+          ) {
             Task { await session.unstageAll() }
           } discard: {
             pendingDiscard = PendingDiscard(changes: status.staged, area: .staged)
+          } rows: {
+            if status.staged.isEmpty, !status.isClean {
+              Text("Tick a file below to include it in the next commit.")
+                .kitFont(.caption)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 8)
+            }
+            ForEach(status.staged) { change in
+              row(change).transition(.row)
+            }
           }
-          if status.staged.isEmpty, !status.isClean {
-            Text("Tick a file below to include it in the next commit.")
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-              .frame(maxWidth: .infinity, alignment: .leading)
-              .padding(12)
-              .overlay(
-                RoundedRectangle(cornerRadius: 8).strokeBorder(
-                  .separator, style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-              )
-              .padding(.horizontal, 8)
-              .padding(.bottom, 6)
-          }
-          ForEach(status.staged) { change in
-            row(change).transition(.opacity.combined(with: .move(edge: .bottom)))
-          }
-          sectionHeader("Unstaged", count: status.unstaged.count, action: "Stage All") {
+          ChangeCard(
+            title: "Unstaged", systemImage: "pencil", hue: .orange,
+            meta: fileCount(status.unstaged.count), lines: lines(status.unstaged),
+            action: "Stage All", isBusy: session.isBusy, isEmpty: status.unstaged.isEmpty
+          ) {
             Task { await session.stageAll() }
           } discard: {
             pendingDiscard = PendingDiscard(changes: status.unstaged, area: .unstaged)
-          }
-          .padding(.top, 10)
-          ForEach(status.unstaged) { change in
-            row(change).transition(.opacity.combined(with: .move(edge: .top)))
+          } rows: {
+            ForEach(status.unstaged) { change in
+              row(change).transition(.row)
+            }
           }
         } else {
-          ProgressView().frame(maxWidth: .infinity).padding(.top, 40)
+          LiveIcon(systemImage: "pencil", hue: .gray, status: .working)
+            .frame(maxWidth: .infinity)
+            .padding(.top, 40)
         }
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 6)
-      .animation(.app, value: status)
+      .padding(KitMetrics.gutter)
+      .animation(.kit, value: status)
     }
     .onChange(of: status, initial: true) { _, status in
       guard let status else { return }
@@ -94,12 +99,12 @@ private struct ChangeList: View {
       if kept.isEmpty, let first = all.first { kept = [first.id] }
       if kept != state.selectedChanges { state.selectedChanges = kept }
     }
-    .confirmationDialog(
+    .kitConfirmation(
       discardTitle,
       isPresented: .init(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }),
-      titleVisibility: .visible, presenting: pendingDiscard
-    ) { pending in
-      Button("Discard Changes", role: .destructive) {
+      message: discardMessage, systemImage: "trash", confirm: "Discard Changes"
+    ) {
+      if let pending = pendingDiscard {
         Task {
           if pending.area == .staged {
             await session.discardStaged(pending.changes)
@@ -108,13 +113,24 @@ private struct ChangeList: View {
           }
         }
       }
-    } message: { pending in
-      let files = pending.changes.count == 1 ? "the file" : "these files"
-      Text(
-        pending.area == .staged
-          ? "Staged and unstaged changes to \(files) are lost. New files are moved to the Trash."
-          : "Unstaged changes are lost; staged changes are kept. New files are moved to the Trash.")
     }
+  }
+
+  private var discardMessage: String {
+    guard let pending = pendingDiscard else { return "" }
+    let files = pending.changes.count == 1 ? "the file" : "these files"
+    return pending.area == .staged
+      ? "Staged and unstaged changes to \(files) are lost. New files are moved to the Trash."
+      : "Unstaged changes are lost; staged changes are kept. New files are moved to the Trash."
+  }
+
+  private func fileCount(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
+
+  /// The lines a list of changes adds and removes, `nil` while they're counted.
+  private func lines(_ changes: [FileChange]) -> (added: Int, removed: Int)? {
+    let counts = changes.compactMap { session.lineCounts[$0.id] }
+    guard !changes.isEmpty, !counts.isEmpty else { return nil }
+    return (counts.compactMap(\.added).reduce(0, +), counts.compactMap(\.removed).reduce(0, +))
   }
 
   private var discardTitle: String {
@@ -123,34 +139,6 @@ private struct ChangeList: View {
     return pending.changes.count == 1
       ? "Discard changes to \(pending.changes[0].fileName)?"
       : "Discard \(area) changes to \(pending.changes.count) files?"
-  }
-
-  private func sectionHeader(
-    _ title: String, count: Int, action: String, perform: @escaping () -> Void,
-    discard: @escaping () -> Void
-  ) -> some View {
-    HStack {
-      Text("\(title) · \(count)")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.secondary)
-        .contentTransition(.numericText(value: Double(count)))
-        .animation(.app, value: count)
-      Spacer()
-      if count > 0 {
-        Button("Discard All…", action: discard)
-          .buttonStyle(.borderless)
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(.secondary)
-          .disabled(session.isBusy)
-        Button(action, action: perform)
-          .buttonStyle(.borderless)
-          .font(.system(size: 12, weight: .medium))
-          .foregroundStyle(Color.accentColor)
-          .disabled(session.isBusy)
-      }
-    }
-    .padding(.horizontal, 8)
-    .frame(height: 32)
   }
 
   private func row(_ change: FileChange) -> some View {
@@ -189,49 +177,103 @@ private struct ChangeList: View {
   }
 }
 
+/// Staged or Unstaged: a card whose header sums up its files, with Discard All and Stage All
+/// (or Unstage All), then its rows, laid out lazily.
+private struct ChangeCard<Rows: View>: View {
+  let title: String
+  let systemImage: String
+  let hue: Hue
+  let meta: String
+  let lines: (added: Int, removed: Int)?
+  let action: String
+  let isBusy: Bool
+  let isEmpty: Bool
+  let perform: () -> Void
+  let discard: () -> Void
+  @ViewBuilder let rows: () -> Rows
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      RichHeader(
+        Text(title),
+        icon: { Tile(systemImage: systemImage, hue: hue, size: 24) },
+        meta: {
+          HStack(spacing: 6) {
+            Text(meta)
+            if let lines {
+              Text("·").foregroundStyle(.kitTertiary)
+              Diffstat(added: lines.added, removed: lines.removed)
+            }
+          }
+        },
+        accessory: {
+          if !isEmpty {
+            HStack(spacing: 2) {
+              Button("Discard All…", systemImage: "trash", action: discard)
+                .help("Discard all \(title.lowercased()) changes")
+              Button(action, action: perform)
+                .buttonStyle(.kitPlain)
+            }
+            .disabled(isBusy)
+          }
+        }
+      )
+      .padding([.horizontal, .top], KitMetrics.cardPadding)
+      LazyVStack(spacing: 2) { rows() }
+        .padding([.horizontal, .bottom], KitMetrics.cardPadding)
+    }
+    .kitSurface(.card)
+  }
+}
+
 /// A changed file: checkbox, status, name over folder, and line counts.
 private struct ChangeRow: View {
   let change: FileChange
-  let lines: LineCounts?
+  let lines: GitKit.LineCounts?
   let isSelected: Bool
   let toggle: () -> Void
   let select: () -> Void
+  @State private var isHovered = false
 
   var body: some View {
-    HStack(spacing: 10) {
-      Toggle("", isOn: .init(get: { change.area == .staged }, set: { _ in toggle() }))
-        .toggleStyle(.checkbox)
-        .labelsHidden()
+    HStack(spacing: 8) {
+      // The kit's checkbox shows its label even with `.labelsHidden()`, so the label is for VoiceOver only.
+      Toggle(isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })) { EmptyView() }
+        .toggleStyle(.kitCheckbox)
+        .fixedSize()
         .accessibilityLabel((change.area == .staged ? "Unstage " : "Stage ") + change.fileName)
-      Button(action: select) {
-        HStack(spacing: 8) {
-          ChangeKindBadge(kind: change.kind)
-          VStack(alignment: .leading, spacing: 1) {
-            Text(change.fileName)
-              .fontWeight(.medium)
-              .lineLimit(1)
-              .truncationMode(.middle)
-            Text(change.originalPath.map { "from \($0)" } ?? change.directory)
-              .font(.system(size: 11))
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .truncationMode(.head)
-          }
-          Spacer(minLength: 4)
-          LineCountText(counts: lines)
+      ChangeKindBadge(kind: change.kind)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(change.fileName)
+          .fontWeight(isSelected ? .medium : .regular)
+          .lineLimit(1)
+          .truncationMode(.middle)
+        if let folder = change.originalPath.map({ "from \($0)" }) ?? (change.directory.isEmpty ? nil : change.directory) {
+          Text(folder)
+            .kitFont(.caption)
+            .lineLimit(1)
+            .truncationMode(.head)
         }
-        .frame(height: 36)
-        .contentShape(Rectangle())
       }
-      .buttonStyle(.plain)
-      .accessibilityAddTraits(isSelected ? .isSelected : [])
+      Spacer(minLength: 4)
+      if let lines {
+        Diffstat(added: lines.added, removed: lines.removed)
+      }
     }
-    .padding(.horizontal, 8)
-    .background(
-      isSelected ? Color.accentColor.opacity(0.14) : .clear,
-      in: .rect(cornerRadius: 7, style: .continuous)
-    )
-    .animation(.app, value: isSelected)
+    .padding(.horizontal, 6)
+    .frame(height: 40)
+    .background {
+      if isSelected {
+        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
+      } else if isHovered {
+        RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover)
+      }
+    }
+    .contentShape(Rectangle())
+    .onTapGesture(perform: select)
+    .onHover { isHovered = $0 }
+    .animation(.kit, value: isSelected)
+    .accessibilityAddTraits(isSelected ? .isSelected : [])
     .help(change.path)
   }
 }

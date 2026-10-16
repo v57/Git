@@ -1,30 +1,202 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
-/// History: a filter bar (All Branches / Current Branch and the commit count), a table of commits
-/// with the branch graph, and the selected commit's inspector on the right.
+/// History: what isn't in sync first, each in its own card with its action (To pull, To push),
+/// then the branch's history card. The author's avatar is each commit's node on the branch graph,
+/// whose lanes run on through the gaps between the cards. The selected commit's inspector is on
+/// the right.
 struct HistoryScreen: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
+  /// Commits on the upstream that HEAD doesn't have, and HEAD's commits the upstream doesn't.
+  @State private var sync = SyncCommits()
 
   var body: some View {
     ResizableSplit(
       "HistoryInspectorWidth", pane: .trailing, width: 424, range: 340...720, mainMinWidth: 520
     ) {
-      VStack(spacing: 0) {
-        filterBar
-        CommitColumnsHeader(graphWidth: graphWidth)
-        Divider()
-        CommitTable(session: session, state: state, graphWidth: graphWidth)
-      }
+      CommitList(session: session, state: state, sync: sync)
+        .kitPane(.secondary)
     } pane: {
       CommitInspector(session: session, state: state)
     }
+    .task(id: SyncKey(revision: session.revision, upstream: session.status?.upstream)) {
+      sync = await SyncCommits.load(session)
+    }
   }
+
+  private struct SyncKey: Hashable {
+    var revision: Int
+    var upstream: String?
+  }
+}
+
+/// The commits that wait to be pulled and pushed.
+struct SyncCommits: Equatable {
+  var toPull: [Commit] = []
+  var toPush: [Commit] = []
+
+  static func load(_ session: RepositorySession) async -> SyncCommits {
+    guard session.status?.upstream != nil else { return SyncCommits() }
+    let repository = session.repository
+    let toPull = (try? await repository.log(LogQuery(revision: "HEAD..@{upstream}"), limit: 100)) ?? []
+    let toPush = (try? await repository.log(LogQuery(revision: "@{upstream}..HEAD"), limit: 100)) ?? []
+    return SyncCommits(toPull: toPull, toPush: toPush)
+  }
+}
+
+/// The cards of commits, laid out once per change of the commits: which card each commit is in,
+/// and the graph over them in that order.
+private struct HistoryLayout {
+  var toPull: [Commit] = []
+  var toPush: [Commit] = []
+  var rest: [Commit] = []
+  var graph: [Commit.ID: GraphRow] = [:]
+  var showsGraph = true
+
+  init() {}
+
+  init(commits: [Commit], sync: SyncCommits, showsGraph: Bool) {
+    self.showsGraph = showsGraph
+    guard showsGraph else {
+      rest = commits
+      return
+    }
+    toPull = sync.toPull
+    let pushIDs = Set(sync.toPush.map(\.id))
+    let pullIDs = Set(sync.toPull.map(\.id))
+    // The list's own copies, which carry their refs as the log shows them.
+    let byID = Dictionary(commits.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+    toPull = sync.toPull.map { byID[$0.id] ?? $0 }
+    toPush = sync.toPush.map { byID[$0.id] ?? $0 }
+    rest = commits.filter { !pushIDs.contains($0.id) && !pullIDs.contains($0.id) }
+    let ordered = toPull + toPush + rest
+    let rows = CommitGraph.layout(ordered)
+    graph = Dictionary(zip(ordered.map(\.id), rows), uniquingKeysWith: { a, _ in a })
+  }
+
+  var all: [Commit] { toPull + toPush + rest }
+
+  /// Room for the widest row's lanes, capped so a busy graph doesn't push the text away.
+  var graphWidth: CGFloat {
+    let lanes = min(graph.values.lazy.map(\.width).max() ?? 1, CommitGraphCell.maxLanes)
+    return CommitGraphCell.inset * 2 + CGFloat(max(lanes, 1) - 1) * CommitGraphCell.spacing
+  }
+
+  /// The lanes that run into `commit`'s row from above, for the gap and header before its card.
+  func lanes(into commit: Commit?) -> [Lane] {
+    guard let commit, let row = graph[commit.id] else { return [] }
+    return (row.passing + row.incoming).map { Lane(index: $0.lane, color: $0.color) }
+      + row.joining.map { Lane(index: $0.lane, color: $0.color) }
+  }
+}
+
+/// A lane of the graph and its color index.
+struct Lane: Hashable {
+  var index: Int
+  var color: Int
+}
+
+/// The cards: To pull, To push and the history, on the panel ground, with ↑/↓ to move the
+/// selection. ⇧↑/⇧↓ and ⇧-click select several; the context menu squashes several that follow
+/// one another.
+private struct CommitList: View {
+  let session: RepositorySession
+  @Bindable var state: RepositoryViewState
+  let sync: SyncCommits
+  @State private var layout = HistoryLayout()
+  @State private var branchStart: Commit?
+  @State private var tagTarget: Commit?
+  @State private var resetTarget: Commit?
+  @State private var squashRequest: SquashRequest?
+  @State private var width: CGFloat = 800
+  /// Where ⇧ ranges start: the commit last selected without ⇧.
+  @State private var anchor: Commit.ID?
+  @FocusState private var isFocused: Bool
+
+  private struct LayoutKey: Hashable {
+    var count: Int
+    var first: Commit.ID?
+    var last: Commit.ID?
+    var sync: [Commit.ID]
+    var showsGraph: Bool
+  }
+
+  private var layoutKey: LayoutKey {
+    LayoutKey(
+      count: session.commits.count, first: session.commits.first?.id, last: session.commits.last?.id,
+      sync: (sync.toPull + sync.toPush).map(\.id), showsGraph: session.logQuery.showsGraph)
+  }
+
+  var body: some View {
+    ScrollViewReader { proxy in
+      ScrollView {
+        VStack(alignment: .leading, spacing: 0) {
+          filterBar
+          cards
+        }
+        .padding(.horizontal, KitMetrics.gutter)
+        .padding(.bottom, KitMetrics.gutter)
+      }
+      .focusable()
+      .focusEffectDisabled()
+      .focused($isFocused)
+      .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+        move(press.key == .downArrow ? 1 : -1, extending: press.modifiers.contains(.shift))
+      }
+      .onChange(of: state.selectedCommit) { _, id in
+        if let id { withKitAnimation { proxy.scrollTo(id) } }
+      }
+    }
+    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
+    .onChange(of: layoutKey, initial: true) {
+      layout = HistoryLayout(commits: session.commits, sync: sync, showsGraph: session.logQuery.showsGraph)
+    }
+    // A commit selected elsewhere (a tag in the sidebar) replaces a selection it isn't part of.
+    .onChange(of: state.selectedCommit, initial: true) { _, id in
+      guard let id, !state.selectedCommits.contains(id) || state.selectedCommits.count == 1 else {
+        return
+      }
+      state.selectedCommits = [id]
+      anchor = id
+    }
+    .overlay {
+      if session.commits.isEmpty && !session.isLoadingCommits {
+        if let search = session.logQuery.search {
+          EmptyState(systemImage: "magnifyingglass", title: "No Results", message: "No commit matches “\(search)”.")
+        } else {
+          EmptyState(systemImage: "clock", title: "No Commits", message: "Commits you make appear here.")
+        }
+      }
+    }
+    .task(id: session.commits.first?.id) {
+      if state.selectedCommit == nil { state.selectedCommit = layout.all.first?.id ?? session.commits.first?.id }
+    }
+    .sheet(item: $branchStart) { commit in
+      NewBranchSheet(session: session, startPoint: commit.id)
+    }
+    .sheet(item: $tagTarget) { commit in
+      NewTagSheet(session: session, commit: commit)
+    }
+    .sheet(item: $squashRequest) { request in
+      SquashSheet(session: session, commits: request.commits) { select($0) }
+    }
+    .kitConfirmation(
+      "Reset \(session.status?.branch ?? "HEAD") to \(resetTarget?.shortID ?? "")?",
+      isPresented: .init(get: { resetTarget != nil }, set: { if !$0 { resetTarget = nil } }),
+      message: "Later commits are removed from the branch. Their changes stay in the working tree, so you can commit them again.",
+      systemImage: "arrow.uturn.backward", confirm: "Reset", role: nil
+    ) {
+      if let commit = resetTarget { Task { await session.reset(to: commit) } }
+    }
+  }
+
+  // MARK: Filter
 
   private var filterBar: some View {
     HStack(spacing: 12) {
-      DesignSegmented(
+      KitSegmented(
         selection: .init(
           get: { session.logQuery.allBranches },
           set: { all in
@@ -38,153 +210,127 @@ struct HistoryScreen: View {
       Text(
         "\(session.commits.count)\(session.hasMoreCommits ? "+" : "") commit\(session.commits.count == 1 ? "" : "s") · \(authors) author\(authors == 1 ? "" : "s")"
       )
-      .font(.system(size: 12))
-      .foregroundStyle(.secondary)
+      .kitFont(.caption)
       .contentTransition(.numericText(value: Double(session.commits.count)))
-      .animation(.app, value: session.commits.count)
+      .animation(.kit, value: session.commits.count)
     }
-    .padding(.horizontal, 16)
-    .frame(height: 48)
+    .padding(.horizontal, 4)
+    .frame(height: 44)
   }
 
-  /// Room for the widest row's lanes, capped so a busy graph doesn't push the text away.
-  private var graphWidth: CGFloat {
-    let lanes = min(session.graph.lazy.map(\.width).max() ?? 1, GraphCell.maxLanes)
-    return max(56, GraphCell.inset * 2 + CGFloat(max(lanes, 1) - 1) * GraphCell.spacing)
-  }
-}
+  // MARK: Cards
 
-/// Column widths shared by the header and the rows.
-enum CommitColumns {
-  static let author: CGFloat = 132
-  static let date: CGFloat = 124
-  static let commit: CGFloat = 68
-}
-
-private struct CommitColumnsHeader: View {
-  let graphWidth: CGFloat
-
-  var body: some View {
-    HStack(spacing: 0) {
-      Text("Graph").frame(width: graphWidth, alignment: .leading).padding(.leading, 8)
-      Text("Description").frame(maxWidth: .infinity, alignment: .leading)
-      Text("Author").frame(width: CommitColumns.author, alignment: .leading)
-      Text("Date").frame(width: CommitColumns.date, alignment: .leading)
-      Text("Commit").frame(width: CommitColumns.commit, alignment: .leading)
+  @ViewBuilder
+  private var cards: some View {
+    let layout = layout
+    let upstream = session.status?.upstream ?? "the upstream"
+    if !layout.toPull.isEmpty {
+      CommitCard(
+        title: "To pull", count: Count(layout.toPull.count), meta: ["from \(upstream)", authors(layout.toPull)],
+        systemImage: "arrow.down", hue: .gray, lanes: [], graphWidth: layout.graphWidth
+      ) {
+        rows(layout.toPull, layout: layout, kind: .toPull)
+      } accessory: {
+        Button("Pull", systemImage: "arrow.down") { Task { await session.pull() } }
+          .buttonStyle(.kit)
+          .controlSize(.small)
+          .disabled(session.isBusy)
+      }
+      LaneGap(lanes: layout.lanes(into: layout.toPush.first ?? layout.rest.first), dashed: true)
     }
-    .font(.system(size: 11, weight: .semibold))
-    .foregroundStyle(.secondary)
-    .padding(.leading, 4)
-    .padding(.trailing, 20)
-    .frame(height: 26)
-  }
-}
-
-/// The commit rows, paged as they scroll, with ↑/↓ to move the selection. ⇧↑/⇧↓ and ⇧-click
-/// select several; the context menu squashes several that follow one another.
-private struct CommitTable: View {
-  let session: RepositorySession
-  @Bindable var state: RepositoryViewState
-  let graphWidth: CGFloat
-  @State private var branchStart: Commit?
-  @State private var tagTarget: Commit?
-  @State private var resetTarget: Commit?
-  @State private var squashRequest: SquashRequest?
-  /// Where ⇧ ranges start: the commit last selected without ⇧.
-  @State private var anchor: Commit.ID?
-  @FocusState private var isFocused: Bool
-
-  var body: some View {
-    ScrollViewReader { proxy in
-      ScrollView {
+    if !layout.toPush.isEmpty {
+      CommitCard(
+        title: "To push", count: Count(layout.toPush.count, .attention),
+        meta: ["to \(upstream)", authors(layout.toPush)], systemImage: "arrow.up", hue: .accent,
+        lanes: layout.lanes(into: layout.toPush.first), graphWidth: layout.graphWidth
+      ) {
+        rows(layout.toPush, layout: layout, kind: .toPush)
+      } accessory: {
+        Button("Push", systemImage: "arrow.up") { Task { await session.push() } }
+          .buttonStyle(.kitPrimary)
+          .controlSize(.small)
+          .disabled(session.isBusy)
+      }
+      LaneGap(lanes: layout.lanes(into: layout.rest.first), dashed: false)
+    }
+    if !layout.rest.isEmpty || session.isLoadingCommits {
+      CommitCard(
+        title: historyTitle, count: nil, meta: historyMeta, systemImage: historyImage, hue: .accent,
+        lanes: layout.lanes(into: layout.rest.first), graphWidth: layout.graphWidth
+      ) {
         LazyVStack(spacing: 0) {
-          ForEach(Array(session.commits.enumerated()), id: \.element.id) { index, commit in
-            CommitRow(
-              commit: commit, graph: index < session.graph.count ? session.graph[index] : nil,
-              graphWidth: graphWidth, isHead: commit.id == session.status?.headOID,
-              isSelected: state.selectedCommit == commit.id
-                || state.selectedCommits.contains(commit.id)
-            ) {
-              click(commit)
-            }
-            .id(commit.id)
-            .contextMenu {
-              if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
-                selectionMenu()
-              } else {
-                contextMenu(for: commit)
-              }
-            }
-            .onAppear {
-              if commit.id == session.commits.last?.id {
-                Task { await session.loadMoreCommits() }
-              }
-            }
-          }
+          rows(layout.rest, layout: layout, kind: .history)
           if session.isLoadingCommits {
-            ProgressView().controlSize(.small).padding(8)
+            HStack(spacing: 8) {
+              LiveIcon(systemImage: "clock", hue: .gray, status: .working, size: 18)
+              Text("Loading older commits").kitFont(.caption)
+            }
+            .padding(.leading, layout.graphWidth + 8)
+            .frame(maxWidth: .infinity, minHeight: 36, alignment: .leading)
           }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 4)
+      } accessory: {
+        EmptyView()
       }
-      .focusable()
-      .focusEffectDisabled()
-      .focused($isFocused)
-      .onKeyPress(keys: [.upArrow, .downArrow]) { press in
-        move(press.key == .downArrow ? 1 : -1, extending: press.modifiers.contains(.shift))
-      }
-      .onChange(of: state.selectedCommit) { _, id in
-        if let id { withAnimation(.app) { proxy.scrollTo(id) } }
-      }
-    }
-    // A commit selected elsewhere (a tag in the sidebar) replaces a selection it isn't part of.
-    .onChange(of: state.selectedCommit, initial: true) { _, id in
-      guard let id, !state.selectedCommits.contains(id) || state.selectedCommits.count == 1 else {
-        return
-      }
-      state.selectedCommits = [id]
-      anchor = id
-    }
-    .overlay {
-      if session.commits.isEmpty && !session.isLoadingCommits {
-        if let search = session.logQuery.search {
-          ContentUnavailableView.search(text: search)
-        } else {
-          ContentUnavailableView("No Commits", systemImage: "clock")
-        }
-      }
-    }
-    .task(id: session.commits.first?.id) {
-      if state.selectedCommit == nil { state.selectedCommit = session.commits.first?.id }
-    }
-    .sheet(item: $branchStart) { commit in
-      NewBranchSheet(session: session, startPoint: commit.id)
-    }
-    .sheet(item: $tagTarget) { commit in
-      NewTagSheet(session: session, commit: commit)
-    }
-    .sheet(item: $squashRequest) { request in
-      SquashSheet(session: session, commits: request.commits) { select($0) }
-    }
-    .confirmationDialog(
-      "Reset \(session.status?.branch ?? "HEAD") to \(resetTarget?.shortID ?? "")?",
-      isPresented: .init(get: { resetTarget != nil }, set: { if !$0 { resetTarget = nil } }),
-      titleVisibility: .visible
-    ) {
-      Button("Reset") {
-        if let commit = resetTarget { Task { await session.reset(to: commit) } }
-      }
-    } message: {
-      Text(
-        "Later commits are removed from the branch. Their changes stay in the working tree, "
-          + "so you can commit them again.")
     }
   }
+
+  private var historyTitle: String {
+    if session.logQuery.search != nil { return "Results" }
+    return session.status?.branch ?? session.status?.headOID.map { String($0.prefix(7)) } ?? "History"
+  }
+
+  private var historyImage: String {
+    session.logQuery.search != nil ? "magnifyingglass" : "arrow.triangle.branch"
+  }
+
+  private var historyMeta: [String] {
+    if let search = session.logQuery.search {
+      let count = session.commits.count
+      return ["\(count) commit\(count == 1 ? "" : "s") matching “\(search)”"]
+    }
+    var parts = [session.repository.url.lastPathComponent]
+    if session.logQuery.allBranches { parts.append("all branches") }
+    if let tag = session.tags.first { parts.append("\(tag.name) is the latest tag") }
+    return parts
+  }
+
+  private func authors(_ commits: [Commit]) -> String {
+    var seen = Set<String>()
+    let names = commits.map(\.authorName).filter { seen.insert($0).inserted }
+    return names.count > 2 ? "\(names[0]), \(names[1]) and \(names.count - 2) more" : names.joined(separator: ", ")
+  }
+
+  private func rows(_ commits: [Commit], layout: HistoryLayout, kind: CommitRow.Kind) -> some View {
+    ForEach(commits) { commit in
+      CommitRow(
+        commit: commit, graph: layout.graph[commit.id], graphWidth: layout.graphWidth, kind: kind,
+        isHead: commit.id == session.status?.headOID, isUnpushed: kind == .toPush,
+        isSelected: state.selectedCommit == commit.id || state.selectedCommits.contains(commit.id),
+        isFocused: isFocused, maxRefs: width < 720 ? 1 : 2
+      )
+      .onTapGesture { click(commit) }
+      .id(commit.id)
+      .contextMenu {
+        if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
+          selectionMenu()
+        } else {
+          contextMenu(for: commit)
+        }
+      }
+      .onAppear {
+        if kind == .history, commit.id == session.commits.last?.id {
+          Task { await session.loadMoreCommits() }
+        }
+      }
+    }
+  }
+
+  // MARK: Selection
 
   /// Moves the selection one row; with ⇧ it extends the selection instead.
   private func move(_ offset: Int, extending: Bool) -> KeyPress.Result {
-    let commits = session.commits
+    let commits = layout.all
     guard !commits.isEmpty else { return .ignored }
     let index = state.selectedCommit.flatMap { id in commits.firstIndex { $0.id == id } } ?? -1
     let next = commits[min(max(index + offset, 0), commits.count - 1)].id
@@ -207,7 +353,7 @@ private struct CommitTable: View {
 
   /// Selects the commits from the anchor to `id` and shows `id` in the inspector.
   private func extendSelection(to id: Commit.ID) {
-    let commits = session.commits
+    let commits = layout.all
     let start = anchor ?? state.selectedCommit ?? id
     guard let from = commits.firstIndex(where: { $0.id == start }),
       let to = commits.firstIndex(where: { $0.id == id })
@@ -256,6 +402,262 @@ private struct CommitTable: View {
   }
 }
 
+
+/// A card of commits: the rich header (with the lanes that run on behind it) and its rows.
+private struct CommitCard<Rows: View, Accessory: View>: View {
+  let title: String
+  let count: Count?
+  let meta: [String]
+  let systemImage: String
+  let hue: Hue
+  let lanes: [Lane]
+  let graphWidth: CGFloat
+  @ViewBuilder let rows: () -> Rows
+  @ViewBuilder let accessory: () -> Accessory
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 0) {
+      RichHeader(
+        Text(title),
+        // On the window's ground, so the lanes behind the header don't show through the tile.
+        icon: {
+          Tile(systemImage: systemImage, hue: hue, size: 24)
+            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.kitWindow))
+        },
+        meta: { MetaLine(meta) },
+        accessory: {
+          HStack(spacing: 8) {
+            if let count { count }
+            accessory()
+          }
+        }
+      )
+      .background(alignment: .leading) { LaneLines(lanes: lanes, dashed: false).frame(width: graphWidth) }
+      .padding([.horizontal, .top], KitMetrics.cardPadding)
+      VStack(spacing: 0) { rows() }
+        .padding([.horizontal, .bottom], KitMetrics.cardPadding)
+    }
+    .kitSurface(.card)
+  }
+}
+
+/// The gap between two cards, with the graph's lanes running through it.
+private struct LaneGap: View {
+  let lanes: [Lane]
+  let dashed: Bool
+
+  var body: some View {
+    LaneLines(lanes: lanes, dashed: dashed)
+      .frame(height: KitMetrics.gutter)
+      .padding(.leading, KitMetrics.cardPadding)
+  }
+}
+
+/// Lanes running straight down, top to bottom.
+private struct LaneLines: View {
+  let lanes: [Lane]
+  let dashed: Bool
+
+  var body: some View {
+    Canvas { context, size in
+      for lane in lanes {
+        let x = CommitGraphCell.x(lane.index)
+        var path = Path()
+        path.move(to: CGPoint(x: x, y: 0))
+        path.addLine(to: CGPoint(x: x, y: size.height))
+        context.stroke(
+          path, with: .color(CommitGraphCell.color(lane.color, in: context.environment)),
+          style: CommitGraphCell.stroke(dashed: dashed))
+      }
+    }
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
+  }
+}
+
+/// One 46-point commit row: the graph with the author as the node, the message over the author,
+/// date and short sha, and the refs at the end.
+private struct CommitRow: View {
+  enum Kind { case toPull, toPush, history }
+
+  let commit: Commit
+  let graph: GraphRow?
+  let graphWidth: CGFloat
+  let kind: Kind
+  let isHead: Bool
+  let isUnpushed: Bool
+  let isSelected: Bool
+  let isFocused: Bool
+  let maxRefs: Int
+  @State private var isHovered = false
+
+  var body: some View {
+    HStack(spacing: 0) {
+      ZStack(alignment: .leading) {
+        if let graph {
+          CommitGraphCell(row: graph, dashed: kind == .toPull)
+        }
+        CommitNode(
+          commit: commit, kind: kind, isHead: isHead,
+          laneHue: graph.map { CommitGraphCell.hue($0.color) } ?? .accent
+        )
+        .position(x: CommitGraphCell.x(graph?.column ?? 0), y: 23)
+      }
+      .frame(width: graphWidth, height: 46)
+      VStack(alignment: .leading, spacing: 1) {
+        Text(commit.subject)
+          .fontWeight(isSelected && isFocused ? .medium : .regular)
+          .lineLimit(1)
+        HStack(spacing: 0) {
+          if commit.parents.count > 1 {
+            Image(systemName: "arrow.triangle.merge").padding(.trailing, 3)
+            Text("Merge · ")
+          }
+          Text("\(commit.authorName) · \(commit.authorDate.historyFormatted) · ")
+          Text(commit.shortID).monospaced()
+        }
+        .kitFont(.caption)
+        .lineLimit(1)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      if !commit.refs.isEmpty {
+        // The refs keep their room; the message gives way.
+        RefChips(
+          commit.refs.map(RefChip.Ref.init), maxVisible: maxRefs, meta: [commit.shortID, commit.subject]
+        )
+        .controlSize(.small)
+        .padding(.leading, 8)
+        .layoutPriority(1)
+      }
+    }
+    .padding(.trailing, 8)
+    .frame(height: 46)
+    .background {
+      let shape = RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous)
+      if isSelected {
+        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
+      } else if isHovered {
+        shape.fill(.kitHover)
+      }
+    }
+    .contentShape(Rectangle())
+    .onHover { isHovered = $0 }
+    .animation(.kitFast, value: isHovered)
+    .animation(.kit, value: isSelected)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
+    .help(commit.message)
+  }
+}
+
+/// The author as the commit's node: HEAD rings it in the accent, a badge says it isn't pushed
+/// (↑) or is only on the upstream (↓, faded); a merge is a small tile in its lane's color.
+private struct CommitNode: View {
+  let commit: Commit
+  let kind: CommitRow.Kind
+  let isHead: Bool
+  let laneHue: Hue
+
+  var body: some View {
+    Group {
+      if commit.parents.count > 1 {
+        Tile(hue: laneHue, size: 20, shape: .circle) { Image(systemName: "arrow.triangle.merge") }
+          .background(Circle().fill(.kitCard))
+      } else {
+        Avatar(name: commit.authorName, size: 24)
+          .opacity(kind == .toPull ? 0.55 : 1)
+          .background(Circle().fill(.kitCard))
+      }
+    }
+    .overlay {
+      if isHead { Circle().strokeBorder(.kitAccent, lineWidth: 2).padding(-4) }
+    }
+    .overlay(alignment: .bottomTrailing) {
+      if kind != .history {
+        Image(systemName: kind == .toPush ? "arrow.up" : "arrow.down")
+          .font(.system(size: 7, weight: .heavy))
+          .foregroundStyle(.white)
+          .frame(width: 12, height: 12)
+          .background(Circle().fill(kind == .toPush ? AnyShapeStyle(.kitAccent) : AnyShapeStyle(Hue.gray.fill)))
+          .background(Circle().fill(.kitCard).padding(-1.5))
+          .offset(x: 4, y: 4)
+      }
+    }
+    .help("\(commit.authorName) <\(commit.authorEmail)>")
+  }
+}
+
+/// A row's slice of the branch graph: lines through the row and into its node. Rows sit edge to
+/// edge, so the slices join into continuous lines.
+struct CommitGraphCell: View {
+  let row: GraphRow
+  var dashed = false
+
+  static let maxLanes = 8
+  static let spacing: CGFloat = 22
+  static let inset: CGFloat = 18
+  private static let palette: [Hue] = [.accent, .orange, .purple, .teal, .pink, .green, .indigo, .brown]
+
+  static func x(_ lane: Int) -> CGFloat { inset + CGFloat(min(lane, maxLanes - 1)) * spacing }
+  static func hue(_ index: Int) -> Hue { palette[index % palette.count] }
+  static func color(_ index: Int, in environment: EnvironmentValues) -> Color {
+    hue(index).fill.resolve(in: environment)
+  }
+  static func stroke(dashed: Bool) -> StrokeStyle {
+    StrokeStyle(lineWidth: 2, lineCap: dashed ? .butt : .round, dash: dashed ? [3, 3] : [])
+  }
+
+  var body: some View {
+    Canvas { context, size in
+      let mid = size.height / 2
+      func stroke(_ path: Path, _ color: Int) {
+        context.stroke(path, with: .color(Self.color(color, in: context.environment)), style: Self.stroke(dashed: dashed))
+      }
+      /// A line with vertical ends, bending between two lanes.
+      func curve(from start: CGPoint, to end: CGPoint) -> Path {
+        Path { path in
+          path.move(to: start)
+          if start.x == end.x {
+            path.addLine(to: end)
+          } else {
+            let middle = (start.y + end.y) / 2
+            path.addCurve(
+              to: end, control1: CGPoint(x: start.x, y: middle), control2: CGPoint(x: end.x, y: middle))
+          }
+        }
+      }
+      let node = CGPoint(x: Self.x(row.column), y: mid)
+      for edge in row.passing {
+        stroke(curve(from: CGPoint(x: Self.x(edge.lane), y: 0), to: CGPoint(x: Self.x(edge.lane), y: size.height)), edge.color)
+      }
+      for join in row.joining {
+        stroke(curve(from: CGPoint(x: Self.x(join.lane), y: 0), to: CGPoint(x: Self.x(join.target), y: size.height)), join.color)
+      }
+      for edge in row.incoming {
+        stroke(curve(from: CGPoint(x: Self.x(edge.lane), y: 0), to: node), edge.color)
+      }
+      for edge in row.outgoing {
+        stroke(curve(from: node, to: CGPoint(x: Self.x(edge.lane), y: size.height)), edge.color)
+      }
+    }
+    .accessibilityHidden(true)
+  }
+}
+
+extension RefChip.Ref {
+  /// The kit's ref for a GitKit ref label.
+  init(_ label: RefLabel) {
+    let kind: RefChip.Kind =
+      switch label.kind {
+      case .head: .head
+      case .localBranch: .branch
+      case .remoteBranch: .remote
+      case .tag, .other: .tag
+      }
+    self.init(name: label.name, kind: kind, isCurrent: label.isCurrent)
+  }
+}
+
 /// Commits to squash, newest first.
 private struct SquashRequest: Identifiable {
   let commits: [Commit]
@@ -284,211 +686,42 @@ private struct SquashSheet: View {
   }
 
   var body: some View {
-    Form {
-      TextField("Summary", text: $summary)
-      TextField("Description", text: $details, axis: .vertical)
-        .lineLimit(4...12)
-      if let oldest = commits.last, let newest = commits.first {
-        LabeledContent("Commits", value: "\(oldest.shortID) … \(newest.shortID)")
-        LabeledContent("Author", value: oldest.authorName)
+    let isValid = !summary.trimmingCharacters(in: .whitespaces).isEmpty && !session.isBusy
+    KitSheet(
+      title: "Squash \(commits.count) Commits",
+      meta: commits.last.map { oldest in
+        "\(oldest.shortID) … \(commits.first?.shortID ?? "") become one commit by \(oldest.authorName)."
+      },
+      systemImage: "square.stack.3d.down.right", hue: .purple, width: 520
+    ) {
+      FormCard {
+        FormRow("Summary", systemImage: "character.cursor.ibeam", field: TextField("Summary", text: $summary))
+        FormRow(
+          "Description", systemImage: "text.alignleft",
+          field: TextField("Description", text: $details, axis: .vertical).lineLimit(4...12))
       }
       if !commits.allSatisfy(session.isUnpushed) {
-        Label(
-          "Some of these commits are already pushed. Afterwards, Force Push replaces them on "
-            + "the remote.", systemImage: "exclamationmark.triangle"
-        )
-        .foregroundStyle(.secondary)
+        Banner(
+          "Some of these commits are already pushed.",
+          message: "Afterwards, Force Push replaces them on the remote.",
+          systemImage: "exclamationmark.triangle", hue: .orange)
       }
-    }
-    .formStyle(.grouped)
-    .frame(width: 480)
-    .navigationTitle("Squash \(commits.count) Commits")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Squash") {
-          let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
-          let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
-          let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
-          let (session, commits, squashed) = (session, commits, squashed)
-          Task {
-            if let sha = await session.squash(commits, message: message) { squashed(sha) }
-          }
-          dismiss()
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Squash") {
+        let summary = summary.trimmingCharacters(in: .whitespacesAndNewlines)
+        let details = details.trimmingCharacters(in: .whitespacesAndNewlines)
+        let message = details.isEmpty ? summary : "\(summary)\n\n\(details)"
+        let (session, commits, squashed) = (session, commits, squashed)
+        Task {
+          if let sha = await session.squash(commits, message: message) { squashed(sha) }
         }
-        .disabled(summary.trimmingCharacters(in: .whitespaces).isEmpty || session.isBusy)
+        dismiss()
       }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
   }
-}
-
-/// One 44-point commit row: graph, refs and subject, author, date and short sha.
-private struct CommitRow: View {
-  let commit: Commit
-  let graph: GraphRow?
-  let graphWidth: CGFloat
-  let isHead: Bool
-  let isSelected: Bool
-  let select: () -> Void
-  @State private var isHovered = false
-
-  var body: some View {
-    Button(action: select) {
-      HStack(spacing: 0) {
-        Group {
-          if let graph {
-            GraphCell(row: graph, isHead: isHead)
-          } else {
-            Color.clear
-          }
-        }
-        .frame(width: graphWidth, height: 44, alignment: .leading)
-        RefsAndSubject {
-          RefPills(refs: commit.refs)
-          Text(commit.subject)
-            .fontWeight(isSelected ? .semibold : .regular)
-            .lineLimit(1)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        HStack(spacing: 7) {
-          Avatar(name: commit.authorName, size: 20)
-          Text(commit.authorName)
-            .lineLimit(1)
-        }
-        .frame(width: CommitColumns.author, alignment: .leading)
-        Text(commit.authorDate.historyFormatted)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .frame(width: CommitColumns.date, alignment: .leading)
-        Text(commit.shortID)
-          .font(.system(size: 12, design: .monospaced))
-          .foregroundStyle(.secondary)
-          .frame(width: CommitColumns.commit, alignment: .leading)
-      }
-      .padding(.leading, 4)
-      .padding(.trailing, 12)
-      .frame(height: 44)
-      .animation(.app, value: isSelected)
-      .animation(.app, value: isHovered)
-      .background(
-        isSelected
-          ? Color.accentColor.opacity(0.14) : Color.primary.opacity(isHovered ? 0.035 : 0),
-        in: .rect(cornerRadius: 8, style: .continuous)
-      )
-      .contentShape(Rectangle())
-    }
-    .buttonStyle(.plain)
-    .onHover { isHovered = $0 }
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
-    .help(commit.message)
-  }
-}
-
-/// A row's refs, then its subject. The refs get the width the subject leaves them (it keeps
-/// `subjectMinWidth`, or less when it's shorter), so many refs never widen the row past its column.
-private struct RefsAndSubject: Layout {
-  var spacing: CGFloat = 6
-  var subjectMinWidth: CGFloat = 120
-
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let widths = widths(in: proposal.width, subviews)
-    let height = subviews.map { $0.sizeThatFits(.unspecified).height }.max() ?? 0
-    return CGSize(width: proposal.width ?? widths.total(spacing), height: height)
-  }
-
-  func placeSubviews(
-    in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()
-  ) {
-    let widths = widths(in: bounds.width, subviews)
-    var x = bounds.minX
-    if subviews.count > 1 {
-      subviews[0].place(
-        at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
-        proposal: ProposedViewSize(width: widths.refs, height: nil))
-      if widths.refs > 0 { x += widths.refs + spacing }
-    }
-    subviews.last?.place(
-      at: CGPoint(x: x, y: bounds.midY), anchor: .leading,
-      proposal: ProposedViewSize(width: widths.subject, height: nil))
-  }
-
-  private struct Widths {
-    var refs: CGFloat
-    var subject: CGFloat
-
-    func total(_ spacing: CGFloat) -> CGFloat { refs + (refs > 0 ? spacing : 0) + subject }
-  }
-
-  /// The last subview is the subject; the first, when there are two, the refs.
-  private func widths(in width: CGFloat?, _ subviews: Subviews) -> Widths {
-    guard let subject = subviews.last else { return Widths(refs: 0, subject: 0) }
-    let ideal = subject.sizeThatFits(.unspecified).width
-    guard subviews.count > 1 else { return Widths(refs: 0, subject: min(ideal, width ?? ideal)) }
-    guard let width else {
-      return Widths(refs: subviews[0].sizeThatFits(.unspecified).width, subject: ideal)
-    }
-    let budget = max(width - spacing - min(ideal, subjectMinWidth), 0)
-    let refs = subviews[0].sizeThatFits(ProposedViewSize(width: budget, height: nil)).width
-    return Widths(refs: refs, subject: max(width - refs - (refs > 0 ? spacing : 0), 0))
-  }
-}
-
-/// A row's slice of the branch graph: lines through the row and the commit's dot. Rows sit
-/// edge to edge, so the slices join into continuous lines.
-struct GraphCell: View {
-  let row: GraphRow
-  let isHead: Bool
-
-  static let maxLanes = 8
-  static let spacing: CGFloat = 20
-  static let inset: CGFloat = 16
-  private static let palette: [Color] = [.accentColor, .orange, .purple, .teal, .pink, .green, .indigo, .brown]
-
-  var body: some View {
-    Canvas { context, size in
-      let mid = size.height / 2
-      func x(_ lane: Int) -> CGFloat { Self.inset + CGFloat(min(lane, Self.maxLanes - 1)) * Self.spacing }
-      func stroke(_ path: Path, _ color: Int) {
-        context.stroke(
-          path, with: .color(Self.color(color)), style: StrokeStyle(lineWidth: 2, lineCap: .round))
-      }
-      /// A line with vertical ends, bending between two lanes.
-      func curve(from start: CGPoint, to end: CGPoint) -> Path {
-        Path { path in
-          path.move(to: start)
-          if start.x == end.x {
-            path.addLine(to: end)
-          } else {
-            let middle = (start.y + end.y) / 2
-            path.addCurve(
-              to: end, control1: CGPoint(x: start.x, y: middle),
-              control2: CGPoint(x: end.x, y: middle))
-          }
-        }
-      }
-      let node = CGPoint(x: x(row.column), y: mid)
-      for edge in row.passing {
-        stroke(curve(from: CGPoint(x: x(edge.lane), y: 0), to: CGPoint(x: x(edge.lane), y: size.height)), edge.color)
-      }
-      for join in row.joining {
-        stroke(curve(from: CGPoint(x: x(join.lane), y: 0), to: CGPoint(x: x(join.target), y: size.height)), join.color)
-      }
-      for edge in row.incoming {
-        stroke(curve(from: CGPoint(x: x(edge.lane), y: 0), to: node), edge.color)
-      }
-      for edge in row.outgoing {
-        stroke(curve(from: node, to: CGPoint(x: x(edge.lane), y: size.height)), edge.color)
-      }
-      let radius: CGFloat = 5
-      let dot = Path(ellipseIn: CGRect(x: node.x - radius, y: mid - radius, width: radius * 2, height: radius * 2))
-      context.fill(dot, with: .color(isHead ? Self.color(row.color) : Color(nsColor: .textBackgroundColor)))
-      context.stroke(dot, with: .color(Self.color(row.color)), lineWidth: 2.5)
-    }
-    .accessibilityHidden(true)
-  }
-
-  private static func color(_ index: Int) -> Color { palette[index % palette.count] }
 }

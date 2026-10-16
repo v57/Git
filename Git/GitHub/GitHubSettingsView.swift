@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import SwiftUI
 
@@ -16,11 +17,9 @@ struct GitHubSettingsView: View {
           signedOut.transition(.page)
         }
       }
-      .animation(.app, value: account.isSignedIn)
+      .animation(.kit, value: account.isSignedIn)
     }
-    .padding(.horizontal, 28)
-    .padding(.vertical, 22)
-    .frame(width: 600, alignment: .top)
+    .frame(maxWidth: .infinity, alignment: .top)
     .sheet(item: $request) { GitHubSignInSheet(permissions: $0.permissions) }
   }
 
@@ -31,17 +30,17 @@ struct GitHubSettingsView: View {
         .font(.system(size: 17, weight: .semibold))
         .padding(.top, 4)
       Text("Create repositories and push to GitHub with an account that stays inside Git. Other apps can’t read its token.")
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.kitSecondary)
         .multilineTextAlignment(.center)
         .frame(maxWidth: 400)
         .fixedSize(horizontal: false, vertical: true)
       if let notice = account.notice {
         Text(notice)
-          .foregroundStyle(.red)
+          .foregroundStyle(Hue.red.text)
           .multilineTextAlignment(.center)
       }
       Button("Sign In…") { request = GitHubSignInRequest(permissions: .recommended) }
-        .buttonStyle(.design(.primary, padding: 16))
+        .buttonStyle(.kitPrimary)
         .padding(.top, 4)
     }
     .padding(.horizontal, 32)
@@ -65,9 +64,9 @@ struct GitHubSettingsView: View {
         }
         Spacer()
         Button("Change Permissions…") { request = GitHubSignInRequest(permissions: account.permissions) }
-          .buttonStyle(.design(size: .small))
+          .buttonStyle(.kit)
         Button("Sign Out") { account.signOut() }
-          .buttonStyle(.design(size: .small))
+          .buttonStyle(.kit)
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 14)
@@ -76,7 +75,7 @@ struct GitHubSettingsView: View {
       VStack(alignment: .leading, spacing: 6) {
         Text("Permissions")
           .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
           .padding(.horizontal, 4)
         VStack(spacing: 0) {
           ForEach(GitHubPermission.allCases) { permission in
@@ -89,7 +88,7 @@ struct GitHubSettingsView: View {
         .settingsCard()
         Text("While you’re signed in with access to private repositories, Git uses this account for github.com over HTTPS instead of your credential helpers. Revoke it any time on [GitHub › Settings › Applications](https://github.com/settings/applications).")
           .font(.system(size: 12))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.horizontal, 4)
           .padding(.top, 4)
@@ -112,22 +111,20 @@ private struct PermissionRow: View {
           ScopeLabel(scope: permission.scope)
             .padding(.horizontal, 5)
             .padding(.vertical, 1)
-            .background(Color.primary.opacity(0.05), in: .rect(cornerRadius: 4))
+            .background(.kitFillSoft, in: .rect(cornerRadius: KitMetrics.radiusXS))
         }
         Text(permission.detail)
           .font(.system(size: 12))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
       }
       Spacer()
       ZStack {
         if isGranted {
-          Label("Granted", systemImage: "checkmark")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.green)
+          Chip("Granted", systemImage: "checkmark", hue: .green)
             .transition(.scale(scale: 0.6).combined(with: .opacity))
         } else {
           Button("Grant…", action: grant)
-            .buttonStyle(.design(size: .small))
+            .buttonStyle(.kit)
             .transition(.opacity)
         }
       }
@@ -142,8 +139,7 @@ private struct PermissionRow: View {
 extension View {
   /// A white rounded card on the Settings background.
   fileprivate func settingsCard() -> some View {
-    background(Color(nsColor: .controlBackgroundColor), in: .rect(cornerRadius: 12, style: .continuous))
-      .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).strokeBorder(Color.primary.opacity(0.1)))
+    kitSurface(.card)
   }
 }
 

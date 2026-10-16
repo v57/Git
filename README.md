@@ -50,22 +50,24 @@ other repository that needs attention.
                                   and its granted scopes in the app's own keychain item (KeychainTokenStore),
                                   the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
                                   no dependency on GitKit
-    Git.xcodeproj                 the app; local packages ../Git (GitKit) and ../Code (CodeHighlighting)
+    Git.xcodeproj                 the app; local package ../Git (GitKit), and Code (CodeHighlighting) and Component (ComponentKit) from GitHub
     Git/                          app sources
       Library/    SavedRepository and SavedGroup (SwiftData), RepositoryLibrary (sessions, summaries,
                   import, grouping and ordering, fetch/pull/push across repositories)
       Sidebar/    groups and repositories with their state, then Workspace, Branches, Remotes, Tags, Worktrees
-      Changes/    file list, commit composer, diff cards with hunk/line actions, Resolve Conflicts
-      History/    commit table with branch graph, commit inspector
+      Changes/    file list, commit composer, the diff as hunk cards, Resolve Conflicts
+      History/    To pull / To push / history cards with the branch graph, commit inspector
       Stashes/    stashes with Apply, Pop and Drop
-      Shared/     avatars, status badges, ref pills and other small views
-      Diff/       DiffView (selection, copy), DiffHighlighter (the only file importing CodeHighlighting), LoadedDiff
+      Shared/     change-kind tiles, dates and other small helpers
+      Diff/       HunkCards (the kit's hunk cards), DiffView (long diffs: selection, copy), DiffHighlighter
+                  (the only file importing CodeHighlighting), LoadedDiff
       Toolbar/    Fetch/Pull/Push, Branch/Merge/Stash, branch popover, sheets
       Welcome/    the Welcome window: clone, open, new repository, recent repositories
       GitHub/     the app's GitHubAccount (client ID, hands its token to GitCredentials), the
                   sign-in sheet and its animated connection header, Settings › GitHub, Publish sheet
 
-Screens, panels and selections change with one animation, `Animation.app`
+The UI is ComponentKit (`../Component`): the kit's sidebar, sections, toolbar title and tool cards, inspector,
+sheets, buttons and badges. Screens, panels and selections change with the kit's one animation, `Animation.kit`
 (`.smooth(duration: 0.25)`): pages fade and rise, counts roll and symbols swap.
 
 ## How it works

@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import SwiftUI
 
@@ -56,7 +57,7 @@ struct GitHubSignInSheet: View {
       .padding([.horizontal, .bottom], 28)
     }
     .frame(width: 540)
-    .animation(.app, value: step)
+    .animation(.kit, value: step)
     .onDisappear {
       if step == .waiting { account.cancelSignIn() } else { account.endSignIn() }
     }
@@ -90,7 +91,7 @@ private struct ChooseStep: View {
       VStack(alignment: .leading, spacing: 6) {
         Text("Repositories")
           .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
           .padding(.horizontal, 2)
         HStack(spacing: 8) {
           RepositoryOption(
@@ -116,18 +117,18 @@ private struct ChooseStep: View {
       HStack(spacing: 8) {
         (Text("Requests ") + Text(requested.scopes.joined(separator: " · ")).font(.system(size: 11).monospaced()))
           .font(.system(size: 11))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
           .contentTransition(.interpolate)
-          .animation(.app, value: requested)
+          .animation(.kit, value: requested)
         Spacer()
         Button("Cancel", action: cancel)
-          .buttonStyle(.design(size: .small, padding: 14))
+          .buttonStyle(.kit)
           .keyboardShortcut(.cancelAction)
         Button(action: start) {
           Label("Continue on GitHub", systemImage: "arrow.up.right")
             .labelStyle(TrailingIconLabelStyle())
         }
-        .buttonStyle(.design(.primary, size: .small, padding: 14))
+        .buttonStyle(.kitPrimary)
         .keyboardShortcut(.defaultAction)
       }
       .padding(.top, 2)
@@ -143,41 +144,20 @@ private struct RepositoryOption: View {
   let detail: String
   let isSelected: Bool
   let select: () -> Void
-  @State private var isHovered = false
 
   var body: some View {
-    let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
-    Button(action: select) {
-      HStack(alignment: .top, spacing: 10) {
-        ZStack {
-          Circle().strokeBorder(isSelected ? Color.accentColor : Color.secondary.opacity(0.5), lineWidth: 1.5)
-          Circle().fill(Color.accentColor).padding(4).scaleEffect(isSelected ? 1 : 0.2).opacity(isSelected ? 1 : 0)
+    ChoiceCard(isOn: .init(get: { isSelected }, set: { if $0 { select() } })) {
+      VStack(alignment: .leading, spacing: 3) {
+        HStack(spacing: 6) {
+          Text(title).kitFont(.headline)
+          ScopeLabel(scope: scope)
         }
-        .frame(width: 15, height: 15)
-        .padding(.top, 1)
-        VStack(alignment: .leading, spacing: 3) {
-          HStack(spacing: 6) {
-            Text(title).fontWeight(.semibold)
-            ScopeLabel(scope: scope)
-          }
-          Text(detail)
-            .font(.system(size: 12))
-            .foregroundStyle(.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-        }
-        Spacer(minLength: 0)
+        Text(detail)
+          .kitFont(.caption)
+          .fixedSize(horizontal: false, vertical: true)
       }
-      .padding(.horizontal, 12)
-      .padding(.vertical, 11)
       .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-      .background(isSelected ? Color.accentColor.opacity(0.07) : isHovered ? Color.primary.opacity(0.03) : .clear, in: shape)
-      .overlay(shape.strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(0.12), lineWidth: isSelected ? 1.5 : 1))
-      .contentShape(shape)
     }
-    .buttonStyle(.plain)
-    .onHover { isHovered = $0 }
-    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isSelected)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
   }
 }
 
@@ -186,7 +166,7 @@ private struct PermissionToggle: View {
   @Binding var isOn: Bool
 
   var body: some View {
-    Toggle(isOn: $isOn.animation(.app)) {
+    Toggle(isOn: $isOn.animation(.kit)) {
       VStack(alignment: .leading, spacing: 3) {
         HStack(spacing: 6) {
           Text(permission.title).fontWeight(.semibold)
@@ -194,12 +174,11 @@ private struct PermissionToggle: View {
         }
         Text(permission.detail)
           .font(.system(size: 12))
-          .foregroundStyle(.secondary)
+          .foregroundStyle(.kitSecondary)
       }
       .frame(maxWidth: .infinity, alignment: .leading)
     }
-    .toggleStyle(.switch)
-    .controlSize(.small)
+    .toggleStyle(.kitSwitch)
     .padding(.horizontal, 12)
     .padding(.vertical, 11)
   }
@@ -228,7 +207,7 @@ private struct WaitingStep: View {
         if let code {
           DeviceCodeView(code: code.userCode)
         } else {
-          ProgressView().controlSize(.small)
+          LiveIcon(systemImage: "ellipsis", hue: .gray, status: .working, size: 18)
         }
       }
       .frame(height: 62)
@@ -241,19 +220,19 @@ private struct WaitingStep: View {
         } label: {
           CopyLabel(copiedAt: copiedAt)
         }
-        .buttonStyle(.design(size: .small))
+        .buttonStyle(.kit)
         Button {
           if let code { account.openVerificationPage(code) }
         } label: {
           Label("Open GitHub Again", systemImage: "arrow.up.right")
             .labelStyle(TrailingIconLabelStyle())
         }
-        .buttonStyle(.design(size: .small))
+        .buttonStyle(.kit)
       }
       .disabled(code == nil)
 
       HStack(spacing: 8) {
-        ProgressView().controlSize(.small)
+        LiveIcon(systemImage: "ellipsis", hue: .gray, status: .working, size: 18)
         Text("Waiting for you to approve Git on GitHub…")
         Spacer()
         if let code {
@@ -261,9 +240,9 @@ private struct WaitingStep: View {
             let left = max(0, Int(code.expiresAt.timeIntervalSince(context.date)))
             Text("Expires in \(left / 60):\(String(format: "%02d", left % 60))")
               .font(.system(size: 12).monospacedDigit())
-              .foregroundStyle(.secondary)
+              .foregroundStyle(.kitSecondary)
               .contentTransition(.numericText(countsDown: true))
-              .animation(.app, value: left)
+              .animation(.kit, value: left)
           }
         }
       }
@@ -274,7 +253,7 @@ private struct WaitingStep: View {
       HStack {
         Spacer()
         Button("Cancel", action: cancel)
-          .buttonStyle(.design(size: .small, padding: 14))
+          .buttonStyle(.kit)
           .keyboardShortcut(.cancelAction)
       }
     }
@@ -313,7 +292,7 @@ private struct DeviceCodeView: View {
       ForEach(Array(code.enumerated()), id: \.offset) { index, character in
         Group {
           if character == "-" {
-            Text("–").foregroundStyle(.tertiary).frame(width: 14)
+            Text("–").foregroundStyle(.kitTertiary).frame(width: 14)
           } else {
             Text(String(character))
               .frame(width: 40, height: 54)
@@ -388,12 +367,12 @@ private struct DoneStep: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
         .opacity(shown ? 1 : 0)
-        .animation(.app.delay(0.9), value: shown)
+        .animation(.kit.delay(0.9), value: shown)
       }
       HStack {
         Spacer()
         Button("Done", action: finish)
-          .buttonStyle(.design(.primary, size: .small, padding: 18))
+          .buttonStyle(.kitPrimary)
           .keyboardShortcut(.defaultAction)
       }
     }
@@ -427,10 +406,10 @@ private struct FailedStep: View {
       HStack(spacing: 8) {
         Spacer()
         Button("Cancel", action: cancel)
-          .buttonStyle(.design(size: .small, padding: 14))
+          .buttonStyle(.kit)
           .keyboardShortcut(.cancelAction)
         Button("Try Again", action: retry)
-          .buttonStyle(.design(.primary, size: .small, padding: 16))
+          .buttonStyle(.kitPrimary)
           .keyboardShortcut(.defaultAction)
       }
     }
@@ -452,7 +431,7 @@ private struct StepTitle: View {
     VStack(spacing: 4) {
       Text(title).font(.system(size: 17, weight: .semibold))
       Text(message)
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.kitSecondary)
         .fixedSize(horizontal: false, vertical: true)
     }
     .multilineTextAlignment(.center)
@@ -467,7 +446,7 @@ struct ScopeLabel: View {
   var body: some View {
     Text(scope)
       .font(.system(size: 11).monospaced())
-      .foregroundStyle(.secondary)
+      .foregroundStyle(.kitSecondary)
   }
 }
 

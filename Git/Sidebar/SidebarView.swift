@@ -1,10 +1,12 @@
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 
 /// The sidebar: every repository with its state at a glance, then the open repository's
-/// Workspace (Changes, History, Stashes), Branches, Remotes and Tags, and a filter at the bottom.
+/// Workspace (Changes, History, Stashes), Branches, Remotes and Tags, each a card whose header
+/// sums it up, and the bottom bar with the filter and Add.
 ///
 /// Dropping a folder (or picking one with +) adds every git repository inside it, grouped by
 /// the folder each is in. Repository states come from a file watcher over the shown ones.
@@ -18,50 +20,46 @@ struct SidebarView: View {
   @State private var isDropTargeted = false
   @State private var filter = ""
 
+  /// The sidebar's one selection is the open repository's screen; the open repository is the
+  /// raised row in Repositories.
+  private var mode: Binding<RepositoryMode?> {
+    Binding(
+      get: { selection.map { library.viewState(for: $0).mode } },
+      set: { mode in
+        guard let mode, let path = selection else { return }
+        let state = library.viewState(for: path)
+        withKitAnimation {
+          state.mode = mode
+          // Changes again leaves the "Merge complete" screen.
+          if mode == .changes { state.completedOperation = nil }
+        }
+      })
+  }
+
   var body: some View {
     @Bindable var library = library
-    VStack(spacing: 0) {
-      ScrollView {
-        VStack(alignment: .leading, spacing: 16) {
-          RepositoryList(selection: $selection, selected: $selected, filter: filter)
-          if let selection {
-            RepositorySections(
-              session: library.session(for: selection), state: library.viewState(for: selection),
-              filter: filter)
-          }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.horizontal, 10)
-        .padding(.top, 4)
-        .padding(.bottom, 12)
+    KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter") {
+      RepositoryList(selection: $selection, selected: $selected, filter: filter)
+      if let selection {
+        RepositorySections(
+          session: library.session(for: selection), state: library.viewState(for: selection),
+          filter: filter)
       }
-      Divider()
-      FilterField(text: $filter, prompt: "Filter")
-        .padding(10)
+    } bottomBar: {
+      Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
+        .help("Add the Git repositories in a folder")
     }
     .overlay {
       if repositories.isEmpty {
-        ContentUnavailableView {
-          Label("No Repositories", systemImage: "externaldrive.badge.plus")
-        } description: {
-          Text("Drop a folder here. Every Git repository inside it is added.")
-        } actions: {
-          Button("Add Folder…") { library.isImporterPresented = true }
+        EmptyState(
+          systemImage: "externaldrive.badge.plus", title: "No Repositories",
+          message: "Drop a folder here. Every Git repository inside it is added."
+        ) {
+          Button("Add Folder…") { library.isImporterPresented = true }.buttonStyle(.kitPrimary)
         }
-      } else if library.isImporting {
-        ProgressView("Looking for repositories…")
-          .padding()
-          .background(.regularMaterial, in: .rect(cornerRadius: 8))
       }
     }
-    .overlay {
-      if isDropTargeted {
-        RoundedRectangle(cornerRadius: 8)
-          .strokeBorder(Color.accentColor, lineWidth: 2)
-          .padding(4)
-          .allowsHitTesting(false)
-      }
-    }
+    .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     .dropDestination(for: URL.self) { urls, _ in
       drop(urls)
       return true
@@ -137,159 +135,156 @@ private struct RepositorySections: View {
   @Environment(\.modelContext) private var context
   @State private var pendingDelete: Branch?
   @State private var branchStart: String?
+  @State private var tagTarget: Commit?
 
   private func matches(_ text: String) -> Bool {
     filter.isEmpty || text.localizedCaseInsensitiveContains(filter)
   }
 
   var body: some View {
-    VStack(alignment: .leading, spacing: 16) {
-      workspace
-      // The checked-out branch first, as in the Branch popover.
-      let branches = session.localBranches.filter { matches($0.name) }
-        .sorted { $0.isCurrent && !$1.isCurrent }
-      if !branches.isEmpty {
-        section("Branches") {
-          ForEach(branches) { branch in branchRow(branch) }
-        }
+    workspace
+    // The checked-out branch first, as in the Branch popover.
+    let branches = session.localBranches.filter { matches($0.name) }
+      .sorted { $0.isCurrent && !$1.isCurrent }
+    if !branches.isEmpty {
+      KitSection("Branches", meta: branchesMeta, systemImage: "arrow.triangle.branch", hue: .orange) {
+        ForEach(branches) { branch in branchRow(branch) }
+      } accessory: {
+        Button("New Branch", systemImage: "plus") { branchStart = session.status?.branch ?? "HEAD" }
+          .help("Create a branch from \(session.status?.branch ?? "HEAD")")
       }
-      let remotes = session.remotes.filter(matches)
-      if !remotes.isEmpty {
-        section("Remotes") {
-          ForEach(remotes, id: \.self) { remote in
-            SidebarRow(title: remote, systemImage: "cloud") {
-              if let date = session.lastFetched {
-                Text("fetched \(date.agoFormatted)")
-                  .font(.system(size: 11))
-                  .foregroundStyle(.secondary)
-                  .lineLimit(1)
-              }
-            } action: {
-              Task { await session.fetch() }
-            }
-            .help("Fetch \(remote)")
+      .sheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) {
+        start in
+        NewBranchSheet(session: session, startPoint: start.value == "HEAD" ? nil : start.value)
+      }
+      .branchDeletion($pendingDelete, session: session)
+    }
+    let remotes = session.remotes.filter(matches)
+    if !remotes.isEmpty {
+      KitSection(
+        "Remotes", meta: remotesMeta(remotes), systemImage: "cloud", hue: .blue, status: remoteStatus
+      ) {
+        ForEach(remotes, id: \.self) { remote in
+          SidebarRow(remote, systemImage: "cloud") {
+            if let date = session.lastFetched { Text("fetched \(date.agoFormatted)") }
           }
+          .onRowTap { Task { await session.fetch() } }
+          .help("Fetch \(remote)")
         }
+      } accessory: {
+        Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
+          .disabled(session.isBusy)
+          .help("Fetch \(remotes.joined(separator: ", "))")
       }
-      let tags = session.tags.filter { matches($0.name) }
-      if !tags.isEmpty {
-        section("Tags") {
-          ForEach(tags.prefix(filter.isEmpty ? 12 : 100)) { tag in
-            SidebarRow(title: tag.name, systemImage: "tag") {
-              EmptyView()
-            } action: {
+    }
+    let tags = session.tags.filter { matches($0.name) }
+    if !tags.isEmpty {
+      KitSection("Tags", meta: tagsMeta, systemImage: "tag", hue: .gray) {
+        ForEach(tags.prefix(filter.isEmpty ? 12 : 100)) { tag in
+          SidebarRow(tag.name, systemImage: "tag")
+            .onRowTap {
               state.mode = .history
               state.selectedCommit = tag.commit
             }
             .contextMenu {
               Button("Copy Name") { copyToPasteboard(tag.name) }
             }
-          }
         }
+      } accessory: {
+        Button("New Tag", systemImage: "plus") { tagTarget = session.headCommit }
+          .disabled(session.headCommit == nil)
+          .help("Tag \(session.status?.branch ?? "HEAD")")
       }
-      if session.worktrees.count > 1 {
-        section("Worktrees") {
-          ForEach(session.worktrees) { worktree in
-            SidebarRow(
-              title: worktree.name, systemImage: "folder", isSelected: false,
-              isBold: worktree.isCurrent
-            ) {
-              Text(worktree.branch ?? "")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-            } action: {
-              if !worktree.isCurrent { library.open(worktree.url, into: context) }
-            }
+      .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
+    }
+    if session.worktrees.count > 1 {
+      KitSection("Worktrees", meta: worktreesMeta, systemImage: "folder", hue: .teal) {
+        ForEach(session.worktrees) { worktree in
+          SidebarRow(worktree.name, systemImage: "folder") {
+            Text(worktree.branch ?? "").lineLimit(1).truncationMode(.middle)
+          }
+          .onRowTap {
+            if !worktree.isCurrent { library.open(worktree.url, into: context) }
           }
         }
       }
     }
-    .sheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) { start in
-      NewBranchSheet(session: session, startPoint: start.value)
-    }
-    .branchDeletion($pendingDelete, session: session)
   }
+
+  // MARK: Workspace
 
   private var workspace: some View {
-    section("Workspace") {
-      let status = session.status
-      let conflicts = status?.conflicted.count ?? 0
-      ForEach(RepositoryMode.allCases) { mode in
-        SidebarRow(
-          title: mode.title, systemImage: mode.systemImage, isSelected: state.mode == mode
-        ) {
-          switch mode {
-          case .changes:
-            if conflicts > 0 {
-              CountBadge(count: conflicts, filled: .orange)
-            } else if let count = status?.changeCount, count > 0 {
-              CountBadge(count: count, filled: state.mode == mode ? Color.accentColor : nil)
+    let status = session.status
+    let conflicts = status?.conflicted.count ?? 0
+    return KitSection(
+      Text(session.repository.url.lastPathComponent),
+      content: {
+        ForEach(RepositoryMode.allCases) { mode in
+          SidebarRow(value: mode, mode.title, systemImage: mode.systemImage) {
+            switch mode {
+            case .changes:
+              if conflicts > 0 {
+                Count(conflicts, .attention)
+              } else if let count = status?.changeCount, count > 0 {
+                Count(count, .attention)
+              }
+            case .stashes:
+              if !session.stashes.isEmpty { Count(session.stashes.count) }
+            case .history:
+              EmptyView()
             }
-          case .stashes:
-            if !session.stashes.isEmpty { CountBadge(count: session.stashes.count) }
-          case .history:
-            EmptyView()
           }
-        } action: {
-          withAnimation(.app) {
-            state.mode = mode
-            // Changes again leaves the "Merge complete" screen.
-            if mode == .changes { state.completedOperation = nil }
-          }
+          .help("\(mode.title) (⌘\(mode.shortcut.character))")
         }
-        .keyboardShortcut(mode.shortcut, modifiers: .command)
-      }
-    }
+      },
+      icon: {
+        LiveIcon(systemImage: "arrow.triangle.branch", hue: .blue, status: session.isRefreshing ? .working : .idle)
+      },
+      meta: { WorkspaceMeta(status: status) },
+      accessory: { EmptyView() })
   }
 
+  // MARK: Meta lines
+
+  private var branchesMeta: [String] {
+    let local = session.localBranches
+    let merged = local.count { !$0.isCurrent && $0.aheadOfHead == 0 && ($0.behindHead ?? 0) > 0 }
+    return ["\(local.count) local", merged > 0 ? "\(merged) merged" : ""]
+  }
+
+  private func remotesMeta(_ remotes: [String]) -> [String] {
+    if let activity = session.activity, Self.remoteActivities.contains(activity) {
+      return [session.progress ?? activity.title]
+    }
+    let fetched = session.lastFetched.map { "fetched \($0.agoFormatted)" } ?? "never fetched"
+    return [remotes.count == 1 ? remotes[0] : "\(remotes.count) remotes", fetched]
+  }
+
+  private static let remoteActivities: [RepositorySession.Activity] = [.fetching, .pulling, .pushing]
+
+  private var remoteStatus: WorkStatus {
+    guard let activity = session.activity, Self.remoteActivities.contains(activity) else { return .idle }
+    return .working
+  }
+
+  private var tagsMeta: [String] {
+    guard let latest = session.tags.first else { return [] }
+    return ["Latest \(latest.name)", latest.date?.dayFormatted ?? ""]
+  }
+
+  private var worktreesMeta: [String] {
+    let detached = session.worktrees.count { $0.branch == nil }
+    return ["\(session.worktrees.count) worktrees", detached > 0 ? "\(detached) detached" : ""]
+  }
+
+  // MARK: Branches
+
   private func branchRow(_ branch: Branch) -> some View {
-    let status = session.status
-    let isMerged = !branch.isCurrent && branch.aheadOfHead == 0 && (branch.behindHead ?? 0) > 0
     let isDeleting = session.deletingBranches.contains(branch.id)
-    return SidebarRow(
-      title: branch.name, systemImage: SidebarRow<EmptyView>.branchGlyph, isBold: branch.isCurrent
-    ) {
-      HStack(spacing: 6) {
-        if branch.isCurrent {
-          if let operation = status?.operation {
-            Text(operation.title.lowercased())
-              .font(.system(size: 11, weight: .semibold))
-              .foregroundStyle(.orange)
-          } else {
-            if branch.ahead > 0 {
-              Text("↑\(branch.ahead)").foregroundStyle(Color.accentColor)
-            }
-            if branch.behind > 0 {
-              Text("↓\(branch.behind)").foregroundStyle(.secondary)
-            }
-            Image(systemName: "checkmark")
-              .font(.system(size: 10, weight: .bold))
-              .foregroundStyle(Color.accentColor)
-              .accessibilityLabel("Checked out")
-              .transition(.scale.combined(with: .opacity))
-          }
-        } else if isDeleting {
-          HStack(spacing: 4) {
-            ProgressView().controlSize(.mini)
-            Text("deleting…")
-          }
-          .foregroundStyle(.secondary)
-        } else if isMerged {
-          Text("merged").foregroundStyle(.secondary)
-        } else if branch.ahead > 0 || branch.behind > 0 {
-          Text(
-            [branch.ahead > 0 ? "↑\(branch.ahead)" : nil, branch.behind > 0 ? "↓\(branch.behind)" : nil]
-              .compactMap { $0 }.joined(separator: " ")
-          )
-          .foregroundStyle(.secondary)
-        }
-      }
-      .font(.system(size: 11, weight: .medium).monospacedDigit())
-      .fixedSize()
-      .contentTransition(.numericText())
-      .animation(.app, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0, isDeleting ? 1 : 0])
-    } action: {
+    return SidebarRow(branch.name, systemImage: "arrow.triangle.branch") {
+      BranchMarks(branch: branch, operation: session.status?.operation, isDeleting: isDeleting)
+    }
+    .onRowTap {
       if let worktree = session.worktree(for: branch) {
         library.open(worktree.url, into: context)
       } else if !branch.isCurrent {
@@ -317,16 +312,67 @@ private struct RepositorySections: View {
       }
     }
   }
+}
 
-  private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content)
-    -> some View
-  {
-    VStack(alignment: .leading, spacing: 1) {
-      SectionTitle(title)
-        .padding(.horizontal, 10)
-        .padding(.bottom, 4)
-      content()
+/// The Workspace header's status line: the branch, the changed files and the sync.
+private struct WorkspaceMeta: View {
+  let status: WorkingTreeStatus?
+
+  var body: some View {
+    let branch = status?.branch ?? status?.headOID.map { String($0.prefix(7)) } ?? "No commits"
+    HStack(spacing: 4) {
+      Text(branch)
+      if let operation = status?.operation {
+        separator
+        Text(operation.title).foregroundStyle(Hue.orange.text)
+      } else if let count = status?.changeCount, count > 0 {
+        separator
+        StatusDot(hue: .orange, size: 6)
+        Text("\(count) changed")
+      }
+      if (status?.ahead ?? 0) > 0 || (status?.behind ?? 0) > 0 {
+        separator
+        SyncCounts(ahead: status?.ahead ?? 0, behind: status?.behind ?? 0)
+      }
     }
+  }
+
+  private var separator: some View { Text("·").foregroundStyle(.kitTertiary) }
+}
+
+/// A branch's state in its row: ↑↓ and a check on the checked-out one, the operation in
+/// progress, "merged", or the delete in progress.
+private struct BranchMarks: View {
+  let branch: Branch
+  let operation: RepositoryOperation?
+  let isDeleting: Bool
+
+  private var isMerged: Bool {
+    !branch.isCurrent && branch.aheadOfHead == 0 && (branch.behindHead ?? 0) > 0
+  }
+
+  var body: some View {
+    HStack(spacing: 6) {
+      if branch.isCurrent, let operation {
+        Text(operation.title.lowercased()).fontWeight(.semibold).foregroundStyle(Hue.orange.text)
+      } else if isDeleting {
+        LiveIcon(systemImage: "trash", hue: .gray, status: .working, size: 14)
+        Text("deleting…")
+      } else if isMerged {
+        Text("merged")
+      } else {
+        SyncCounts(ahead: branch.ahead, behind: branch.behind)
+        if branch.isCurrent {
+          Image(systemName: "checkmark")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundStyle(.kitAccent)
+            .accessibilityLabel("Checked out")
+            .transition(.scale.combined(with: .opacity))
+        }
+      }
+    }
+    .fixedSize()
+    .animation(.kit, value: [branch.ahead, branch.behind, branch.isCurrent ? 1 : 0, isDeleting ? 1 : 0])
   }
 }
 
@@ -345,57 +391,12 @@ extension RepositoryMode {
   }
 }
 
-// MARK: - Rows
-
-/// A 30-point sidebar row: icon, title and trailing detail. Selected rows are tinted.
-struct SidebarRow<Trailing: View>: View {
-  /// Pass as `systemImage` to draw the design's git branch glyph instead of a symbol.
-  static var branchGlyph: String { "_branch" }
-
-  let title: String
-  let systemImage: String
-  var isSelected = false
-  var isBold = false
-  @ViewBuilder var trailing: () -> Trailing
-  let action: () -> Void
-  @State private var isHovered = false
-
-  var body: some View {
-    Button(action: action) {
-      HStack(spacing: 9) {
-        Group {
-          if systemImage == Self.branchGlyph {
-            BranchGlyph()
-          } else {
-            Image(systemName: systemImage)
-              .font(.system(size: 13))
-              .contentTransition(.symbolEffect(.replace))
-          }
-        }
-        .foregroundStyle(isSelected ? Color.accentColor : .secondary)
-        .frame(width: 16)
-        Text(title)
-          .fontWeight(isSelected || isBold ? .semibold : .regular)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer(minLength: 2)
-        trailing()
-      }
-      .foregroundStyle(isSelected ? Color.accentColor : .primary)
-      .padding(.horizontal, 10)
-      .frame(height: 30)
-      .background(
-        isSelected
-          ? Color.accentColor.opacity(0.15) : Color.primary.opacity(isHovered ? 0.05 : 0),
-        in: .rect(cornerRadius: 7, style: .continuous)
-      )
-      .contentShape(.rect(cornerRadius: 7, style: .continuous))
-      .animation(.app, value: isSelected)
-      .animation(.app, value: isHovered)
-    }
-    .buttonStyle(.plain)
-    .onHover { isHovered = $0 }
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
+extension View {
+  /// Runs `action` when the row is clicked (or activated with VoiceOver), for sidebar rows that
+  /// do something instead of being selected.
+  func onRowTap(_ action: @escaping () -> Void) -> some View {
+    simultaneousGesture(TapGesture().onEnded(action))
+      .accessibilityAction { action() }
   }
 }
 
@@ -407,44 +408,13 @@ struct StatusMarks: View {
   var body: some View {
     HStack(spacing: 6) {
       if let operation = summary.operation {
-        Text(operation.title)
-          .font(.system(size: 11, weight: .semibold))
-          .foregroundStyle(.orange)
-          .padding(.horizontal, 7)
-          .frame(height: 18)
-          .background(.orange.opacity(0.15), in: .capsule)
+        Chip(operation.title, hue: .orange).controlSize(.small)
       }
-      if summary.changeCount > 0 {
-        HStack(spacing: 4) {
-          Circle().fill(.orange).frame(width: 7, height: 7)
-          Text("\(summary.changeCount)")
-            .contentTransition(.numericText(value: Double(summary.changeCount)))
-        }
-        .foregroundStyle(.orange)
-        .transition(.opacity.combined(with: .scale(scale: 0.8)))
-      }
-      if summary.ahead > 0 {
-        Text("↑\(summary.ahead)").foregroundStyle(Color.accentColor)
-          .contentTransition(.numericText(value: Double(summary.ahead)))
-          .transition(.opacity)
-      }
-      if summary.behind > 0 {
-        Text("↓\(summary.behind)").foregroundStyle(.secondary)
-          .contentTransition(.numericText(value: Double(summary.behind)))
-          .transition(.opacity)
-      }
+      SyncCounts(changes: summary.changeCount, ahead: summary.ahead, behind: summary.behind)
     }
-    .font(.system(size: 11, weight: .semibold).monospacedDigit())
-    .animation(.app, value: summary)
+    .animation(.kit, value: summary)
     .accessibilityElement(children: .ignore)
     .accessibilityLabel(Self.description(summary))
-  }
-
-  /// The dot color for a repository's most pressing state.
-  static func dotColor(_ summary: RepositorySummary) -> Color {
-    if summary.operation != nil || summary.changeCount > 0 { return .orange }
-    if summary.ahead > 0 { return .accentColor }
-    return .gray
   }
 
   static func description(_ summary: RepositorySummary) -> String {

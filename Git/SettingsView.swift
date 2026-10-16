@@ -1,3 +1,4 @@
+import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftUI
@@ -7,15 +8,14 @@ enum SettingsKeys {
 }
 
 struct SettingsView: View {
+  @AppStorage("SettingsPane") private var pane = "General"
+
   var body: some View {
-    TabView {
-      Tab("General", systemImage: "gearshape") {
-        GeneralSettingsView()
-      }
-      Tab("GitHub", systemImage: "cloud") {
-        GitHubSettingsView()
-      }
+    KitSettings(selection: $pane) {
+      SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
+      SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { GitHubSettingsView() }
     }
+    .frame(width: 680, height: 460)
   }
 }
 
@@ -25,28 +25,21 @@ private struct GeneralSettingsView: View {
   @State private var version: String?
 
   var body: some View {
-    Form {
-      Section {
-        TextField("git executable", text: $gitPath, prompt: Text("Automatic"))
-        LabeledContent("Using") {
-          if let resolved {
-            VStack(alignment: .trailing) {
-              Text(resolved).textSelection(.enabled)
-              if let version { Text(version).foregroundStyle(.secondary) }
-            }
-          } else {
-            Text("git not found").foregroundStyle(.red)
-          }
-        }
-      } footer: {
-        Text(
-          "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
-            + "Pushing uses your SSH agent, Keychain and git credential helpers, or your GitHub "
-            + "account for github.com while you're signed in.")
+    FormCard(
+      "Git",
+      footer: "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
+        + "Pushing uses your SSH agent, Keychain and git credential helpers, or your GitHub "
+        + "account for github.com while you're signed in."
+    ) {
+      FormRow(
+        "git executable", help: "Automatic when empty", systemImage: "terminal", hue: .gray,
+        field: TextField("Automatic", text: $gitPath))
+      if let resolved {
+        FormRow("Using", help: [resolved, version].compactMap { $0 }.joined(separator: " · "), systemImage: "checkmark", hue: .green)
+      } else {
+        FormRow("Using", systemImage: "xmark", error: "git not found")
       }
     }
-    .formStyle(.grouped)
-    .frame(width: 480)
     .task(id: gitPath) {
       GitExecutable.customPath = gitPath
       resolved = GitExecutable.current?.path

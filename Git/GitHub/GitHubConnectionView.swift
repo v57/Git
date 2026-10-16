@@ -1,3 +1,4 @@
+import ComponentKit
 import SwiftUI
 
 /// The Git and GitHub tiles joined by a line that shows how signing in is going: dashes while
@@ -27,7 +28,7 @@ struct GitHubConnectionView: View {
       .frame(width: tileSize * 2, height: 24)
       GitHubTile(size: tileSize, isPulsing: phase == .waiting)
     }
-    .animation(.app, value: phase)
+    .animation(.kit, value: phase)
     .accessibilityHidden(true)
   }
 }
@@ -129,7 +130,7 @@ private struct ConnectedLine: View {
         .frame(width: 12, height: 12)
         .frame(width: 24, height: 24)
         .background(Circle().fill(Color.green))
-        .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-4))
+        .background(Circle().fill(.kitWindow).padding(-4))
         .scaleEffect(badge ? 1 : 0.3)
         .opacity(badge ? 1 : 0)
     }
@@ -154,7 +155,7 @@ private struct FailedLine: View {
         .foregroundStyle(.white)
         .frame(width: 24, height: 24)
         .background(Circle().fill(Color.orange))
-        .background(Circle().fill(Color(nsColor: .windowBackgroundColor)).padding(-4))
+        .background(Circle().fill(.kitWindow).padding(-4))
         .scaleEffect(shown ? 1 : 0.3)
         .opacity(shown ? 1 : 0)
         .keyframeAnimator(initialValue: 0.0, trigger: shakes) { content, offset in

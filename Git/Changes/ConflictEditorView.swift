@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -26,11 +27,10 @@ struct ConflictsScreen: View {
       } else {
         VStack(spacing: 0) {
           banner
-          Divider()
-          HStack(spacing: 0) {
+            .padding(KitMetrics.gutter)
+          HStack(alignment: .top, spacing: 0) {
             fileColumn
               .frame(width: 280)
-            Divider()
             editor
               .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
@@ -38,7 +38,8 @@ struct ConflictsScreen: View {
         .transition(.opacity)
       }
     }
-    .animation(.app, value: state.completedOperation)
+    .animation(.kit, value: state.completedOperation)
+    .kitPane(.secondary)
     .background { shortcuts }
     .task(id: LoadKey(revision: session.revision, paths: conflicted.map(\.path))) { await load() }
   }
@@ -105,45 +106,25 @@ struct ConflictsScreen: View {
     let totals = totals
     let left = totals.total - totals.done
     let isReady = left == 0
-    return HStack(spacing: 12) {
-      Image(systemName: isReady ? "checkmark" : "exclamationmark")
-        .font(.system(size: 14, weight: .bold))
-        .foregroundStyle(.white)
-        .contentTransition(.symbolEffect(.replace))
-        .frame(width: 28, height: 28)
-        .background(isReady ? Color.green : Color.orange, in: .circle)
-        .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(isReady ? "All conflicts resolved" : left == 1 ? "1 conflict left" : "\(left) conflicts left")
-          .fontWeight(.semibold)
-          .contentTransition(.numericText(value: Double(left)))
-        Text(
-          isReady
-            ? "Review the result, then continue to finish \(operationNoun)."
-            : "Pick a version for each highlighted block. Nothing is committed until you continue."
-        )
-        .font(.system(size: 12))
-        .foregroundStyle(.secondary)
-        .lineLimit(2)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
+    return Banner(
+      isReady ? "All conflicts resolved" : left == 1 ? "1 conflict left" : "\(left) conflicts left",
+      message: isReady
+        ? "Review the result, then continue to finish \(operationNoun)."
+        : "Pick a version for each highlighted block. Nothing is committed until you continue.",
+      systemImage: isReady ? "checkmark" : "exclamationmark.triangle", hue: isReady ? .green : .orange
+    ) {
       Button("Abort \(operationName)") {
         Task {
           await session.abortOperation()
           state.resetConflicts()
         }
       }
-      .buttonStyle(.design)
       .disabled(session.isBusy)
       Button("Continue \(operationName)") { Task { await continueOperation() } }
-        .buttonStyle(.design(.primary, padding: 14))
+        .buttonStyle(.kitPrimary)
         .disabled(!isReady || session.isBusy || isContinuing)
     }
-    .padding(.leading, 20)
-    .padding(.trailing, 16)
-    .padding(.vertical, 12)
-    .background((isReady ? Color.green : Color.orange).opacity(0.1))
-    .animation(.app, value: left)
+    .animation(.kit, value: left)
   }
 
   private var operationName: String {
@@ -198,86 +179,68 @@ struct ConflictsScreen: View {
     let totals = totals
     let mergedCleanly = (session.status?.staged ?? []).filter { !state.conflictPaths.contains($0.path) }
     return ScrollView {
-      VStack(alignment: .leading, spacing: 4) {
-        VStack(alignment: .leading, spacing: 8) {
-          HStack(alignment: .firstTextBaseline) {
-            Text("Conflicts").fontWeight(.semibold)
-            Spacer()
-            Text("\(totals.done) of \(totals.total) resolved")
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-              .contentTransition(.numericText(value: Double(totals.done)))
-              .animation(.app, value: totals.done)
+      VStack(alignment: .leading, spacing: KitMetrics.gutter) {
+        ConflictFilesCard(
+          title: "Conflicts", meta: "\(totals.done) of \(totals.total) resolved",
+          systemImage: "exclamationmark.triangle", hue: .orange,
+          status: totals.done == totals.total ? .done : .idle
+        ) {
+          // Files that still need a choice first.
+          ForEach(state.conflictPaths.filter { !isResolved($0) } + state.conflictPaths.filter(isResolved), id: \.self) {
+            path in
+            fileRow(path)
           }
-          ProgressBar(
-            value: totals.total == 0 ? 1 : Double(totals.done) / Double(totals.total),
-            color: totals.done == totals.total ? .green : .orange)
-        }
-        .padding(.horizontal, 8)
-        .padding(.bottom, 10)
-        // Files that still need a choice first.
-        ForEach(state.conflictPaths.filter { !isResolved($0) } + state.conflictPaths.filter(isResolved), id: \.self) { path in
-          fileRow(path)
         }
         if !mergedCleanly.isEmpty {
-          SectionTitle("Merged cleanly · \(mergedCleanly.count)")
-            .padding(.horizontal, 8)
-            .padding(.top, 18)
-            .padding(.bottom, 6)
-          ForEach(mergedCleanly) { change in
-            Text(change.fileName)
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-              .lineLimit(1)
-              .frame(height: 26)
-              .padding(.horizontal, 10)
-              .help(change.path)
+          ConflictFilesCard(
+            title: "Merged cleanly", meta: mergedCleanly.count == 1 ? "1 file" : "\(mergedCleanly.count) files",
+            systemImage: "checkmark", hue: .green, status: .idle
+          ) {
+            ForEach(mergedCleanly) { change in
+              Text(change.fileName)
+                .kitFont(.callout)
+                .foregroundStyle(.kitSecondary)
+                .lineLimit(1)
+                .frame(maxWidth: .infinity, minHeight: 26, alignment: .leading)
+                .padding(.horizontal, 6)
+                .help(change.path)
+            }
           }
         }
       }
-      .padding(.horizontal, 10)
-      .padding(.vertical, 14)
+      .padding([.leading, .bottom], KitMetrics.gutter)
     }
-    .background(Color.primary.opacity(0.015))
   }
 
   private func fileRow(_ path: String) -> some View {
     let resolved = isResolved(path)
     let isSelected = state.selectedConflict == path
-    return Button {
-      state.selectedConflict = path
-    } label: {
-      HStack(spacing: 10) {
-        Image(systemName: resolved ? "checkmark" : "exclamationmark")
-          .font(.system(size: 10, weight: .bold))
-          .foregroundStyle(.white)
-          .contentTransition(.symbolEffect(.replace))
-          .frame(width: 20, height: 20)
-          .background(resolved ? Color.green : Color.orange, in: .circle)
-          .accessibilityLabel(resolved ? "Resolved" : "Has conflicts")
-        VStack(alignment: .leading, spacing: 1) {
-          Text((path as NSString).lastPathComponent)
-            .fontWeight(isSelected ? .semibold : .medium)
-            .lineLimit(1)
-          Text(fileNote(path))
-            .font(.system(size: 11))
-            .foregroundStyle(.secondary)
-            .lineLimit(1)
-            .contentTransition(.interpolate)
-        }
-        Spacer(minLength: 0)
+    return HStack(spacing: 8) {
+      Tile(systemImage: resolved ? "checkmark" : "exclamationmark", hue: resolved ? .green : .orange, size: 20, style: .solid)
+        .contentTransition(.symbolEffect(.replace))
+        .accessibilityLabel(resolved ? "Resolved" : "Has conflicts")
+      VStack(alignment: .leading, spacing: 1) {
+        Text((path as NSString).lastPathComponent)
+          .fontWeight(isSelected ? .medium : .regular)
+          .lineLimit(1)
+        Text(fileNote(path))
+          .kitFont(.caption)
+          .lineLimit(1)
+          .contentTransition(.interpolate)
       }
-      .padding(.horizontal, 10)
-      .frame(height: 44)
-      .background(
-        isSelected ? Color.accentColor.opacity(0.14) : .clear,
-        in: .rect(cornerRadius: 8, style: .continuous)
-      )
-      .animation(.app, value: resolved)
-      .animation(.app, value: isSelected)
-      .contentShape(Rectangle())
+      Spacer(minLength: 0)
     }
-    .buttonStyle(.plain)
+    .padding(.horizontal, 6)
+    .frame(height: 44)
+    .background {
+      if isSelected { Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius) }
+    }
+    .contentShape(Rectangle())
+    .onTapGesture { state.selectedConflict = path }
+    .animation(.kit, value: resolved)
+    .animation(.kit, value: isSelected)
+    .accessibilityElement(children: .combine)
+    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
     .help(path)
   }
 
@@ -315,12 +278,12 @@ struct ConflictsScreen: View {
       let folder = (path as NSString).deletingLastPathComponent
       ZStack {
       VStack(alignment: .leading, spacing: 0) {
-        (Text(folder.isEmpty ? "" : folder + "/").foregroundStyle(.secondary)
+        (Text(folder.isEmpty ? "" : folder + "/").foregroundStyle(.kitSecondary)
           + Text((path as NSString).lastPathComponent).fontWeight(.semibold))
-          .font(.system(size: 12.5, design: .monospaced))
+          .kitFont(.mono)
           .textSelection(.enabled)
-          .padding(.horizontal, 24)
-          .padding(.top, 18)
+          .padding(.horizontal, 18)
+          .padding(.top, 10)
           .padding(.bottom, 12)
         if let change {
           switch contents[path] {
@@ -334,18 +297,18 @@ struct ConflictsScreen: View {
                       text: text, showsStart: index > 0, showsEnd: index < file.segments.count - 1)
                   case .conflict(let block):
                     ConflictBlockCard(
-                      block: block, context: ConflictContext.describe(block, in: file),
+                      block: block, count: file.blocks.count, context: ConflictContext.describe(block, in: file),
                       currentName: currentName(block),
-                      resolution: state.conflictChoices[path]?[block.id]
-                    ) { resolution in
-                      state.conflictChoices[path, default: [:]][block.id] = resolution
-                    } editManually: {
+                      resolution: .init(
+                        get: { state.conflictChoices[path]?[block.id] },
+                        set: { state.conflictChoices[path, default: [:]][block.id] = $0 })
+                    ) {
                       openFile(path)
                     }
                   }
                 }
               }
-              .padding(.horizontal, 24)
+              .padding(.horizontal, KitMetrics.gutter)
               .padding(.bottom, 32)
             }
           case .some(let content):
@@ -358,23 +321,22 @@ struct ConflictsScreen: View {
             } editManually: {
               openFile(path)
             }
-            .padding(.horizontal, 24)
+            .padding(.horizontal, KitMetrics.gutter)
             Spacer()
           case nil:
-            ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
+              .frame(maxWidth: .infinity, maxHeight: .infinity)
           }
         } else {
-          ContentUnavailableView(
-            "Resolved", systemImage: "checkmark.circle",
-            description: Text("This file is resolved and staged."))
+          EmptyState(systemImage: "checkmark", title: "Resolved", message: "This file is resolved and staged.")
         }
       }
       .id(path)
       .transition(.page)
       }
-      .animation(.app, value: path)
+      .animation(.kit, value: path)
     } else {
-      ContentUnavailableView("No Conflicts", systemImage: "checkmark.circle")
+      EmptyState(systemImage: "checkmark", title: "No Conflicts")
     }
   }
 
@@ -435,22 +397,22 @@ enum ConflictContent: Equatable {
   }
 }
 
-private struct ProgressBar: View {
-  let value: Double
-  let color: Color
+/// A card of conflicted (or cleanly merged) files under a rich header.
+private struct ConflictFilesCard<Rows: View>: View {
+  let title: String
+  let meta: String
+  let systemImage: String
+  let hue: Hue
+  let status: WorkStatus
+  @ViewBuilder let rows: () -> Rows
 
   var body: some View {
-    GeometryReader { proxy in
-      ZStack(alignment: .leading) {
-        Capsule().fill(Color.primary.opacity(0.1))
-        Capsule().fill(color).frame(width: proxy.size.width * min(max(value, 0), 1))
-      }
+    VStack(alignment: .leading, spacing: 2) {
+      RichHeader(title, meta: meta, systemImage: systemImage, hue: hue, status: status)
+      rows()
     }
-    .frame(height: 6)
-    .animation(.app, value: value)
-    .accessibilityElement()
-    .accessibilityLabel("Conflicts resolved")
-    .accessibilityValue("\(Int(value * 100)) percent")
+    .padding(KitMetrics.cardPadding)
+    .kitSurface(.card)
   }
 }
 
@@ -473,8 +435,7 @@ private struct CommonText: View {
         if showsStart { code(Array(body.prefix(Self.context))) }
         let hidden = body.count - (showsStart ? Self.context : 0) - (showsEnd ? Self.context : 0)
         Label("\(hidden) unchanged lines", systemImage: "ellipsis")
-          .font(.caption)
-          .foregroundStyle(.tertiary)
+          .kitFont(.caption)
         if showsEnd { code(Array(body.suffix(Self.context))) }
       }
     }
@@ -483,245 +444,75 @@ private struct CommonText: View {
 
   private func code(_ lines: [String]) -> some View {
     Text(verbatim: lines.joined(separator: "\n"))
-      .font(.system(size: 12, design: .monospaced))
-      .foregroundStyle(.secondary)
+      .kitFont(.mono)
+      .foregroundStyle(.kitSecondary)
       .lineSpacing(4)
       .textSelection(.enabled)
-      .padding(.horizontal, 2)
+      .padding(.horizontal, 10)
   }
 }
 
-/// The card around a conflict: a header with the status chip, then the body.
-private struct ConflictCard<Content: View>: View {
-  let title: String
-  let detail: String
-  let isResolved: Bool
-  @ViewBuilder var content: () -> Content
-
-  var body: some View {
-    VStack(spacing: 0) {
-      HStack(spacing: 10) {
-        Text(title).fontWeight(.semibold)
-        Text(detail)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-        Spacer()
-        Text(isResolved ? "Resolved" : "Needs a choice")
-          .font(.system(size: 11, weight: .semibold))
-          .contentTransition(.interpolate)
-          .foregroundStyle(isResolved ? Color.green : Color.orange)
-          .padding(.horizontal, 8)
-          .frame(height: 20)
-          .background((isResolved ? Color.green : Color.orange).opacity(0.15), in: .capsule)
-      }
-      .padding(.horizontal, 14)
-      .frame(height: 38)
-      .background(Color.primary.opacity(0.03))
-      Divider()
-      content()
-    }
-    .background(Color(nsColor: .textBackgroundColor))
-    .clipShape(.rect(cornerRadius: 12))
-    .overlay {
-      RoundedRectangle(cornerRadius: 12)
-        .strokeBorder((isResolved ? Color.green : Color.orange).opacity(0.45))
-    }
-    .animation(.app, value: isResolved)
-    .shadow(color: .black.opacity(0.05), radius: 1.5, y: 1)
-  }
-}
-
-/// One conflict block: the current and incoming sides next to each other, or the chosen result.
+/// One conflict block as the kit's conflict card: Current, Incoming or Both, then the result.
+/// Both keeps Current first; the context menu also puts Incoming first.
 private struct ConflictBlockCard: View {
   let block: ConflictBlock
+  let count: Int
   /// Where the block sits, e.g. "refresh()" or "stored properties".
   let context: String?
   let currentName: String
-  let resolution: ConflictResolution?
-  let choose: (ConflictResolution?) -> Void
+  @Binding var resolution: ConflictResolution?
   let editManually: () -> Void
-  @State private var showsBase = false
 
   private var lineRange: String {
-    let count = max(lineCount(block.current), lineCount(block.incoming), 1)
+    let count = max(ConflictParser.lines(of: block.current).count, ConflictParser.lines(of: block.incoming).count, 1)
     return count == 1 ? "Line \(block.line)" : "Lines \(block.line)–\(block.line + count - 1)"
   }
 
-  private func lineCount(_ text: String) -> Int {
-    ConflictParser.lines(of: text).count
+  private var choice: Binding<ConflictChoice?> {
+    Binding(
+      get: {
+        switch resolution {
+        case .current: .current
+        case .incoming: .incoming
+        case .currentThenIncoming, .incomingThenCurrent: .both
+        case nil: nil
+        }
+      },
+      set: { choice in
+        switch choice {
+        case .current: resolution = .current
+        case .incoming: resolution = .incoming
+        case .both: resolution = .currentThenIncoming
+        case nil: resolution = nil
+        }
+      })
   }
 
   var body: some View {
     ConflictCard(
-      title: "Conflict \(block.id + 1)", detail: [lineRange, context].compactMap { $0 }.joined(separator: " · "),
-      isResolved: resolution != nil
-    ) {
-      ZStack {
-        if let resolution {
-          resolved(resolution)
-            .transition(.opacity)
-        } else {
-          sides
-            .transition(.opacity)
-        }
-      }
-      .animation(.app, value: resolution)
-    }
-  }
-
-  private var hint: String {
-    if block.current.isEmpty { return "The current side removed these lines; the incoming side changed them." }
-    if block.incoming.isEmpty { return "The incoming side removed these lines; the current side changed them." }
-    if let base = block.base, base == block.current { return "Only the incoming side changed these lines." }
-    if let base = block.base, base == block.incoming { return "Only the current side changed these lines." }
-    return "Both sides changed these lines. Use Both keeps them one after the other."
-  }
-
-  private var sides: some View {
-    VStack(spacing: 0) {
-      HStack(alignment: .top, spacing: 0) {
-        side(
-          title: "Current", label: currentName, text: block.current, tint: .accentColor,
-          action: "Use Current"
-        ) { choose(.current) }
-        Divider()
-        side(
-          title: "Incoming", label: block.incomingLabel, text: block.incoming, tint: .orange,
-          action: "Use Incoming"
-        ) { choose(.incoming) }
-      }
-      .fixedSize(horizontal: false, vertical: true)
-      if let base = block.base, showsBase {
-        Divider()
-        VStack(alignment: .leading, spacing: 4) {
-          SectionTitle("Common ancestor")
-          CodeText(text: base)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(12)
-        .background(Color.primary.opacity(0.03))
-      }
+      title: "Conflict \(block.id + 1) of \(count)",
+      resolvedTitle: resolution == .incomingThenCurrent ? "Kept both, Incoming first" : "Conflict resolved",
+      meta: [lineRange, context ?? ""],
+      current: ComponentKit.ConflictSide("Current", ref: currentName, code: Self.code(block.current)),
+      incoming: ComponentKit.ConflictSide("Incoming", ref: block.incomingLabel, code: Self.code(block.incoming)),
+      choice: choice, edit: editManually
+    )
+    .contextMenu {
+      Button("Use Current") { resolution = .current }
+      Button("Use Incoming") { resolution = .incoming }
       Divider()
-      HStack(spacing: 8) {
-        Text(hint)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .lineLimit(2)
-        if block.base != nil {
-          Button(showsBase ? "Hide Ancestor" : "Show Ancestor") { showsBase.toggle() }
-            .buttonStyle(.link)
-            .font(.system(size: 12))
-        }
-        Spacer(minLength: 8)
-        Button("Use Both") { choose(.currentThenIncoming) }
-          .buttonStyle(.design(size: .small))
-          .help("Keep both, Current first. Right-click to put Incoming first.")
-          .contextMenu {
-            Button("Current, Then Incoming") { choose(.currentThenIncoming) }
-            Button("Incoming, Then Current") { choose(.incomingThenCurrent) }
-          }
-        Button("Edit Manually…", action: editManually)
-          .buttonStyle(.design(size: .small))
+      Button("Current, Then Incoming") { resolution = .currentThenIncoming }
+      Button("Incoming, Then Current") { resolution = .incomingThenCurrent }
+      if resolution != nil {
+        Divider()
+        Button("Undo Choice") { resolution = nil }
       }
-      .padding(.leading, 14)
-      .padding(.trailing, 10)
-      .padding(.vertical, 10)
     }
   }
 
-  private func side(
-    title: String, label: String, text: String, tint: Color, action: String,
-    choose: @escaping () -> Void
-  ) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack(spacing: 8) {
-        Circle().fill(tint).frame(width: 8, height: 8)
-        Text(title).fontWeight(.semibold)
-        Text(label)
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        Spacer(minLength: 4)
-        Button(action, action: choose)
-          .buttonStyle(.design(size: .small))
-      }
-      .padding(.leading, 14)
-      .padding(.trailing, 8)
-      .frame(height: 40)
-      CodeText(text: text)
-        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .padding(.horizontal, 14)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
-        .background(tint.opacity(0.08))
-        .overlay(alignment: .top) { Rectangle().fill(tint.opacity(0.18)).frame(height: 1) }
-    }
-    .frame(maxWidth: .infinity)
-  }
-
-  private func resolved(_ resolution: ConflictResolution) -> some View {
-    let lines = resultLines(resolution)
-    return VStack(spacing: 0) {
-      VStack(alignment: .leading, spacing: 0) {
-        ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-          HStack(spacing: 0) {
-            Rectangle().fill(line.tint).frame(width: 6)
-            Text(verbatim: line.text)
-              .font(.system(size: 12, design: .monospaced))
-              .lineLimit(1)
-              .padding(.leading, 8)
-              .padding(.trailing, 14)
-            Spacer(minLength: 0)
-          }
-          .frame(height: 22)
-        }
-        if lines.isEmpty {
-          Text("No lines")
-            .font(.callout.italic())
-            .foregroundStyle(.secondary)
-            .padding(14)
-        }
-      }
-      .padding(.vertical, 8)
-      .background(Color.green.opacity(0.06))
-      Divider()
-      HStack {
-        Text(description(resolution))
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-        Spacer()
-        Button("Change") { choose(nil) }
-          .buttonStyle(.borderless)
-          .fontWeight(.medium)
-      }
-      .padding(.leading, 14)
-      .padding(.trailing, 10)
-      .padding(.vertical, 8)
-    }
-  }
-
-  private func resultLines(_ resolution: ConflictResolution) -> [(text: String, tint: Color)] {
-    func lines(_ text: String, _ tint: Color) -> [(text: String, tint: Color)] {
-      ConflictParser.lines(of: text).map { (String($0).trimmingCharacters(in: .newlines), tint) }
-    }
-    let current = lines(block.current, .accentColor)
-    let incoming = lines(block.incoming, .orange)
-    switch resolution {
-    case .current: return current
-    case .incoming: return incoming
-    case .currentThenIncoming: return current + incoming
-    case .incomingThenCurrent: return incoming + current
-    }
-  }
-
-  private func description(_ resolution: ConflictResolution) -> String {
-    switch resolution {
-    case .current: "Kept Current (\(currentName))."
-    case .incoming: "Kept Incoming (\(block.incomingLabel))."
-    case .currentThenIncoming: "Kept both, Current first."
-    case .incomingThenCurrent: "Kept both, Incoming first."
-    }
+  /// A side's text without its final newline.
+  private static func code(_ text: String) -> String {
+    text.hasSuffix("\n") ? String(text.dropLast()) : text
   }
 }
 
@@ -732,33 +523,23 @@ private struct WholeFileCard: View {
   let content: ConflictContent
   let currentName: String
   let incomingName: String
-  let choice: ConflictSide?
-  let choose: (ConflictSide?) -> Void
+  let choice: GitKit.ConflictSide?
+  let choose: (GitKit.ConflictSide?) -> Void
   let editManually: () -> Void
 
   var body: some View {
-    ConflictCard(
-      title: change.conflict?.title ?? "Conflict", detail: "",
-      isResolved: choice != nil || content == .text
-    ) {
-      VStack(alignment: .leading, spacing: 12) {
-        Text(message)
-          .foregroundStyle(.secondary)
-          .fixedSize(horizontal: false, vertical: true)
-        HStack(spacing: 8) {
-          if let choice {
-            Text(choiceDescription(choice))
-              .font(.system(size: 12))
-              .foregroundStyle(.secondary)
-            Spacer()
+    let isResolved = choice != nil || content == .text
+    VStack(alignment: .leading, spacing: 8) {
+      RichHeader(
+        change.conflict?.title ?? "Conflict", meta: choice.map(choiceDescription) ?? message,
+        systemImage: "exclamationmark.triangle", hue: .orange, status: isResolved ? .done : .idle)
+      HStack(spacing: 8) {
+          Spacer()
+          if choice != nil {
             Button("Change") { choose(nil) }
-              .buttonStyle(.design(size: .small))
           } else if content == .text {
-            Spacer()
             Button("Edit Manually…", action: editManually)
-              .buttonStyle(.design(size: .small))
           } else {
-            Spacer()
             Group {
             switch change.conflict {
             case .deletedByThem:
@@ -777,12 +558,14 @@ private struct WholeFileCard: View {
               Button("Edit Manually…", action: editManually)
             }
             }
-            .buttonStyle(.design(size: .small))
           }
-        }
       }
-      .padding(14)
+      .buttonStyle(.kit)
+      .controlSize(.small)
     }
+    .padding(KitMetrics.cardPadding)
+    .kitSurface(.card)
+    .animation(.kit, value: isResolved)
   }
 
   private var message: String {
@@ -799,7 +582,7 @@ private struct WholeFileCard: View {
     }
   }
 
-  private func choiceDescription(_ side: ConflictSide) -> String {
+  private func choiceDescription(_ side: GitKit.ConflictSide) -> String {
     switch (change.conflict, side) {
     case (.deletedByThem, .incoming), (.deletedByUs, .current), (.bothDeleted, _): "The file is deleted."
     case (.deletedByThem, .current), (.deletedByUs, .incoming): "The file is kept."
@@ -809,38 +592,11 @@ private struct WholeFileCard: View {
   }
 }
 
-/// Monospaced lines; an empty side says so.
-private struct CodeText: View {
-  let text: String
-
-  var body: some View {
-    if text.isEmpty {
-      Text("No lines")
-        .font(.callout.italic())
-        .foregroundStyle(.secondary)
-    } else {
-      // One line per row, cut at the edge rather than wrapped, so the code keeps its shape.
-      VStack(alignment: .leading, spacing: 0) {
-        ForEach(Array(ConflictParser.lines(of: text).enumerated()), id: \.offset) { _, line in
-          Text(verbatim: String(line).trimmingCharacters(in: .newlines))
-            .font(.system(size: 12, design: .monospaced))
-            .lineLimit(1)
-            .truncationMode(.tail)
-            .frame(height: 20, alignment: .leading)
-        }
-      }
-      .textSelection(.enabled)
-    }
-  }
-}
-
 /// After Continue: what finished, with View History and Push.
 private struct OperationComplete: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
   let completed: CompletedOperation
-  @State private var appeared = false
-
   private var title: String {
     switch completed.operation {
     case .merge: "Merge complete"
@@ -867,34 +623,15 @@ private struct OperationComplete: View {
   }
 
   var body: some View {
-    VStack(spacing: 10) {
-      Image(systemName: "checkmark")
-        .font(.system(size: 30, weight: .semibold))
-        .foregroundStyle(.green)
-        .symbolEffect(.bounce, options: .nonRepeating, value: appeared)
-        .onAppear { appeared = true }
-        .frame(width: 64, height: 64)
-        .background(Color.green.opacity(0.15), in: .circle)
-        .accessibilityHidden(true)
-      Text(title)
-        .font(.system(size: 20, weight: .semibold))
-        .padding(.top, 6)
-      Text(message)
-        .foregroundStyle(.secondary)
-        .multilineTextAlignment(.center)
-        .frame(maxWidth: 380)
-      HStack(spacing: 8) {
-        Button("View History") { state.mode = .history }
-          .buttonStyle(.design(size: .large))
-        if !session.remotes.isEmpty {
-          Button("Push to \(remote)") { Task { await session.push() } }
-            .buttonStyle(.design(.primary, size: .large))
-            .disabled(session.isBusy)
-        }
+    EmptyState(systemImage: "checkmark", title: title, message: message) {
+      Button("View History") { state.mode = .history }
+        .buttonStyle(.kit)
+      if !session.remotes.isEmpty {
+        Button("Push to \(remote)") { Task { await session.push() } }
+          .buttonStyle(.kitPrimary)
+          .disabled(session.isBusy)
       }
-      .padding(.top, 8)
     }
-    .frame(maxWidth: .infinity, maxHeight: .infinity)
   }
 }
 

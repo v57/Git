@@ -1,38 +1,108 @@
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
 
-/// The window toolbar for a repository, as in the design: Fetch, Pull and Push (with the number
-/// of commits to push), then Branch, Merge and Stash. While conflicts are being resolved it shows
-/// the keyboard shortcuts instead.
+/// The window toolbar for a repository, as in the design: the screen's live title, then Fetch,
+/// Pull and Push (with the number of commits to push) and Branch, Merge and Stash as tool cards.
+/// While conflicts are being resolved it shows the keyboard shortcuts instead.
 struct RepositoryToolbar: ToolbarContent {
   let session: RepositorySession
   let state: RepositoryViewState
   let screen: RepositoryScreenKind
+  let title: String
+  let meta: [String]
+  /// History's search text, which shows the search field.
+  let search: Binding<String>?
 
   var body: some ToolbarContent {
+    PlainToolbarItem(placement: .navigation) {
+      KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.isBusy ? .working : .idle)
+        .padding(.leading, 6)
+    }
     if screen == .conflicts {
-      ToolbarItem(placement: .primaryAction) {
-        Text("⌥⌘← Use Current · ⌥⌘→ Use Incoming")
-          .font(.system(size: 12))
-          .foregroundStyle(.secondary)
-          .padding(.horizontal, 8)
+      PlainToolbarItem(placement: .primaryAction) {
+        ToolGroup {
+          Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
+          Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
+        }
+        .allowsHitTesting(false)
       }
     } else {
-      ToolbarItemGroup(placement: .primaryAction) {
-        SyncButtons(session: session, state: state)
-      }
-      // Sets Fetch, Pull and Push apart from Branch, Merge and Stash.
-      if #available(macOS 26, *) {
-        ToolbarSpacer(.fixed, placement: .primaryAction)
-      }
-      ToolbarItemGroup(placement: .primaryAction) {
-        BranchToolbarButton(session: session)
-        if screen == .history {
-          MergeMenu(session: session)
+      PlainToolbarItem(placement: .primaryAction) {
+        HStack(spacing: KitMetrics.gutter) {
+          ToolGroup { SyncButtons(session: session, state: state) }
+          ToolGroup {
+            BranchToolbarButton(session: session)
+            if screen == .history {
+              MergeMenu(session: session)
+            }
+            StashMenu(session: session)
+          }
+          if let search {
+            KitSearchField(
+              text: search, prompt: "Message, author, hash",
+              status: session.isLoadingCommits && !search.wrappedValue.isEmpty ? .working : .idle
+            )
+            .frame(width: 240)
+          }
         }
-        StashMenu(session: session)
       }
+    }
+  }
+
+  /// The screen's glyph, or the running operation's while one runs.
+  private var titleImage: String {
+    switch session.activity {
+    case .fetching: return "arrow.clockwise"
+    case .pulling: return "arrow.down.to.line"
+    case .pushing: return "arrow.up.to.line"
+    case .committing: return "checkmark"
+    case .some: break
+    case nil: break
+    }
+    switch screen {
+    case .changes: return "pencil"
+    case .history: return "clock"
+    case .stashes: return "archivebox"
+    case .conflicts: return "arrow.triangle.merge"
+    }
+  }
+
+  private var titleHue: Hue {
+    switch screen {
+    case .changes: .orange
+    case .history: .blue
+    case .stashes: .indigo
+    case .conflicts: .red
+    }
+  }
+}
+
+/// A toolbar item drawn by the kit alone: without the shared glass behind it (macOS 26).
+struct PlainToolbarItem<Content: View>: ToolbarContent {
+  let placement: ToolbarItemPlacement
+  @ViewBuilder let content: () -> Content
+
+  var body: some ToolbarContent {
+    if #available(macOS 26, *) {
+      ToolbarItem(placement: placement) { content() }
+        .sharedBackgroundVisibility(.hidden)
+    } else {
+      ToolbarItem(placement: placement) { content() }
+    }
+  }
+}
+
+/// A shortcut's keys and what it does, for the conflict screen's toolbar.
+private struct ShortcutLabel: View {
+  let keys: String
+  let title: String
+
+  var body: some View {
+    HStack(spacing: 6) {
+      Keycaps(keys)
+      Text(title).kitFont(.caption)
     }
   }
 }
@@ -52,23 +122,13 @@ private struct SyncButtons: View {
   private var hasUpstream: Bool { session.status?.upstream != nil }
 
   var body: some View {
-    Button {
+    Button(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise") {
       Task { await session.fetch() }
-    } label: {
-      Label(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise")
-        .labelStyle(.titleAndIcon)
-        .contentTransition(.interpolate)
-        .symbolEffect(.rotate, isActive: session.activity == .fetching)
     }
     .disabled(session.remotes.isEmpty || session.isBusy)
     .help(fetchHelp)
-    Button {
+    Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
       Task { await session.pull() }
-    } label: {
-      Label(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line")
-        .labelStyle(.titleAndIcon)
-        .contentTransition(.interpolate)
-        .symbolEffect(.pulse, isActive: session.activity == .pulling)
     }
     .disabled(!hasUpstream || session.isBusy)
     .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
@@ -80,25 +140,15 @@ private struct SyncButtons: View {
         Task { await session.push() }
       }
     } label: {
-      HStack(spacing: 6) {
-        Image(systemName: "arrow.up.to.line")
-          .symbolEffect(.pulse, isActive: session.activity == .pushing)
-        Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
-          .contentTransition(.interpolate)
-        if ahead > 0 {
-          Text("\(ahead)")
-            .font(.system(size: 11, weight: .bold).monospacedDigit())
-            .contentTransition(.numericText(value: Double(ahead)))
-            .transition(.scale.combined(with: .opacity))
-            .foregroundStyle(.white)
-            .padding(.horizontal, 5)
-            .frame(minWidth: 18, minHeight: 18)
-            .background(Color.accentColor, in: .capsule)
+      Label {
+        HStack(spacing: 5) {
+          Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
+          if ahead > 0 { Count(ahead, .attention).transition(.opacity) }
         }
+      } icon: {
+        Image(systemName: "arrow.up.to.line")
       }
-      .fontWeight(ahead > 0 ? .semibold : .regular)
-      .animation(.app, value: ahead)
-      .animation(.app, value: session.activity)
+      .animation(.kit, value: ahead)
     }
     .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
     .help(pushHelp)
@@ -106,15 +156,13 @@ private struct SyncButtons: View {
       Button("Force Push…") { confirmForcePush = true }
         .disabled(!hasUpstream)
     }
-    .confirmationDialog(
+    .kitConfirmation(
       "Force push \(session.status?.branch ?? "")?", isPresented: $confirmForcePush,
-      titleVisibility: .visible
+      message: "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
+        + "if someone else pushed since your last fetch.",
+      systemImage: "arrow.up.to.line", confirm: "Force Push"
     ) {
-      Button("Force Push", role: .destructive) { Task { await session.push(force: true) } }
-    } message: {
-      Text(
-        "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
-          + "if someone else pushed since your last fetch.")
+      Task { await session.push(force: true) }
     }
   }
 
@@ -140,12 +188,7 @@ private struct BranchToolbarButton: View {
   @State private var isPresented = launchArgument("--show-branches")
 
   var body: some View {
-    Button {
-      isPresented.toggle()
-    } label: {
-      Label("Branch", systemImage: "arrow.triangle.branch")
-        .labelStyle(.titleAndIcon)
-    }
+    Button("Branch", systemImage: "arrow.triangle.branch") { isPresented.toggle() }
     .help("Switch or create a branch")
     .popover(isPresented: $isPresented, arrowEdge: .bottom) {
       BranchPopover(session: session, isPresented: $isPresented)
@@ -177,9 +220,7 @@ private struct MergeMenu: View {
       }
     } label: {
       Label("Merge", systemImage: "arrow.triangle.merge")
-        .labelStyle(.titleAndIcon)
     }
-    .menuIndicator(.hidden)
     .disabled(session.isBusy || session.status?.branch == nil)
     .help("Merge a branch into \(current)")
   }
@@ -241,33 +282,42 @@ struct BranchPopover: View {
 
   var body: some View {
     VStack(spacing: 0) {
-      HStack {
-        FilterField(text: $filter, prompt: "Filter branches")
+      HStack(spacing: KitMetrics.gutter) {
+        KitSearchField(text: $filter, prompt: "Filter branches")
         Button("New Branch…") { isCreating = true }
+          .buttonStyle(.kit)
       }
       .padding(10)
-      Divider()
-      List {
-        Section("Branches") {
+      ScrollView {
+        LazyVStack(alignment: .leading, spacing: 2) {
+          sectionTitle("Branches")
           ForEach(localBranches) { branch in
             row(branch)
           }
-        }
-        if !remoteBranches.isEmpty {
-          Section("Remote Branches") {
+          if !remoteBranches.isEmpty {
+            sectionTitle("Remote Branches")
             ForEach(remoteBranches) { branch in
               row(branch)
             }
           }
         }
+        .padding([.horizontal, .bottom], 10)
       }
-      .listStyle(.inset)
     }
     .frame(width: 400, height: 440)
+    .background(.kitPanel)
     .sheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
     .branchDeletion($pendingDelete, session: session)
+  }
+
+  private func sectionTitle(_ title: String) -> some View {
+    Text(title)
+      .kitFont(.sectionHeader)
+      .padding(.horizontal, 8)
+      .padding(.top, 8)
+      .padding(.bottom, 4)
   }
 
   private func row(_ branch: Branch) -> some View {
@@ -275,7 +325,7 @@ struct BranchPopover: View {
     let divergence = divergenceText(
       ahead: branch.aheadOfHead, behind: branch.behindHead, base: current)
     let isDeleting = session.deletingBranches.contains(branch.id)
-    return Button {
+    return BranchRow {
       if let worktree {
         // A branch checked out in another worktree can't be checked out here; open that one.
         library.open(worktree.url, into: context)
@@ -283,41 +333,38 @@ struct BranchPopover: View {
         Task { await session.switchTo(branch) }
       }
       isPresented = false
-    } label: {
+    } content: {
       HStack(spacing: 8) {
         Image(systemName: branch.isCurrent ? "checkmark" : worktree != nil ? "folder" : "arrow.triangle.branch")
-          .foregroundStyle(branch.isCurrent ? Color.accentColor : .secondary)
+          .foregroundStyle(branch.isCurrent ? AnyShapeStyle(.kitAccent) : AnyShapeStyle(.kitSecondary))
           .frame(width: 16)
         VStack(alignment: .leading, spacing: 1) {
           Text(branch.name).lineLimit(1).truncationMode(.middle)
-          HStack(spacing: 6) {
+          HStack(spacing: 4) {
             if isDeleting {
-              ProgressView().controlSize(.mini)
+              LiveIcon(systemImage: "trash", hue: .gray, status: .working, size: 12)
               Text("Deleting…")
             } else if branch.isCurrent {
               Text("Current")
             } else if let divergence {
               Text(divergence)
-                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? Color.orange : .secondary)
+                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
             } else if branch.aheadOfHead == 0 {
               Text("Merged into \(current)")
             }
             if let worktree { Text("· in \(worktree.name)") }
           }
-          .font(.caption)
-          .foregroundStyle(.secondary)
+          .kitFont(.caption)
         }
         Spacer(minLength: 4)
         UpstreamBadge(branch: branch)
         if let date = branch.date {
           Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-            .font(.caption)
-            .foregroundStyle(.tertiary)
+            .kitFont(.caption)
+            .foregroundStyle(.kitTertiary)
         }
       }
-      .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
     .disabled(isDeleting)
     .contextMenu {
       if !branch.isCurrent, !branch.isRemote {
@@ -329,10 +376,7 @@ struct BranchPopover: View {
         Button("Delete…", role: .destructive) { pendingDelete = branch }
           .disabled(worktree != nil)
       }
-      Button("Copy Name") {
-        NSPasteboard.general.clearContents()
-        NSPasteboard.general.setString(branch.name, forType: .string)
-      }
+      Button("Copy Name") { copyToPasteboard(branch.name) }
     }
   }
 }
@@ -344,16 +388,11 @@ private struct UpstreamBadge: View {
   var body: some View {
     if branch.isUpstreamGone {
       Image(systemName: "icloud.slash")
-        .foregroundStyle(.secondary)
+        .foregroundStyle(.kitSecondary)
         .help("The upstream branch was deleted")
     } else if branch.ahead > 0 || branch.behind > 0 {
-      HStack(spacing: 3) {
-        if branch.behind > 0 { Text("↓\(branch.behind)") }
-        if branch.ahead > 0 { Text("↑\(branch.ahead)") }
-      }
-      .font(.caption.monospacedDigit())
-      .foregroundStyle(.secondary)
-      .help("Against \(branch.upstream ?? "its upstream")")
+      SyncCounts(ahead: branch.ahead, behind: branch.behind)
+        .help("Against \(branch.upstream ?? "its upstream")")
     }
   }
 }
@@ -385,24 +424,18 @@ struct StashMenu: View {
       }
     } label: {
       Label("Stash", systemImage: "archivebox")
-        .labelStyle(.titleAndIcon)
     }
-    .menuIndicator(.hidden)
     .help("Stash changes")
     .disabled(session.isBusy)
     .sheet(isPresented: $isStashing) {
       StashSheet(session: session)
     }
-    .confirmationDialog(
+    .kitConfirmation(
       "Drop this stash?",
       isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
-      titleVisibility: .visible
+      message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
     ) {
-      Button("Drop", role: .destructive) {
-        if let stash = pendingDrop { Task { await session.dropStash(stash) } }
-      }
-    } message: {
-      Text(pendingDrop?.message ?? "")
+      if let stash = pendingDrop { Task { await session.dropStash(stash) } }
     }
   }
 }
@@ -414,25 +447,27 @@ private struct StashSheet: View {
   @State private var includeUntracked = true
 
   var body: some View {
-    Form {
-      TextField("Message", text: $message, prompt: Text("Optional"))
-      Toggle("Include untracked files", isOn: $includeUntracked)
-    }
-    .formStyle(.grouped)
-    .frame(width: 380)
-    .navigationTitle("Stash Changes")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Stash") {
-          let message = message
-          let includeUntracked = includeUntracked
-          Task { await session.stash(message: message, includeUntracked: includeUntracked) }
-          dismiss()
+    KitSheet(
+      title: "Stash Changes", meta: "Puts your uncommitted changes aside, so you can switch branches.",
+      systemImage: "archivebox", hue: .indigo
+    ) {
+      FormCard {
+        FormRow("Message", help: "Optional", systemImage: "text.alignleft", field: TextField("WIP on \(session.status?.branch ?? "HEAD")", text: $message))
+        FormRow("Include untracked files", help: "New files go into the stash too", systemImage: "doc.badge.plus", hue: .teal) {
+          Toggle("Include untracked files", isOn: $includeUntracked).toggleStyle(.kitSwitch).labelsHidden()
         }
       }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Stash") {
+        let message = message
+        let includeUntracked = includeUntracked
+        Task { await session.stash(message: message, includeUntracked: includeUntracked) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
     }
   }
 }
@@ -451,39 +486,41 @@ struct NewBranchSheet: View {
   private let suggestedName = "feature/my-change"
 
   var body: some View {
-    Form {
-      TextField("Name", text: $name, prompt: Text(suggestedName))
-        .onKeyPress(.tab) {
-          guard name.isEmpty else { return .ignored }
-          name = suggestedName
-          return .handled
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    KitSheet(
+      title: "New Branch", meta: "From \(startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")",
+      systemImage: "arrow.triangle.branch", hue: .orange
+    ) {
+      FormCard {
+        FormRow(
+          "Name", help: "Tab fills in \(suggestedName)", systemImage: "character.cursor.ibeam",
+          error: !trimmed.isEmpty && !isValid ? "Not a valid or free branch name" : nil,
+          field: TextField(suggestedName, text: $name)
+            .onKeyPress(.tab) {
+              guard name.isEmpty else { return .ignored }
+              name = suggestedName
+              return .handled
+            })
+        FormRow("Switch to the new branch", systemImage: "arrow.right.circle", hue: .blue) {
+          Toggle("Switch to the new branch", isOn: $checkout).toggleStyle(.kitSwitch).labelsHidden()
         }
-      LabeledContent(
-        "From", value: startPoint.map { String($0.prefix(7)) } ?? session.status?.branch ?? "HEAD")
-      Toggle("Switch to the new branch", isOn: $checkout)
+      }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Create") {
+        let checkout = checkout
+        Task { await session.createBranch(trimmed, from: startPoint, checkout: checkout) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
-    .formStyle(.grouped)
-    .frame(width: 400)
-    .navigationTitle("New Branch")
     .task(id: name) {
-      let trimmed = name.trimmingCharacters(in: .whitespaces)
       isValid =
         await session.repository.isValidBranchName(trimmed)
         && !session.localBranches.contains { $0.name == trimmed }
-    }
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Create") {
-          let name = name.trimmingCharacters(in: .whitespaces)
-          let checkout = checkout
-          Task { await session.createBranch(name, from: startPoint, checkout: checkout) }
-          dismiss()
-        }
-        .disabled(!isValid)
-      }
     }
   }
 }
@@ -498,31 +535,31 @@ struct NewTagSheet: View {
   @State private var isValid = false
 
   var body: some View {
-    Form {
-      TextField("Name", text: $name, prompt: Text("v1.0.0"))
-      TextField("Message", text: $message, prompt: Text("Optional, makes an annotated tag"))
-      LabeledContent("Commit", value: "\(commit.shortID) \(commit.subject)")
+    let trimmed = name.trimmingCharacters(in: .whitespaces)
+    KitSheet(title: "New Tag", meta: "\(commit.shortID) \(commit.subject)", systemImage: "tag", hue: .gray) {
+      FormCard {
+        FormRow(
+          "Name", systemImage: "character.cursor.ibeam",
+          error: !trimmed.isEmpty && !isValid ? "Not a valid tag name" : nil,
+          field: TextField("v1.0.0", text: $name))
+        FormRow(
+          "Message", help: "Optional, makes an annotated tag", systemImage: "text.alignleft",
+          field: TextField("Release notes", text: $message))
+      }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Create") {
+        let message = message
+        Task { await session.createTag(trimmed, at: commit, message: message) }
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isValid)
     }
-    .formStyle(.grouped)
-    .frame(width: 420)
-    .navigationTitle("New Tag")
     .task(id: name) {
-      let trimmed = name.trimmingCharacters(in: .whitespaces)
       isValid = await session.repository.isValidTagName(trimmed)
-    }
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
-      }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Create") {
-          let name = name.trimmingCharacters(in: .whitespaces)
-          let message = message
-          Task { await session.createTag(name, at: commit, message: message) }
-          dismiss()
-        }
-        .disabled(!isValid)
-      }
     }
   }
 }
@@ -604,81 +641,55 @@ private struct DeleteEverywhereSheet: View {
   }
 
   var body: some View {
-    Form {
-      Section {
-        LabeledContent("Local", value: branch.name)
-        LabeledContent("On \(remote)", value: upstream.name)
-      } footer: {
-        Text(
-          "\(upstream.name) is deleted for everyone who uses \(remote), and only if nobody pushed "
-            + "to it since you last fetched.")
-      }
-      if !warnings.isEmpty {
-        Section {
-          ForEach(warnings, id: \.self) { warning in
-            Label {
-              Text(warning)
-            } icon: {
-              Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
-            }
-          }
+    KitSheet(
+      title: "Delete Local and \(remote)",
+      meta: "\(upstream.name) is deleted for everyone who uses \(remote), and only if nobody pushed to it since you last fetched.",
+      systemImage: "trash", hue: .red
+    ) {
+      FormCard {
+        FormRow("Local", help: branch.name, systemImage: "arrow.triangle.branch", hue: .orange)
+        FormRow("On \(remote)", help: upstream.name, systemImage: "cloud", hue: .blue)
+        ForEach(warnings, id: \.self) { warning in
+          FormRow(warning, systemImage: "exclamationmark.triangle", hue: .orange)
         }
       }
-      Section {
-        TextField("Branch name", text: $confirmation, prompt: Text(branch.name))
-          .labelsHidden()
-      } header: {
-        HStack(spacing: 0) {
-          Text("Type ")
-          Text(branch.name)
-          Text(" to confirm")
-        }
-        .textSelection(.enabled)
+      FormCard {
+        FormRow(
+          "Type \(branch.name) to confirm", systemImage: "character.cursor.ibeam", hue: .red,
+          field: TextField(branch.name, text: $confirmation))
       }
-    }
-    .formStyle(.grouped)
-    .frame(width: 440)
-    .navigationTitle("Delete Local and \(remote)")
-    .toolbar {
-      ToolbarItem(placement: .cancellationAction) {
-        Button("Cancel") { dismiss() }
+    } footer: {
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Delete", role: .destructive) {
+        Task { await session.deleteBranch(branch, andUpstream: upstream) }
+        dismiss()
       }
-      ToolbarItem(placement: .confirmationAction) {
-        Button("Delete", role: .destructive) {
-          Task { await session.deleteBranch(branch, andUpstream: upstream) }
-          dismiss()
-        }
-        .disabled(!isConfirmed)
-      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(!isConfirmed)
     }
   }
 }
 
-// MARK: - Shared controls
-
-/// A rounded filter field with a clear button.
-struct FilterField: View {
-  @Binding var text: String
-  let prompt: String
+/// A row of the Branch popover: hover fills it, a click acts on it.
+private struct BranchRow<Content: View>: View {
+  let action: () -> Void
+  @ViewBuilder let content: () -> Content
+  @State private var isHovered = false
 
   var body: some View {
-    HStack(spacing: 5) {
-      Image(systemName: "line.3.horizontal.decrease")
-        .foregroundStyle(.secondary)
-      TextField(prompt, text: $text)
-        .textFieldStyle(.plain)
-      if !text.isEmpty {
-        Button {
-          text = ""
-        } label: {
-          Image(systemName: "xmark.circle.fill")
-        }
-        .buttonStyle(.borderless)
-        .foregroundStyle(.secondary)
+    HStack(spacing: 8) { content() }
+      .padding(.horizontal, 8)
+      .frame(minHeight: 44)
+      .background {
+        if isHovered { RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover) }
       }
-    }
-    .padding(.horizontal, 7)
-    .padding(.vertical, 5)
-    .background(.quaternary.opacity(0.6), in: .rect(cornerRadius: 6))
+      .contentShape(Rectangle())
+      .onTapGesture(perform: action)
+      .onHover { isHovered = $0 }
+      .animation(.kitFast, value: isHovered)
+      .accessibilityElement(children: .combine)
+      .accessibilityAddTraits(.isButton)
   }
 }
