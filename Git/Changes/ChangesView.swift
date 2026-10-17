@@ -156,24 +156,24 @@ private struct ChangeList: View {
     } select: {
       state.selectedChanges = [change.id]
     }
-    .contextMenu { contextMenu(for: change) }
+    .kitContextMenu { contextMenu(for: change) }
   }
 
   @ViewBuilder
   private func contextMenu(for change: FileChange) -> some View {
     if change.area == .staged {
-      Button("Unstage") { Task { await session.unstage([change]) } }
+      Button("Unstage", systemImage: "minus.circle") { Task { await session.unstage([change]) } }
     } else {
-      Button("Stage") { Task { await session.stage([change]) } }
+      Button("Stage", systemImage: "plus.circle") { Task { await session.stage([change]) } }
     }
-    Button("Discard Changes…", role: .destructive) {
+    Button("Discard Changes…", systemImage: "trash", role: .destructive) {
       pendingDiscard = PendingDiscard(changes: [change], area: change.area)
     }
     Divider()
     let url = session.repository.url.appendingPathComponent(change.path)
-    Button("Open") { NSWorkspace.shared.open(url) }
-    Button("Show in Finder") { RepositoryLibrary.reveal(url) }
-    Button("Copy Path") { KitPasteboard.copy(change.path) }
+    Button("Open", systemImage: "arrow.up.right.square") { NSWorkspace.shared.open(url) }
+    Button("Show in Finder", systemImage: "folder") { RepositoryLibrary.reveal(url) }
+    Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(change.path) }
   }
 }
 

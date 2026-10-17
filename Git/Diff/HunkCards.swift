@@ -40,8 +40,8 @@ struct HunkCards: View {
         header: header, range: range, lines: lines, selection: kitSelection(hunk),
         stage: { chosen in stage(gitIDs(chosen, in: hunk)) }, overflow: .scroll
       )
-      .contextMenu {
-        Button("Discard Hunk…", role: .destructive) { discard(PatchBuilder.lines(in: hunk)) }
+      .kitContextMenu {
+        Button("Discard Hunk…", systemImage: "trash", role: .destructive) { discard(PatchBuilder.lines(in: hunk)) }
       }
     case .staged(let unstage):
       HunkCard(

@@ -39,6 +39,7 @@ private struct CommitDetail: View {
   @State private var branchStart: Commit?
   @State private var tagTarget: Commit?
   @State private var showsFullDiff = false
+  @State private var showsMore = false
 
   private var selectedFile: CommitFile? {
     files?.first { $0.id == state.selectedCommitFile } ?? files?.first
@@ -60,18 +61,15 @@ private struct CommitDetail: View {
           .disabled(session.isBusy)
         Button("Cherry-Pick") { Task { await session.cherryPick(commit) } }
           .disabled(session.isBusy || commit.id == session.status?.headOID)
-        Menu {
-          Button("Create Branch from Commit…") { branchStart = commit }
-          Button("Create Tag…") { tagTarget = commit }
-          Divider()
-          Button("Copy SHA") { KitPasteboard.copy(commit.id) }
-          Button("Copy Message") { KitPasteboard.copy(commit.message) }
-        } label: {
-          Image(systemName: "ellipsis")
-        }
-        .menuIndicator(.hidden)
-        .fixedSize()
-        .accessibilityLabel("More actions")
+        Button("More Actions", systemImage: "ellipsis") { showsMore.toggle() }
+          .labelStyle(.iconOnly)
+          .kitMenu(isPresented: $showsMore) {
+            Button("Create Branch from Commit…", systemImage: "arrow.triangle.branch") { branchStart = commit }
+            Button("Create Tag…", systemImage: "tag") { tagTarget = commit }
+            Divider()
+            Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
+            Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
+          }
       }
       diffPreview
     }

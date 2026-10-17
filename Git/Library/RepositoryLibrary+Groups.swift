@@ -99,6 +99,14 @@ enum RemoteAction: String {
     case .push: "Push"
     }
   }
+
+  var systemImage: String {
+    switch self {
+    case .fetch: "arrow.clockwise"
+    case .pull: "arrow.down.to.line"
+    case .push: "arrow.up.to.line"
+    }
+  }
 }
 
 struct RemoteFailure: Identifiable {

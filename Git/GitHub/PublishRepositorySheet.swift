@@ -45,14 +45,12 @@ struct PublishRepositorySheet: View {
       if account.isSignedIn {
         FormCard(footer: footerText) {
           FormRow("Owner", systemImage: "person", hue: .indigo) {
-            Picker("Owner", selection: $organization) {
-              Text(account.user?.login ?? "").tag(String?.none)
-              ForEach(account.organizations) { organization in
-                Text(organization.login).tag(Optional(organization.login))
-              }
-            }
-            .labelsHidden()
-            .fixedSize()
+            KitPicker(
+              "Owner", selection: $organization,
+              segments: [KitSegment(account.user?.login ?? "", value: String?.none, systemImage: "person")]
+                + account.organizations.map {
+                  KitSegment($0.login, value: Optional($0.login), systemImage: "building.2")
+                })
           }
           if !account.permissions.organizations {
             GrantHint(text: "Only organizations where your membership is public are listed.") {

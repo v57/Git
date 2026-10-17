@@ -170,7 +170,7 @@ struct RepositoryList: View {
     .dropDestination(for: URL.self) { urls, _ in
       drop(urls, into: group.id, before: nil, groupBefore: id, layout: layout)
     } isTargeted: { setTarget(id, $0) }
-    .contextMenu { groupMenu(group, members: members) }
+    .kitContextMenu { groupMenu(group, members: members) }
   }
 
   private func groupHelp(_ group: SavedGroup, members: [SavedRepository]) -> String {
@@ -189,22 +189,22 @@ struct RepositoryList: View {
     let paths = members.map(\.path)
     remoteButtons(paths, suffix: " All")
     Divider()
-    Button("Rename…") {
+    Button("Rename…", systemImage: "pencil") {
       newName = group.name
       renaming = group
     }
-    Button("Ungroup") { library.ungroup(group, context: context) }
+    Button("Ungroup", systemImage: "folder.badge.minus") { library.ungroup(group, context: context) }
     Divider()
     if !group.directory.isEmpty {
-      Button("Show in Finder") {
+      Button("Show in Finder", systemImage: "folder") {
         RepositoryLibrary.reveal(URL(fileURLWithPath: group.directory, isDirectory: true))
       }
       Divider()
     }
     if members.allSatisfy(\.isHidden) {
-      Button("Unhide Group") { library.setHidden(paths, false, context: context) }
+      Button("Unhide Group", systemImage: "eye") { library.setHidden(paths, false, context: context) }
     } else {
-      Button("Hide Group") { library.setHidden(paths, true, context: context) }
+      Button("Hide Group", systemImage: "eye.slash") { library.setHidden(paths, true, context: context) }
     }
   }
 
@@ -231,7 +231,7 @@ struct RepositoryList: View {
           .map(SidebarItem.id(of:)) ?? repository.path,
         layout: layout)
     } isTargeted: { setTarget(repository.path, $0) }
-    .contextMenu { repositoryMenu(targets(for: repository.path, layout: layout)) }
+    .kitContextMenu { repositoryMenu(targets(for: repository.path, layout: layout)) }
     .transition(.row)
   }
 
@@ -268,7 +268,7 @@ struct RepositoryList: View {
     let suffix = targets.count > 1 ? " \(targets.count) Repositories" : ""
     remoteButtons(paths, suffix: suffix)
     Divider()
-    Menu("Move to Group") {
+    KitSubmenu("Move to Group", systemImage: "folder") {
       ForEach(SidebarLayout.ordered(groups.map(SidebarItem.group)), id: \.id) { item in
         if case .group(let group) = item {
           Button(group.note.isEmpty ? group.name : "\(group.name) (\(group.note))") {
@@ -278,7 +278,7 @@ struct RepositoryList: View {
         }
       }
       if !groups.isEmpty { Divider() }
-      Button("New Group…") {
+      Button("New Group…", systemImage: "folder.badge.plus") {
         if let group = library.newGroup(from: paths, context: context) {
           newName = group.name
           renaming = group
@@ -286,20 +286,20 @@ struct RepositoryList: View {
       }
     }
     if targets.contains(where: { $0.groupID != nil }) {
-      Button("Remove from Group") { library.move(paths, into: nil, before: nil, context: context) }
+      Button("Remove from Group", systemImage: "folder.badge.minus") { library.move(paths, into: nil, before: nil, context: context) }
     }
     Divider()
-    Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
+    Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
     if let only = targets.first, targets.count == 1 {
-      Button("Open in Terminal") { RepositoryLibrary.openInTerminal(only.url) }
+      Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
     }
     Divider()
     if targets.allSatisfy(\.isHidden) {
-      Button("Unhide" + suffix) { library.setHidden(paths, false, context: context) }
+      Button("Unhide" + suffix, systemImage: "eye") { library.setHidden(paths, false, context: context) }
     } else {
-      Button("Hide" + suffix) { library.setHidden(paths, true, context: context) }
+      Button("Hide" + suffix, systemImage: "eye.slash") { library.setHidden(paths, true, context: context) }
     }
-    Button("Remove\(suffix) from List") {
+    Button("Remove\(suffix) from List", systemImage: "minus.circle") {
       if let selection, paths.contains(selection) { self.selection = nil }
       selected.subtract(paths)
       library.remove(targets, from: context)
@@ -309,7 +309,7 @@ struct RepositoryList: View {
   @ViewBuilder
   private func remoteButtons(_ paths: [String], suffix: String) -> some View {
     ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
-      Button(action.title + suffix) { Task { await library.run(action, on: paths) } }
+      Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: paths) } }
         .disabled(paths.allSatisfy { library.remoteActivity[$0] != nil })
     }
   }

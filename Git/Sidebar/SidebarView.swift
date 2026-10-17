@@ -188,8 +188,12 @@ private struct RepositorySections: View {
               state.mode = .history
               state.selectedCommit = tag.commit
             }
-            .contextMenu {
-              Button("Copy Name") { KitPasteboard.copy(tag.name) }
+            .kitContextMenu {
+              Button("Show in History", systemImage: "clock") {
+                state.mode = .history
+                state.selectedCommit = tag.commit
+              }
+              Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(tag.name) }
             }
         }
       } accessory: {
@@ -295,21 +299,21 @@ private struct RepositorySections: View {
     }
     .disabled(isDeleting)
     .help(branch.isCurrent ? "Checked out" : "Switch to \(branch.name)")
-    .contextMenu {
+    .kitContextMenu {
       if !branch.isCurrent {
-        Button("Switch to \(branch.name)") { Task { await session.switchTo(branch) } }
+        Button("Switch to \(branch.name)", systemImage: "arrow.right.circle") { Task { await session.switchTo(branch) } }
           .disabled(session.worktree(for: branch) != nil)
-        Button("Merge into \(session.currentBranch?.name ?? "HEAD")") {
+        Button("Merge into \(session.currentBranch?.name ?? "HEAD")", systemImage: "arrow.triangle.merge") {
           Task { await session.merge(branch) }
         }
         .disabled((branch.aheadOfHead ?? 1) == 0)
       }
-      Button("New Branch from \(branch.name)…") { branchStart = branch.name }
+      Button("New Branch from \(branch.name)…", systemImage: "plus") { branchStart = branch.name }
       Divider()
-      Button("Copy Name") { KitPasteboard.copy(branch.name) }
+      Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(branch.name) }
       if !branch.isCurrent {
         Divider()
-        Button("Delete…", role: .destructive) { pendingDelete = branch }
+        Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = branch }
           .disabled(session.worktree(for: branch) != nil)
       }
     }

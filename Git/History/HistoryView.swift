@@ -317,7 +317,7 @@ private struct CommitList: View {
       .onTapGesture { click(commit) }
       .kitCardSlice(index + 1, of: cardSize)
       .id(commit.id)
-      .contextMenu {
+      .kitContextMenu {
         if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
           selectionMenu()
         } else {
@@ -375,15 +375,17 @@ private struct CommitList: View {
   private func selectionMenu() -> some View {
     let selected = state.selectedCommits
     let run = Result { try session.squashRun(selected) }
-    Button("Squash \(selected.count) Commits…") {
+    Button("Squash \(selected.count) Commits…", systemImage: "arrow.triangle.merge") {
       if case .success(let commits) = run { squashRequest = SquashRequest(commits: commits) }
     }
     .disabled(session.isBusy || session.status?.operation != nil || (try? run.get()) == nil)
     if case .failure(let error) = run {
-      Text((error as? GitError)?.message ?? error.localizedDescription)
+      // Why Squash is off, as a row that can't be picked.
+      Button((error as? GitError)?.message ?? error.localizedDescription) {}
+        .disabled(true)
     }
     Divider()
-    Button("Copy SHAs") {
+    Button("Copy SHAs", systemImage: "doc.on.doc") {
       KitPasteboard.copy(
         session.commits.filter { selected.contains($0.id) }.map(\.id).joined(separator: "\n"))
     }
@@ -391,20 +393,20 @@ private struct CommitList: View {
 
   @ViewBuilder
   private func contextMenu(for commit: Commit) -> some View {
-    Button("Check Out") { Task { await session.checkout(commit) } }
+    Button("Check Out", systemImage: "arrow.uturn.backward") { Task { await session.checkout(commit) } }
       .disabled(session.isBusy)
-    Button("Revert Changes in Commit") { Task { await session.revert(commit) } }
+    Button("Revert Changes in Commit", systemImage: "arrow.uturn.left") { Task { await session.revert(commit) } }
       .disabled(session.isBusy)
-    Button("Cherry-Pick") { Task { await session.cherryPick(commit) } }
+    Button("Cherry-Pick", systemImage: "arrow.right.doc.on.clipboard") { Task { await session.cherryPick(commit) } }
       .disabled(session.isBusy)
-    Button("Reset to This Commit…") { resetTarget = commit }
+    Button("Reset to This Commit…", systemImage: "clock.arrow.circlepath") { resetTarget = commit }
       .disabled(session.isBusy || commit.id == session.status?.headOID)
     Divider()
-    Button("Create Branch from Commit…") { branchStart = commit }
-    Button("Create Tag…") { tagTarget = commit }
+    Button("Create Branch from Commit…", systemImage: "arrow.triangle.branch") { branchStart = commit }
+    Button("Create Tag…", systemImage: "tag") { tagTarget = commit }
     Divider()
-    Button("Copy SHA") { KitPasteboard.copy(commit.id) }
-    Button("Copy Message") { KitPasteboard.copy(commit.message) }
+    Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
+    Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
   }
 }
 
