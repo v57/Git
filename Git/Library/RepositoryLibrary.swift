@@ -84,6 +84,8 @@ struct CompletedOperation: Equatable {
   var importMessage: String?
   /// Repositories with a fetch, pull or push started from the sidebar.
   var remoteActivity: [String: RemoteAction] = [:]
+  /// How each repository's last sidebar fetch, pull or push ended, for its row's effect.
+  var remoteOutcomes: [String: RemoteOutcome] = [:]
   /// The repositories a sidebar fetch, pull or push failed in.
   var remoteFailure: RemoteFailure?
 

@@ -1,4 +1,5 @@
 import AppKit
+import ComponentKit
 import GitKit
 import SwiftData
 
@@ -105,6 +106,23 @@ enum RemoteAction: String {
     case .fetch: "arrow.clockwise"
     case .pull: "arrow.down.to.line"
     case .push: "arrow.up.to.line"
+    }
+  }
+}
+
+/// How a sidebar fetch, pull or push ended; `count` grows with each, so the row's effect plays again.
+struct RemoteOutcome: Equatable {
+  var action: RemoteAction
+  var succeeded: Bool
+  var count: Int
+
+  /// A sweep of light for a fetch, a drop for a pull, a send for a push, a shake for a failure.
+  var effect: KitEffect {
+    guard succeeded else { return .failure }
+    switch action {
+    case .fetch: return .shimmer
+    case .pull: return .receive("arrow.down.circle.fill")
+    case .push: return .send("arrow.up.circle.fill")
     }
   }
 }
@@ -353,6 +371,8 @@ extension RepositoryLibrary {
       for _ in 0..<4 { addNext() }
       for await (path, message) in group {
         remoteActivity[path] = nil
+        remoteOutcomes[path] = RemoteOutcome(
+          action: action, succeeded: message == nil, count: (remoteOutcomes[path]?.count ?? 0) + 1)
         if let message {
           failures.append(((path as NSString).lastPathComponent, message))
         }

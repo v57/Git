@@ -215,7 +215,7 @@ struct RepositoryList: View {
     return RepositoryRow(
       repository: repository, summary: library.summaries[repository.path],
       isCurrent: repository.path == selection, isSelected: isMulti,
-      activity: library.remoteActivity[repository.path]
+      activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path]
     ) {
       click(repository.path, layout: layout)
     }
@@ -437,6 +437,8 @@ struct RepositoryRow: View {
   let isCurrent: Bool
   var isSelected = false
   var activity: RemoteAction?
+  /// How the last fetch, pull or push from the sidebar ended: the row plays its effect.
+  var outcome: RemoteOutcome?
   /// What a click does: open it, or (⌘, ⇧) select it with others.
   let action: () -> Void
 
@@ -463,6 +465,7 @@ struct RepositoryRow: View {
     }
     .animation(.kit, value: isCurrent)
     .animation(.kit, value: isSelected)
+    .effect(outcome?.effect ?? .pop, on: outcome?.count)
     .help("\(repository.path)\n\(summary.map(StatusMarks.description) ?? "")")
     .accessibilityAddTraits(isCurrent || isSelected ? .isSelected : [])
   }
