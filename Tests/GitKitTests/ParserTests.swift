@@ -338,3 +338,13 @@ struct NumstatAndTagParserTests {
     #expect(tags.map(\.commit) == ["c0ffee", "abc123"])
   }
 }
+
+struct GitProgressTests {
+  @Test func readsTheTransferShare() {
+    #expect(GitProgress.fraction(of: "Receiving objects:  45% (450/1000), 1.20 MiB | 2.00 MiB/s") == 0.45)
+    #expect(GitProgress.fraction(of: "Writing objects: 100% (3/3), done.") == 1)
+    #expect(GitProgress.fraction(of: "remote: Counting objects:  30% (3/10)") == nil)
+    #expect(GitProgress.fraction(of: "Resolving deltas:  50% (1/2)") == nil)
+    #expect(GitProgress.fraction(of: "Receiving objects") == nil)
+  }
+}
