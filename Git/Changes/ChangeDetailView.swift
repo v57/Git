@@ -38,7 +38,6 @@ struct ChangeDetailView: View {
         ) {
           Button("View History") { withKitAnimation { state.mode = .history } }.buttonStyle(.kit)
         }
-        .emptyStateFits()
         .transition(.page)
       } else if let change, let loaded, loaded.target == target {
         VStack(spacing: 0) {
@@ -59,7 +58,6 @@ struct ChangeDetailView: View {
         EmptyState(systemImage: "equal", title: "No Changes")
       } else if change == nil {
         EmptyState(systemImage: "doc.text", title: "No File Selected", message: "Pick a file to see its changes.")
-          .emptyStateFits()
       } else {
         LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
           .frame(maxWidth: .infinity, maxHeight: .infinity)

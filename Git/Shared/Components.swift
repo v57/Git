@@ -70,11 +70,3 @@ extension Date {
     return formatted(.dateTime.month(.abbreviated).day())
   }
 }
-
-extension View {
-  /// For the kit's `EmptyState` with a message: the message wraps to any width, so the smallest height SwiftUI asks
-  /// of it (one word a line) runs past the window's and pushes the toolbar and the sidebar's bars out of sight.
-  func emptyStateFits() -> some View {
-    frame(minHeight: 0)
-  }
-}

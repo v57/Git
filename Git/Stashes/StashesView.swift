@@ -13,7 +13,6 @@ struct StashesScreen: View {
         EmptyState(
           systemImage: "archivebox", title: "No Stashes",
           message: "Stash puts uncommitted changes aside so you can switch branches.")
-        .emptyStateFits()
       } else {
         ScrollView {
           // Built as they near the screen, so a long list of stashes opens at once.

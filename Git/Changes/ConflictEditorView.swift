@@ -331,7 +331,6 @@ struct ConflictsScreen: View {
           }
         } else {
           EmptyState(systemImage: "checkmark", title: "Resolved", message: "This file is resolved and staged.")
-            .emptyStateFits()
         }
       }
       .id(path)
@@ -626,7 +625,6 @@ private struct OperationComplete: View {
           .disabled(session.isBusy)
       }
     }
-    .emptyStateFits()
   }
 }
 

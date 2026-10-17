@@ -16,7 +16,6 @@ struct CommitInspector: View {
           .transition(.detail)
       } else {
         EmptyState(systemImage: "clock", title: "No Commit Selected", message: "Pick a commit to see what it changed.")
-          .emptyStateFits()
           .kitPane(.secondary)
           .transition(.opacity)
       }

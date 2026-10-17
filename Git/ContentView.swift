@@ -37,7 +37,6 @@ struct ContentView: View {
           ) {
             Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }.buttonStyle(.kit)
           }
-          .emptyStateFits()
           .kitPane(.content)
           .kitToolbar("Git") { EmptyView() } tools: {}
         }
