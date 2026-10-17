@@ -48,12 +48,22 @@ struct GitApp: App {
     return UserDefaults.standard.object(forKey: WelcomeWindow.showAtLaunchKey) as? Bool ?? true
   }()
 
+  /// Screenshot captures build every row at once, so nothing waits to be built as it's taken.
+  private static let buildsLazily: Bool = {
+    #if DEBUG
+      ProcessInfo.processInfo.environment["DEV_SCREENSHOT"] == nil
+    #else
+      true
+    #endif
+  }()
+
   var body: some Scene {
     WindowGroup("Git", id: MainWindow.id) {
       ContentView()
         .environment(library)
         .environment(github)
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
+        .kitLazyLoading(Self.buildsLazily)
         .componentKit(accent: .accentColor)
     }
     .defaultSize(width: 1440, height: 900)
@@ -68,6 +78,7 @@ struct GitApp: App {
       WelcomeWindow()
         .environment(library)
         .environment(github)
+        .kitLazyLoading(Self.buildsLazily)
         .componentKit(accent: .accentColor)
     }
     .windowStyle(.hiddenTitleBar)
