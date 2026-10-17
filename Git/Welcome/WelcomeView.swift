@@ -202,7 +202,7 @@ struct CloneSheet: View {
   var body: some View {
     KitSheet(
       title: "Clone Repository", meta: "Copies a repository from GitHub, GitLab or any URL.",
-      systemImage: "arrow.down", status: cloning == nil ? .idle : .working, width: 480
+      systemImage: "arrow.down", status: cloning == nil ? .idle : cloneStatus, width: 480
     ) {
       FormCard {
         FormRow(
@@ -222,7 +222,7 @@ struct CloneSheet: View {
       .disabled(cloning != nil)
     } footer: {
       if cloning != nil {
-        SheetStatus(progress.line ?? "Starting…", systemImage: "arrow.down", status: .working)
+        SheetStatus(progress.line ?? "Starting…", systemImage: "arrow.down", status: cloneStatus)
       } else if let error {
         SheetStatus(error, systemImage: "exclamationmark.triangle", hue: .red, status: .failed)
       }
@@ -237,6 +237,11 @@ struct CloneSheet: View {
         .keyboardShortcut(.defaultAction)
         .disabled(!canClone)
     }
+  }
+
+  /// Working, with the share received once git reports it.
+  private var cloneStatus: WorkStatus {
+    .working(progress: progress.line.flatMap(GitProgress.fraction))
   }
 
   /// `https://host/owner/repo.git` or `git@host:owner/repo.git` → `repo`.
