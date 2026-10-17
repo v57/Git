@@ -16,7 +16,8 @@ struct StashesScreen: View {
         .emptyStateFits()
       } else {
         ScrollView {
-          VStack(spacing: KitMetrics.gutter) {
+          // Built as they near the screen, so a long list of stashes opens at once.
+          KitLazyStack(spacing: KitMetrics.gutter) {
             ForEach(session.stashes) { stash in
               row(stash)
             }

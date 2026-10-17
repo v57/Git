@@ -289,7 +289,8 @@ struct ConflictsScreen: View {
           switch contents[path] {
           case .blocks(let file):
             ScrollView {
-              LazyVStack(alignment: .leading, spacing: 8) {
+              // A few heavy cards: built ahead of the scroll, keeping their heights once measured.
+              KitLazyStack(alignment: .leading, spacing: 8) {
                 ForEach(Array(file.segments.enumerated()), id: \.offset) { index, segment in
                   switch segment {
                   case .common(let text):
@@ -330,8 +331,8 @@ struct ConflictsScreen: View {
           }
         } else {
           EmptyState(systemImage: "checkmark", title: "Resolved", message: "This file is resolved and staged.")
-        }
             .emptyStateFits()
+        }
       }
       .id(path)
       .transition(.page)
@@ -625,8 +626,8 @@ private struct OperationComplete: View {
           .disabled(session.isBusy)
       }
     }
-  }
     .emptyStateFits()
+  }
 }
 
 /// Where a conflict block sits in its file: the function it is in ("refresh()"), or "stored
