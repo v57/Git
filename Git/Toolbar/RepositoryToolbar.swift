@@ -3,10 +3,11 @@ import GitKit
 import SwiftData
 import SwiftUI
 
-/// The window toolbar for a repository, as in the design: the screen's live title, then Fetch,
-/// Pull and Push (with the number of commits to push) and Branch, Merge and Stash as tool cards.
-/// While conflicts are being resolved it shows the keyboard shortcuts instead.
-struct RepositoryToolbar: ToolbarContent {
+/// The repository's toolbar, the kit's own: the screen's live title, then Fetch, Pull and Push
+/// (with the number of commits to push) and Branch, Merge and Stash as tool cards, which go
+/// icon-only when the window narrows. While conflicts are being resolved it shows the keyboard
+/// shortcuts instead.
+struct RepositoryToolbar {
   let session: RepositorySession
   let state: RepositoryViewState
   let screen: RepositoryScreenKind
@@ -15,38 +16,32 @@ struct RepositoryToolbar: ToolbarContent {
   /// History's search text, which shows the search field.
   let search: Binding<String>?
 
-  var body: some ToolbarContent {
-    KitToolbarItem(placement: .navigation) {
-      KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.isBusy ? .working : .idle)
-        .padding(.leading, 6)
-    }
+  var titleView: KitTitle {
+    KitTitle(title, meta: meta, systemImage: titleImage, hue: titleHue, status: session.workStatus)
+  }
+
+  @ToolbarSlotBuilder var tools: [ToolbarSlot] {
     if screen == .conflicts {
-      KitToolbarItem(placement: .primaryAction) {
-        ToolGroup {
-          Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
-          Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
-        }
-        .allowsHitTesting(false)
+      ToolGroup {
+        Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
+        Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
       }
+      .allowsHitTesting(false)
     } else {
-      KitToolbarItem(placement: .primaryAction) {
-        HStack(spacing: KitMetrics.gutter) {
-          ToolGroup { SyncButtons(session: session, state: state) }
-          ToolGroup {
-            BranchToolbarButton(session: session)
-            if screen == .history {
-              MergeMenu(session: session)
-            }
-            StashMenu(session: session)
-          }
-          if let search {
-            KitSearchField(
-              text: search, prompt: "Message, author, hash",
-              status: session.isLoadingCommits && !search.wrappedValue.isEmpty ? .working : .idle
-            )
-            .frame(width: 240)
-          }
+      ToolGroup { SyncButtons(session: session, state: state) }
+      ToolGroup {
+        BranchToolbarButton(session: session, state: state)
+        if screen == .history {
+          MergeMenu(session: session, state: state)
         }
+        StashMenu(session: session, state: state)
+      }
+      if let search {
+        KitSearchField(
+          text: search, prompt: "Message, author, hash",
+          status: session.isLoadingCommits && !search.wrappedValue.isEmpty ? .working : .idle
+        )
+        .frame(width: 240)
       }
     }
   }
@@ -79,6 +74,15 @@ struct RepositoryToolbar: ToolbarContent {
   }
 }
 
+extension RepositorySession {
+  /// The live icon's state: working while anything runs, with the transfer's share once a fetch,
+  /// pull or push reports one.
+  var workStatus: WorkStatus {
+    guard isBusy else { return .idle }
+    return .working(progress: progress.flatMap(GitProgress.fraction))
+  }
+}
+
 /// A shortcut's keys and what it does, for the conflict screen's toolbar.
 private struct ShortcutLabel: View {
   let keys: String
@@ -97,32 +101,39 @@ enum RepositoryScreenKind: Equatable {
   case changes, history, stashes, conflicts
 }
 
-/// Fetch, Pull and Push.
+/// Fetch, Pull and Push. Each plays the kit's effect when it lands: a sweep of light for a fetch,
+/// a drop for a pull, a send for a push, a shake when it fails.
 private struct SyncButtons: View {
   let session: RepositorySession
   let state: RepositoryViewState
   @State private var confirmForcePush = false
+  @State private var fetched = 0
+  @State private var pulled = 0
+  @State private var pushed = 0
+  @State private var failed = 0
 
   private var ahead: Int { session.status?.ahead ?? 0 }
   private var hasUpstream: Bool { session.status?.upstream != nil }
 
   var body: some View {
     Button(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise") {
-      Task { await session.fetch() }
+      Task { await count(session.fetch(), into: $fetched) }
     }
     .disabled(session.remotes.isEmpty || session.isBusy)
     .help(fetchHelp)
+    .effect(.shimmer, on: fetched)
     Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
-      Task { await session.pull() }
+      Task { await count(session.pull(), into: $pulled) }
     }
     .disabled(!hasUpstream || session.isBusy)
     .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
+    .effect(.receive("arrow.down.circle.fill"), on: pulled)
     Button {
       // Without a remote, Publish creates one on GitHub first.
       if session.remotes.isEmpty {
         state.isPublishPresented = true
       } else {
-        Task { await session.push() }
+        Task { await count(session.push(), into: $pushed) }
       }
     } label: {
       Label {
@@ -137,18 +148,25 @@ private struct SyncButtons: View {
     }
     .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
     .help(pushHelp)
-    .contextMenu {
-      Button("Force Push…") { confirmForcePush = true }
-        .disabled(!hasUpstream)
+    .effect(.send("arrow.up.circle.fill"), on: pushed)
+    .kitContextMenu {
+      Button("Force Push…", systemImage: "exclamationmark.arrow.triangle.2.circlepath") { confirmForcePush = true }
+        .disabled(!hasUpstream || session.isBusy)
     }
+    .effect(.failure, on: failed)
     .kitConfirmation(
       "Force push \(session.status?.branch ?? "")?", isPresented: $confirmForcePush,
       message: "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
         + "if someone else pushed since your last fetch.",
       systemImage: "arrow.up.to.line", confirm: "Force Push"
     ) {
-      Task { await session.push(force: true) }
+      Task { await count(session.push(force: true), into: $pushed) }
     }
+  }
+
+  /// Counts a finished fetch, pull or push, so its effect plays (or the failure's).
+  private func count(_ succeeded: Bool, into counter: Binding<Int>) {
+    if succeeded { counter.wrappedValue += 1 } else { failed += 1 }
   }
 
   private var pushHelp: String {
@@ -170,54 +188,58 @@ private struct SyncButtons: View {
 /// Branch: switch, create, merge or delete branches in a popover.
 private struct BranchToolbarButton: View {
   let session: RepositorySession
-  @State private var isPresented = launchArgument("--show-branches")
+  @Bindable var state: RepositoryViewState
 
   var body: some View {
-    Button("Branch", systemImage: "arrow.triangle.branch") { isPresented.toggle() }
+    Button("Branch", systemImage: "arrow.triangle.branch") { state.isBranchPopoverPresented.toggle() }
     .help("Switch or create a branch")
-    .popover(isPresented: $isPresented, arrowEdge: .bottom) {
-      BranchPopover(session: session, isPresented: $isPresented)
+    .popover(isPresented: $state.isBranchPopoverPresented, arrowEdge: .bottom) {
+      BranchPopover(session: session, isPresented: $state.isBranchPopoverPresented)
     }
   }
 }
 
-/// Merge: a branch into the current one.
+/// Merge: a branch into the current one, from the kit's menu. The most recent branches are rows,
+/// the remote ones a submenu; the Branch popover has every branch.
 private struct MergeMenu: View {
   let session: RepositorySession
+  let state: RepositoryViewState
+  @State private var isPresented = false
+
+  /// Rows a menu shows before the rest go to the Branch popover: a menu doesn't scroll.
+  private static let limit = 12
 
   var body: some View {
     let current = session.currentBranch?.name ?? "HEAD"
-    let candidates = session.localBranches.filter { !$0.isCurrent }
-    Menu {
-      Section("Merge into \(current)") {
-        ForEach(candidates) { branch in
-          Button(branch.name) { Task { await session.merge(branch) } }
+    Button("Merge", systemImage: "arrow.triangle.merge") { isPresented.toggle() }
+      .disabled(session.isBusy || session.status?.branch == nil)
+      .help("Merge a branch into \(current)")
+      .kitMenu(isPresented: $isPresented) {
+        let candidates = Self.recent(session.localBranches.filter { !$0.isCurrent })
+        ForEach(candidates.prefix(Self.limit)) { branch in
+          Button(branch.name, systemImage: "arrow.triangle.branch") { Task { await session.merge(branch) } }
             .disabled((branch.aheadOfHead ?? 1) == 0)
         }
-      }
-      let remotes = session.remoteBranches
-      if !remotes.isEmpty {
-        Section("Remote Branches") {
-          ForEach(remotes) { branch in
-            Button(branch.name) { Task { await session.merge(branch) } }
+        let remotes = Self.recent(session.remoteBranches)
+        if !remotes.isEmpty {
+          KitSubmenu("Remote Branches", systemImage: "cloud") {
+            ForEach(remotes.prefix(Self.limit)) { branch in
+              Button(branch.name) { Task { await session.merge(branch) } }
+            }
           }
         }
+        if candidates.count > Self.limit || remotes.count > Self.limit {
+          Button("All Branches…", systemImage: "list.bullet") { state.isBranchPopoverPresented = true }
+        }
+        Divider()
+        KitMenuFooter(current, subtitle: "Merges into this branch", systemImage: "arrow.triangle.merge")
       }
-    } label: {
-      Label("Merge", systemImage: "arrow.triangle.merge")
-    }
-    .disabled(session.isBusy || session.status?.branch == nil)
-    .help("Merge a branch into \(current)")
   }
-}
 
-/// Debug builds open a popover at launch (or in a screenshot scene) with `--show-branches`, for screenshots.
-private func launchArgument(_ name: String) -> Bool {
-  #if DEBUG
-    LaunchScene.shared.flag(name)
-  #else
-    false
-  #endif
+  /// Newest first.
+  private static func recent(_ branches: [Branch]) -> [Branch] {
+    branches.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+  }
 }
 
 /// "3 ahead of main", "2 behind main" or "3 ahead, 2 behind main"; `nil` when level.
@@ -351,17 +373,18 @@ struct BranchPopover: View {
       }
     }
     .disabled(isDeleting)
-    .contextMenu {
+    .kitContextMenu {
       if !branch.isCurrent, !branch.isRemote {
-        Button("Merge into \(current)") {
+        Button("Merge into \(current)", systemImage: "arrow.triangle.merge") {
           Task { await session.merge(branch) }
           isPresented = false
         }
         .disabled((branch.aheadOfHead ?? 1) == 0)
-        Button("Delete…", role: .destructive) { pendingDelete = branch }
+        Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = branch }
           .disabled(worktree != nil)
+        Divider()
       }
-      Button("Copy Name") { KitPasteboard.copy(branch.name) }
+      Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(branch.name) }
     }
   }
 }
@@ -384,44 +407,52 @@ private struct UpstreamBadge: View {
 
 // MARK: - Stash
 
+/// Stash: put the changes aside, pop the latest, or apply, pop or drop any stash from its submenu.
 struct StashMenu: View {
   let session: RepositorySession
+  let state: RepositoryViewState
+  @State private var isPresented = false
   @State private var isStashing = false
   @State private var pendingDrop: Stash?
 
+  /// Stashes the menu lists before the rest are left to the Stashes screen: a menu doesn't scroll.
+  private static let limit = 10
+
   var body: some View {
-    Menu {
-      Button("Stash Changes…") { isStashing = true }
-        .disabled(session.status?.isClean ?? true)
-      if let latest = session.stashes.first {
-        Button("Pop Latest Stash") { Task { await session.popStash(latest) } }
-      }
-      if !session.stashes.isEmpty {
-        Divider()
-        ForEach(session.stashes) { stash in
-          Menu(stash.message) {
-            Button("Apply") { Task { await session.applyStash(stash) } }
-            Button("Pop") { Task { await session.popStash(stash) } }
-            Divider()
-            Button("Drop…", role: .destructive) { pendingDrop = stash }
+    Button("Stash", systemImage: "archivebox") { isPresented.toggle() }
+      .help("Stash changes")
+      .disabled(session.isBusy)
+      .kitMenu(isPresented: $isPresented) {
+        Button("Stash Changes…", systemImage: "archivebox") { isStashing = true }
+          .disabled(session.status?.isClean ?? true)
+        if let latest = session.stashes.first {
+          Button("Pop Latest Stash", systemImage: "tray.and.arrow.up") { Task { await session.popStash(latest) } }
+        }
+        if !session.stashes.isEmpty {
+          Divider()
+          ForEach(session.stashes.prefix(Self.limit)) { stash in
+            KitSubmenu(stash.message) {
+              Button("Apply") { Task { await session.applyStash(stash) } }
+              Button("Pop") { Task { await session.popStash(stash) } }
+              Divider()
+              Button("Drop…", role: .destructive) { pendingDrop = stash }
+            }
+          }
+          if session.stashes.count > Self.limit {
+            Button("All \(session.stashes.count) Stashes…") { state.mode = .stashes }
           }
         }
       }
-    } label: {
-      Label("Stash", systemImage: "archivebox")
-    }
-    .help("Stash changes")
-    .disabled(session.isBusy)
-    .sheet(isPresented: $isStashing) {
-      StashSheet(session: session)
-    }
-    .kitConfirmation(
-      "Drop this stash?",
-      isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
-      message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
-    ) {
-      if let stash = pendingDrop { Task { await session.dropStash(stash) } }
-    }
+      .sheet(isPresented: $isStashing) {
+        StashSheet(session: session)
+      }
+      .kitConfirmation(
+        "Drop this stash?",
+        isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
+        message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
+      ) {
+        if let stash = pendingDrop { Task { await session.dropStash(stash) } }
+      }
   }
 }
 

@@ -12,31 +12,36 @@ struct ContentView: View {
   @Environment(\.openWindow) private var openWindow
   @Environment(\.dismissWindow) private var dismissWindow
   @SceneStorage("selectedRepository") private var selectedPath: String?
+  @State private var columns = NavigationSplitViewVisibility.all
 
   var body: some View {
     @Bindable var library = library
-    NavigationSplitView {
-      SidebarView(selection: $selectedPath)
+    NavigationSplitView(columnVisibility: $columns) {
+      // The sidebar has its own hide button; the kit's toolbar brings a hidden sidebar back.
+      SidebarView(selection: $selectedPath, columns: $columns)
         .toolbar(removing: .sidebarToggle)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     } detail: {
-      if let path = selectedPath {
-        ZStack {
-          RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
-            .id(path)
-            // No rise: moving the whole screen makes the toolbar's glass border blink.
-            .transition(.opacity)
+      Group {
+        if let path = selectedPath {
+          ZStack {
+            RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
+              .id(path)
+              // No rise: the toolbar fades with its screen.
+              .transition(.opacity)
+          }
+          .animation(.kit, value: path)
+        } else {
+          EmptyState(
+            systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
+          ) {
+            Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }.buttonStyle(.kit)
+          }
+          .kitPane(.content)
+          .kitToolbar("Git") { EmptyView() } tools: {}
         }
-        .animation(.kit, value: path)
-      } else {
-        EmptyState(
-          systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
-        ) {
-          Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }.buttonStyle(.kit)
-        }
-        .kitPane(.content)
-        .navigationTitle("Git")
       }
+      .kitSidebarToggle(columnVisibility: $columns)
     }
     .frame(minWidth: 1100, minHeight: 600)
     .onChange(of: library.requestedSelection, initial: true) { _, path in
@@ -95,7 +100,7 @@ struct ContentView: View {
 
 #if DEBUG
   /// `--mode history|changes|stashes`, `--select-change <path>`, `--select-commit <index>`,
-  /// `--all-branches` and `--show-publish` set the first repository's view state at launch (or a later
+  /// `--all-branches`, `--show-publish` and `--show-branches` set the first repository's view state at launch (or a later
   /// screenshot scene's), for screenshots. Returns once the history they ask for has loaded.
   @MainActor private func applyLaunchArguments(
     _ state: RepositoryViewState, session: RepositorySession
@@ -109,6 +114,7 @@ struct ContentView: View {
       if status.conflicted.contains(where: { $0.path == path }) { state.selectedConflict = path }
     }
     if scene.flag("--show-publish") { state.isPublishPresented = true }
+    if scene.flag("--show-branches") { state.isBranchPopoverPresented = true }
     // The index counts HEAD's history, loaded by `activate`.
     if let index = scene.value("--select-commit").flatMap(Int.init), index < session.commits.count {
       state.selectedCommit = session.commits[index].id
@@ -151,15 +157,7 @@ struct RepositoryScreen: View {
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       // The commit toast (Undo, Push), for this repository only.
       .kitToasts()
-      .navigationTitle(title)
-      .kitHidesSystemTitle()
-      // Once the operation is done, the toolbar goes back to the Changes items.
-      .toolbar {
-        RepositoryToolbar(
-          session: session, state: state,
-          screen: kind == .conflicts && session.status?.operation == nil ? .changes : kind,
-          title: title, meta: subtitle, search: kind == .history ? $search : nil)
-      }
+      .kitToolbar(title) { toolbar.titleView } tools: { toolbar.tools }
       .modifier(HistorySearch(isOn: kind == .history, text: $search, session: session))
       .onChange(of: session.revision) {
         library.updateSummary(session.repository.url.path, from: session)
@@ -186,6 +184,14 @@ struct RepositoryScreen: View {
         Text(failure.message)
       }
       .sheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
+  }
+
+  /// Once the operation is done, the toolbar goes back to the Changes items.
+  private var toolbar: RepositoryToolbar {
+    RepositoryToolbar(
+      session: session, state: state,
+      screen: kind == .conflicts && session.status?.operation == nil ? .changes : kind,
+      title: title, meta: subtitle, search: kind == .history ? $search : nil)
   }
 
   @ViewBuilder

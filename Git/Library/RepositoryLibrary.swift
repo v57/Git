@@ -45,6 +45,8 @@ struct CompletedOperation: Equatable {
   var amend = false
   /// The Publish sheet, for a repository without a remote.
   var isPublishPresented = false
+  /// The toolbar's Branch popover (Merge's "All Branches…" opens it too).
+  var isBranchPopoverPresented = false
 
   // Conflicts: choices are kept here and written when the operation continues.
   /// Every path that was conflicted during the current operation, in order.

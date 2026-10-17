@@ -15,6 +15,8 @@ struct SidebarView: View {
   @Environment(\.modelContext) private var context
   @Query(sort: \SavedRepository.name, order: .forward) private var repositories: [SavedRepository]
   @Binding var selection: String?
+  /// The split view's columns, for the kit's sidebar toggle.
+  @Binding var columns: NavigationSplitViewVisibility
   /// Repositories selected together with ⌘- or ⇧-click.
   @State private var selected: Set<String> = []
   @State private var isDropTargeted = false
@@ -38,7 +40,7 @@ struct SidebarView: View {
 
   var body: some View {
     @Bindable var library = library
-    KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter") {
+    KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
       RepositoryList(selection: $selection, selected: $selected, filter: filter)
       if let selection {
         RepositorySections(
