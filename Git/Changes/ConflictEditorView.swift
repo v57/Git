@@ -331,6 +331,7 @@ struct ConflictsScreen: View {
         } else {
           EmptyState(systemImage: "checkmark", title: "Resolved", message: "This file is resolved and staged.")
         }
+            .emptyStateFits()
       }
       .id(path)
       .transition(.page)
@@ -625,6 +626,7 @@ private struct OperationComplete: View {
       }
     }
   }
+    .emptyStateFits()
 }
 
 /// Where a conflict block sits in its file: the function it is in ("refresh()"), or "stored

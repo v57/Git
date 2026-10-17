@@ -13,6 +13,7 @@ struct StashesScreen: View {
         EmptyState(
           systemImage: "archivebox", title: "No Stashes",
           message: "Stash puts uncommitted changes aside so you can switch branches.")
+        .emptyStateFits()
       } else {
         ScrollView {
           VStack(spacing: KitMetrics.gutter) {
