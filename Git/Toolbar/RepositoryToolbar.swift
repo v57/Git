@@ -32,9 +32,9 @@ struct RepositoryToolbar {
       ToolGroup {
         BranchToolbarButton(session: session, state: state)
         if screen == .history {
-          MergeMenu(session: session, state: state)
+          MergeMenu(session: session)
         }
-        StashMenu(session: session, state: state)
+        StashMenu(session: session)
       }
       if let search {
         KitSearchField(
@@ -199,15 +199,10 @@ private struct BranchToolbarButton: View {
   }
 }
 
-/// Merge: a branch into the current one, from the kit's menu. The most recent branches are rows,
-/// the remote ones a submenu; the Branch popover has every branch.
+/// Merge: a branch into the current one, from the kit's menu.
 private struct MergeMenu: View {
   let session: RepositorySession
-  let state: RepositoryViewState
   @State private var isPresented = false
-
-  /// Rows a menu shows before the rest go to the Branch popover: a menu doesn't scroll.
-  private static let limit = 12
 
   var body: some View {
     let current = session.currentBranch?.name ?? "HEAD"
@@ -215,30 +210,22 @@ private struct MergeMenu: View {
       .disabled(session.isBusy || session.status?.branch == nil)
       .help("Merge a branch into \(current)")
       .kitMenu(isPresented: $isPresented) {
-        let candidates = Self.recent(session.localBranches.filter { !$0.isCurrent })
-        ForEach(candidates.prefix(Self.limit)) { branch in
-          Button(branch.name, systemImage: "arrow.triangle.branch") { Task { await session.merge(branch) } }
-            .disabled((branch.aheadOfHead ?? 1) == 0)
+        KitMenuSection("Merge into \(current)") {
+          ForEach(session.localBranches.filter { !$0.isCurrent }) { branch in
+            Button(branch.name, systemImage: "arrow.triangle.branch") { Task { await session.merge(branch) } }
+              .disabled((branch.aheadOfHead ?? 1) == 0)
+          }
         }
-        let remotes = Self.recent(session.remoteBranches)
+        let remotes = session.remoteBranches
         if !remotes.isEmpty {
-          KitSubmenu("Remote Branches", systemImage: "cloud") {
-            ForEach(remotes.prefix(Self.limit)) { branch in
-              Button(branch.name) { Task { await session.merge(branch) } }
+          Divider()
+          KitMenuSection("Remote Branches") {
+            ForEach(remotes) { branch in
+              Button(branch.name, systemImage: "cloud") { Task { await session.merge(branch) } }
             }
           }
         }
-        if candidates.count > Self.limit || remotes.count > Self.limit {
-          Button("All Branches…", systemImage: "list.bullet") { state.isBranchPopoverPresented = true }
-        }
-        Divider()
-        KitMenuFooter(current, subtitle: "Merges into this branch", systemImage: "arrow.triangle.merge")
       }
-  }
-
-  /// Newest first.
-  private static func recent(_ branches: [Branch]) -> [Branch] {
-    branches.sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
   }
 }
 
@@ -410,13 +397,9 @@ private struct UpstreamBadge: View {
 /// Stash: put the changes aside, pop the latest, or apply, pop or drop any stash from its submenu.
 struct StashMenu: View {
   let session: RepositorySession
-  let state: RepositoryViewState
   @State private var isPresented = false
   @State private var isStashing = false
   @State private var pendingDrop: Stash?
-
-  /// Stashes the menu lists before the rest are left to the Stashes screen: a menu doesn't scroll.
-  private static let limit = 10
 
   var body: some View {
     Button("Stash", systemImage: "archivebox") { isPresented.toggle() }
@@ -430,16 +413,13 @@ struct StashMenu: View {
         }
         if !session.stashes.isEmpty {
           Divider()
-          ForEach(session.stashes.prefix(Self.limit)) { stash in
+          ForEach(session.stashes) { stash in
             KitSubmenu(stash.message) {
               Button("Apply") { Task { await session.applyStash(stash) } }
               Button("Pop") { Task { await session.popStash(stash) } }
               Divider()
               Button("Drop…", role: .destructive) { pendingDrop = stash }
             }
-          }
-          if session.stashes.count > Self.limit {
-            Button("All \(session.stashes.count) Stashes…") { state.mode = .stashes }
           }
         }
       }
