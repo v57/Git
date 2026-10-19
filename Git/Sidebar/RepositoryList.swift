@@ -205,7 +205,7 @@ struct RepositoryList: View {
     let parent = layout.tree.parent(of: group.id)
     // Groups it can move into: not itself, not one inside it, not the one it is in.
     let destinations = layout.tree.groups.filter { !layout.tree.isWithin($0.id, group.id) && $0.id != parent }
-    remoteButtons(paths, suffix: " All")
+    remoteButtons(paths, suffix: " All", pushOnlyAhead: true)
     Divider()
     Button("Rename…", systemImage: "pencil") {
       newName = group.name
@@ -342,12 +342,20 @@ struct RepositoryList: View {
     }
   }
 
+  /// Fetch, Pull and Push for `paths`; with `pushOnlyAhead`, Push leaves out the repositories
+  /// with no commits for their upstream (a group's Push All).
   @ViewBuilder
-  private func remoteButtons(_ paths: [String], suffix: String) -> some View {
+  private func remoteButtons(_ paths: [String], suffix: String, pushOnlyAhead: Bool = false) -> some View {
     ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
-      Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: paths) } }
-        .disabled(paths.allSatisfy { library.remoteActivity[$0] != nil })
+      let targets = action == .push && pushOnlyAhead ? paths.filter(hasCommitsToPush) : paths
+      Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: targets) } }
+        .disabled(targets.allSatisfy { library.remoteActivity[$0] != nil })
     }
+  }
+
+  private func hasCommitsToPush(_ path: String) -> Bool {
+    guard let summary = library.summaries[path] else { return false }
+    return summary.hasUpstream && summary.ahead > 0
   }
 
   // MARK: Dropping
