@@ -252,7 +252,7 @@ struct RepositoryList: View {
   private func repositoryRow(_ repository: SavedRepository, layout: SidebarLayout) -> some View {
     let isMulti = selected.count > 1 && selected.contains(repository.path)
     return RepositoryRow(
-      repository: repository, summary: library.summaries[repository.path],
+      repository: repository, icon: layout.icon(of: repository.path), summary: library.summaries[repository.path],
       isCurrent: repository.path == selection, isSelected: isMulti,
       activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path]
     ) {
@@ -521,10 +521,12 @@ private struct GroupHeader: View {
   }
 }
 
-/// A repository: its letter tile, name and state. The open one is the kit's current row; others
+/// A repository: its project's icon (or letter tile), name and state. The open one is the kit's current row; others
 /// selected with it are tinted.
 struct RepositoryRow: View {
   let repository: SavedRepository
+  /// The vault's PNG of the project's app icon.
+  var icon: Data?
   let summary: RepositorySummary?
   let isCurrent: Bool
   var isSelected = false
@@ -536,7 +538,12 @@ struct RepositoryRow: View {
 
   var body: some View {
     SidebarRow(repository.name) {
-      Avatar(name: repository.name, kind: .thing, status: activity == nil ? .idle : .working, size: 18)
+      let status: WorkStatus = activity == nil ? .idle : .working
+      if let image = icon.flatMap(Image.init(data:)) {
+        Avatar(name: repository.name, image: image, kind: .thing, status: status, size: 18)
+      } else {
+        Avatar(name: repository.name, kind: .thing, status: status, size: 18)
+      }
     } trailing: {
       if let activity {
         Text("\(activity.title)ing…")

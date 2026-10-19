@@ -53,6 +53,8 @@ struct SidebarLayout {
   private let repositories: [String: SavedRepository]
   /// Path → project id.
   private let projectIDs: [String: String]
+  /// Path → the project's icon (`VaultProject.icon`), for those that have one.
+  private let icons: [String: Data]
   private let loose: [SavedRepository]
 
   init(repositories: [SavedRepository], vault: Vault) {
@@ -60,12 +62,16 @@ struct SidebarLayout {
     let byPath = Dictionary(repositories.map { ($0.path, $0) }) { first, _ in first }
     tree = vault.projectTree.filter { $0.paths[device].map { byPath[$0] != nil } ?? false }
     var ids: [String: String] = [:]
+    var icons: [String: Data] = [:]
     for project in tree.projects() {
-      if let path = project.paths[device] { ids[path] = project.id }
+      guard let path = project.paths[device] else { continue }
+      ids[path] = project.id
+      icons[path] = project.icon
     }
     self.device = device
     self.repositories = byPath
     projectIDs = ids
+    self.icons = icons
     loose = repositories.filter { ids[$0.path] == nil }
       .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
@@ -88,6 +94,9 @@ struct SidebarLayout {
 
   /// The project a repository is in the vault.
   func projectID(of path: String) -> String? { projectIDs[path] }
+
+  /// The app icon the vault keeps for a repository's project (Code and Dev find them).
+  func icon(of path: String) -> Data? { icons[path] }
 
   /// The vault id of a sidebar item's id (a path or `group:<id>`).
   func vaultID(of itemID: String) -> String? {
