@@ -13,6 +13,11 @@ struct ContentView: View {
   @Environment(\.dismissWindow) private var dismissWindow
   @SceneStorage("selectedRepository") private var selectedPath: String?
   @State private var columns = NavigationSplitViewVisibility.all
+  /// The repository on screen: the selection once its first status has loaded (`showSelection`).
+  @State private var shownPath: String?
+
+  /// The repository whose screen is up; at launch, before one is shown, the selection itself.
+  private var screenPath: String? { selectedPath == nil ? nil : shownPath ?? selectedPath }
 
   var body: some View {
     @Bindable var library = library
@@ -23,7 +28,7 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     } detail: {
       Group {
-        if let path = selectedPath {
+        if let path = screenPath {
           // Another repository swaps in at once: every screen has the same panes and toolbar, so a fade would
           // redraw the whole pane for what is only new content.
           RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
@@ -46,8 +51,8 @@ struct ContentView: View {
       selectedPath = path
       library.requestedSelection = nil
     }
-    .focusedSceneValue(\.repositorySession, selectedPath.map(library.session(for:)))
-    .focusedSceneValue(\.repositoryViewState, selectedPath.map(library.viewState(for:)))
+    .focusedSceneValue(\.repositorySession, screenPath.map(library.session(for:)))
+    .focusedSceneValue(\.repositoryViewState, screenPath.map(library.viewState(for:)))
     .sheet(isPresented: $library.isClonePresented) { CloneSheet() }
     .onChange(of: library.isCreateRequested) { _, requested in
       guard requested else { return }
@@ -61,6 +66,7 @@ struct ContentView: View {
       library.open(url, into: context)
     }
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
+    .task(id: selectedPath) { await showSelection() }
     .task(id: selectedPath) {
       await library.activate(selectedPath, context: context)
       #if DEBUG
@@ -92,6 +98,25 @@ struct ContentView: View {
         await library.refreshAllSummaries()
       }
     }
+  }
+
+  /// Shows the selected repository. One opened for the first time keeps the previous screen up until its status,
+  /// branches and remotes are in (a short while at most), so it doesn't show a loading screen and then fill in.
+  private func showSelection() async {
+    guard let path = selectedPath else {
+      shownPath = nil
+      return
+    }
+    let session = library.session(for: path)
+    if shownPath != nil {
+      // `activate` (the other task) loads it; the first load ends with the first revision.
+      let deadline = ContinuousClock.now + .milliseconds(400)
+      while session.revision == 0, ContinuousClock.now < deadline {
+        try? await Task.sleep(for: .milliseconds(10))
+      }
+      guard !Task.isCancelled else { return }
+    }
+    shownPath = path
   }
 }
 
@@ -206,20 +231,21 @@ struct RepositoryScreen: View {
   }
 
   private var subtitle: [String] {
-    let branch = session.status?.branch ?? session.status?.headOID.map { String($0.prefix(7)) } ?? "No commits"
     if kind == .conflicts, let operation = session.status?.operation {
       return [OperationText.title(operation, source: session.operationSource, branch: session.status?.branch)]
     }
-    let status = session.status
+    // Until the status is in, the sidebar's summary of the repository.
+    let summary = session.status.map(RepositorySummary.init) ?? library.summaries[session.repository.url.path]
+    let branch = summary?.branch ?? summary?.headOID.map { String($0.prefix(7)) } ?? "No commits"
     switch state.mode {
     case .changes:
-      let count = status?.changeCount ?? 0
+      let count = summary?.changeCount ?? 0
       return [branch, count == 0 ? "clean" : "\(count) changed file\(count == 1 ? "" : "s")"]
     case .history, .stashes:
       var parts = [branch]
-      if let ahead = status?.ahead, ahead > 0 { parts.append("\(ahead) commit\(ahead == 1 ? "" : "s") to push") }
-      if let behind = status?.behind, behind > 0 { parts.append("\(behind) to pull") }
-      if parts.count == 1 { parts.append(status?.upstream == nil ? "not published" : "up to date") }
+      if let ahead = summary?.ahead, ahead > 0 { parts.append("\(ahead) commit\(ahead == 1 ? "" : "s") to push") }
+      if let behind = summary?.behind, behind > 0 { parts.append("\(behind) to pull") }
+      if parts.count == 1 { parts.append(summary?.hasUpstream == true ? "up to date" : "not published") }
       return parts
     }
   }

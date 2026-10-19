@@ -104,6 +104,7 @@ enum RepositoryScreenKind: Equatable {
 /// Fetch, Pull and Push. Each plays the kit's effect when it lands: a sweep of light for a fetch,
 /// a drop for a pull, a send for a push, a shake when it fails.
 private struct SyncButtons: View {
+  @Environment(RepositoryLibrary.self) private var library
   let session: RepositorySession
   let state: RepositoryViewState
   @State private var confirmForcePush = false
@@ -112,14 +113,23 @@ private struct SyncButtons: View {
   @State private var pushed = 0
   @State private var failed = 0
 
-  private var ahead: Int { session.status?.ahead ?? 0 }
-  private var hasUpstream: Bool { session.status?.upstream != nil }
+  /// Until the repository's first load is in, what the sidebar already knows about it, so the buttons don't start
+  /// out disabled.
+  private var summary: RepositorySummary? {
+    session.revision == 0 ? library.summaries[session.repository.url.path] : nil
+  }
+  private var ahead: Int { session.status?.ahead ?? summary?.ahead ?? 0 }
+  private var hasUpstream: Bool { session.status.map { $0.upstream != nil } ?? summary?.hasUpstream ?? false }
+  private var hasRemote: Bool { summary.map(\.hasUpstream) ?? !session.remotes.isEmpty }
+  private var canPush: Bool {
+    summary.map { $0.branch != nil && $0.headOID != nil } ?? (session.status?.branch != nil && session.headCommit != nil)
+  }
 
   var body: some View {
     Button(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise") {
       Task { await count(session.fetch(), into: $fetched) }
     }
-    .disabled(session.remotes.isEmpty || session.isBusy)
+    .disabled(!hasRemote || session.isBusy)
     .help(fetchHelp)
     .effect(.shimmer, on: fetched)
     Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
@@ -130,7 +140,7 @@ private struct SyncButtons: View {
     .effect(.receive("arrow.down.circle.fill"), on: pulled)
     Button {
       // Without a remote, Publish creates one on GitHub first.
-      if session.remotes.isEmpty {
+      if !hasRemote {
         state.isPublishPresented = true
       } else {
         Task { await count(session.push(), into: $pushed) }
@@ -146,7 +156,7 @@ private struct SyncButtons: View {
       }
       .animation(.kit, value: ahead)
     }
-    .disabled(session.status?.branch == nil || session.headCommit == nil || session.isBusy)
+    .disabled(!canPush || session.isBusy)
     .help(pushHelp)
     .effect(.send("arrow.up.circle.fill"), on: pushed)
     .kitContextMenu {
