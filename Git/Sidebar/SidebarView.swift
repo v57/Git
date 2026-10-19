@@ -15,6 +15,9 @@ struct SidebarView: View {
   @Environment(\.modelContext) private var context
   @Query(sort: \SavedRepository.name, order: .forward) private var repositories: [SavedRepository]
   @Binding var selection: String?
+  /// The repository on screen, which the Workspace and the sections below follow: a newly selected one comes in
+  /// once it has loaded.
+  let shown: String?
   /// The split view's columns, for the kit's sidebar toggle.
   @Binding var columns: NavigationSplitViewVisibility
   /// Repositories selected together with ⌘- or ⇧-click.
@@ -26,9 +29,9 @@ struct SidebarView: View {
   /// raised row in Repositories.
   private var mode: Binding<RepositoryMode?> {
     Binding(
-      get: { selection.map { library.viewState(for: $0).mode } },
+      get: { shown.map { library.viewState(for: $0).mode } },
       set: { mode in
-        guard let mode, let path = selection else { return }
+        guard let mode, let path = shown else { return }
         let state = library.viewState(for: path)
         withKitAnimation {
           state.mode = mode
@@ -42,9 +45,9 @@ struct SidebarView: View {
     @Bindable var library = library
     KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
       RepositoryList(selection: $selection, selected: $selected, filter: filter)
-      if let selection {
+      if let shown {
         RepositorySections(
-          session: library.session(for: selection), state: library.viewState(for: selection),
+          session: library.session(for: shown), state: library.viewState(for: shown),
           filter: filter)
       }
     } bottomBar: {

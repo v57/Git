@@ -97,7 +97,7 @@ private struct ShortcutLabel: View {
 }
 
 /// Which screen the detail area shows; the toolbar and title follow it.
-enum RepositoryScreenKind: Equatable {
+enum RepositoryScreenKind: Hashable {
   case changes, history, stashes, conflicts
 }
 

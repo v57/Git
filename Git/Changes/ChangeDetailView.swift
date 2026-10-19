@@ -9,7 +9,8 @@ struct ChangeDetailView: View {
   @Bindable var state: RepositoryViewState
   @Environment(\.colorScheme) private var colorScheme
   @State private var loaded: LoadedDiff?
-  @State private var isLoading = false
+  /// The file the last finished load was for; `loaded` is nil when it had no changes.
+  @State private var loadedFile: ShownFile?
   @State private var selection: Set<Int> = []
   @State private var confirmDiscard: Set<Int>?
   @State private var confirmDiscardFile = false
@@ -29,18 +30,27 @@ struct ChangeDetailView: View {
     }
   }
 
+  /// A file's diff in one repository: the screen stays up as another repository comes in, so a target alone
+  /// could match the last repository's file at the same path.
+  private struct ShownFile: Hashable {
+    var repository: URL
+    var target: DiffTarget
+  }
+
+  private var file: ShownFile? { target.map { ShownFile(repository: session.repository.url, target: $0) } }
+
   /// What the pane shows; every change of it crossfades.
   private enum Phase: Hashable {
     case loading, clean, noFile, noChanges
-    case diff(DiffTarget)
+    case diff(ShownFile)
   }
 
   private var phase: Phase {
     guard let status = session.status else { return .loading }
     if status.isClean { return .clean }
-    guard change != nil else { return .noFile }
-    if let loaded, loaded.target == target { return .diff(loaded.target) }
-    return isLoading ? .loading : .noChanges
+    guard let file else { return .noFile }
+    guard loadedFile == file else { return .loading }
+    return loaded == nil ? .noChanges : .diff(file)
   }
 
   var body: some View {
@@ -56,7 +66,7 @@ struct ChangeDetailView: View {
           Button("View History") { withKitAnimation { state.mode = .history } }.buttonStyle(.kit)
         }
         .transition(.page)
-      case .diff:
+      case .diff(let file):
         if let change, let loaded {
           VStack(spacing: 0) {
             header(change, diff: loaded.diff)
@@ -70,7 +80,7 @@ struct ChangeDetailView: View {
               }
             }
           }
-          .id(loaded.target)
+          .id(file)
           .transition(.page)
         }
       case .noChanges:
@@ -79,7 +89,7 @@ struct ChangeDetailView: View {
         EmptyState(systemImage: "doc.text", title: "No File Selected", message: "Pick a file to see its changes.")
           .transition(.page)
       case .loading:
-        LiveIcon(systemImage: "doc.text", hue: .gray, status: .working).transition(.opacity)
+        LoadingIcon().transition(.opacity)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -87,12 +97,11 @@ struct ChangeDetailView: View {
     .animation(.kit, value: phase)
     .task(
       id: LoadKey(
-        target: target, revision: session.revision, dark: colorScheme == .dark,
-        hideWhitespace: hideWhitespace)
+        file: file, revision: session.revision, dark: colorScheme == .dark, hideWhitespace: hideWhitespace)
     ) {
       await load()
     }
-    .onChange(of: target) { selection = [] }
+    .onChange(of: file) { selection = [] }
     .kitConfirmation(
       "Discard the selected lines?",
       isPresented: .init(get: { confirmDiscard != nil }, set: { if !$0 { confirmDiscard = nil } }),
@@ -123,29 +132,30 @@ struct ChangeDetailView: View {
   }
 
   private struct LoadKey: Hashable {
-    var target: DiffTarget?
+    var file: ShownFile?
     var revision: Int
     var dark: Bool
     var hideWhitespace: Bool
   }
 
   private func load() async {
-    guard let target else {
+    guard let file else {
       loaded = nil
+      loadedFile = nil
       return
     }
-    isLoading = true
-    defer { isLoading = false }
     do {
       let result = try await LoadedDiff.load(
-        target, repository: session.repository, isDark: colorScheme == .dark,
+        file.target, repository: session.repository, isDark: colorScheme == .dark,
         ignoreWhitespace: hideWhitespace)
       guard !Task.isCancelled else { return }
       if result?.diff != loaded?.diff { selection = [] }
       loaded = result
+      loadedFile = file
     } catch {
       guard !Task.isCancelled else { return }
       loaded = nil
+      loadedFile = file
       session.report(error, title: "Couldn't load the diff")
     }
   }
@@ -212,4 +222,18 @@ struct ChangeDetailView: View {
 /// Diff display options, set from the View menu.
 enum DiffOptions {
   static let hideWhitespaceKey = "HideWhitespaceChanges"
+}
+
+/// The diff's loading icon, shown only when a load takes a while: a quick one goes straight to the diff.
+private struct LoadingIcon: View {
+  @State private var isShown = false
+
+  var body: some View {
+    LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
+      .opacity(isShown ? 1 : 0)
+      .task {
+        try? await Task.sleep(for: .milliseconds(300))
+        withKitAnimation { isShown = true }
+      }
+  }
 }

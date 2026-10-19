@@ -23,16 +23,15 @@ struct ContentView: View {
     @Bindable var library = library
     NavigationSplitView(columnVisibility: $columns) {
       // The sidebar has its own hide button; the kit's toolbar brings a hidden sidebar back.
-      SidebarView(selection: $selectedPath, columns: $columns)
+      SidebarView(selection: $selectedPath, shown: screenPath, columns: $columns)
         .toolbar(removing: .sidebarToggle)
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     } detail: {
       Group {
         if let path = screenPath {
-          // Another repository swaps in at once: every screen has the same panes and toolbar, so a fade would
-          // redraw the whole pane for what is only new content.
+          // One screen for every repository: as another comes in, each title, count, card and row animates to its
+          // values instead of the whole pane fading.
           RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
-            .id(path)
         } else {
           EmptyState(
             systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
@@ -116,7 +115,7 @@ struct ContentView: View {
       }
       guard !Task.isCancelled else { return }
     }
-    shownPath = path
+    withKitAnimation { shownPath = path }
   }
 }
 
@@ -172,10 +171,10 @@ struct RepositoryScreen: View {
   var body: some View {
     ZStack {
       content
-        .id(kind)
+        .id(screenID)
         .transition(.page)
     }
-    .animation(.kit, value: kind)
+    .animation(.kit, value: screenID)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       // The commit toast (Undo, Push), for this repository only.
       .kitToasts()
@@ -184,7 +183,11 @@ struct RepositoryScreen: View {
       .onChange(of: session.revision) {
         library.updateSummary(session.repository.url.path, from: session)
       }
-      .onChange(of: state.mode) { state.completedOperation = nil }
+      // Only a change of mode in this repository, not another repository coming in.
+      .onChange(of: ModeChange(state: ObjectIdentifier(state), mode: state.mode)) { old, new in
+        if old.state == new.state { state.completedOperation = nil }
+      }
+      .onChange(of: session.repository.url) { search = session.logQuery.search ?? "" }
       .sheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
       .alert(
         session.failure?.title ?? "",
@@ -206,6 +209,20 @@ struct RepositoryScreen: View {
         Text(failure.message)
       }
       .sheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
+  }
+
+  private struct ModeChange: Equatable {
+    var state: ObjectIdentifier
+    var mode: RepositoryMode
+  }
+
+  /// History and Resolve Conflicts are another repository's own screens (their rows and editors hold its state);
+  /// Changes and Stashes animate their rows to the new repository's.
+  private var screenID: AnyHashable {
+    switch kind {
+    case .history, .conflicts: [AnyHashable(kind), AnyHashable(session.repository.url)]
+    case .changes, .stashes: kind
+    }
   }
 
   /// Once the operation is done, the toolbar goes back to the Changes items.
