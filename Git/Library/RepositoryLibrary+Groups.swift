@@ -25,22 +25,6 @@ enum SidebarItem: Identifiable {
     case .repository(let repository): repository.name
     }
   }
-
-  // MARK: Dragging groups
-
-  /// Groups are dragged as `x-git-group:<id>` URLs, so one drop destination for URLs takes
-  /// repositories (file URLs), groups and folders from Finder.
-  static let groupScheme = "x-git-group"
-
-  static func dragURL(for group: VaultProjectGroup) -> URL {
-    URL(string: "\(groupScheme):\(group.id)")!
-  }
-
-  static func groupID(fromDragURL url: URL) -> String? {
-    guard url.scheme == groupScheme else { return nil }
-    let id = String(url.absoluteString.dropFirst(groupScheme.count + 1))
-    return id.isEmpty ? nil : id
-  }
 }
 
 /// The sidebar's arrangement: the vault's project tree (`VaultProjectTree`, shared with the other v57

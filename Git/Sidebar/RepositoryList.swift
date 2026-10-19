@@ -2,7 +2,6 @@ import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 import VaultKit
 
 /// The Repositories section: groups, which nest, and repositories in the order they were dragged
@@ -10,9 +9,10 @@ import VaultKit
 /// groups are the vault's project tree, so the other v57 apps and Macs share them.
 ///
 /// Click opens a repository; ⌘-click and ⇧-click select several for the context menu (Fetch,
-/// Pull, Push, Hide, Move to Group) and for dragging. Dropping on a group's header moves into it,
-/// on its top edge before it. Collapsed, the section keeps the open repository visible and shows an
-/// icon for each other repository that needs attention.
+/// Pull, Push, Hide, Move to Group) and for dragging. The kit's outline does the dragging: rows
+/// slide aside, a row held over a group's middle goes into it (a closed one opens), and a row
+/// dragged out of the app is its folder. Collapsed, the section keeps the open repository visible
+/// and shows an icon for each other repository that needs attention.
 struct RepositoryList: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
@@ -21,8 +21,6 @@ struct RepositoryList: View {
   @Binding var selected: Set<String>
   let filter: String
   @State private var anchor: String?
-  /// The row a drag is over: its id for the insertion line above it, `in:<id>` for into a group.
-  @State private var dropTarget: String?
   @State private var renaming: VaultProjectGroup?
   @State private var newName = ""
   @AppStorage("RepositoriesCollapsed") private var storedCollapsed = false
@@ -32,70 +30,101 @@ struct RepositoryList: View {
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
 
-  /// A row on screen: a group's header or a repository, and how many groups it is in.
-  private struct Row: Identifiable {
+  /// An item in the outline: a group's header with what it shows, or a repository (no children).
+  private struct Node: Identifiable {
     let item: SidebarItem
-    let depth: Int
+    var children: [Node]?
     var id: String { item.id }
   }
 
-  /// What is on screen, top to bottom: the shown repositories, and the groups holding one with
-  /// their contents when open. Filtering opens every group; a group whose name matches shows all
-  /// it holds.
-  private func visibleRows(_ layout: SidebarLayout) -> [Row] {
-    func rows(in groupID: String?, depth: Int, groupMatches: Bool) -> [Row] {
-      layout.children(of: groupID).flatMap { item -> [Row] in
+  /// What the list shows: the shown repositories, and the groups holding one. A group whose
+  /// name matches the filter shows all it holds.
+  private func nodes(_ layout: SidebarLayout) -> [Node] {
+    func nodes(in groupID: String?, groupMatches: Bool) -> [Node] {
+      layout.children(of: groupID).compactMap { item -> Node? in
         switch item {
         case .repository(let repository):
           let shown =
             (showsHidden || !repository.isHidden || repository.path == selection)
             && (groupMatches || filter.isEmpty || repository.name.localizedCaseInsensitiveContains(filter))
-          return shown ? [Row(item: item, depth: depth)] : []
+          return shown ? Node(item: item) : nil
         case .group(let group):
           let matches = groupMatches || (!filter.isEmpty && group.name.localizedCaseInsensitiveContains(filter))
-          let inner = rows(in: group.id, depth: depth + 1, groupMatches: matches)
-          guard !inner.isEmpty else { return [] }
-          let isOpen = !library.collapsedGroups.contains(group.id) || !filter.isEmpty
-          return [Row(item: item, depth: depth)] + (isOpen ? inner : [])
+          let inner = nodes(in: group.id, groupMatches: matches)
+          return inner.isEmpty ? nil : Node(item: item, children: inner)
         }
       }
     }
-    return rows(in: nil, depth: 0, groupMatches: false)
+    return nodes(in: nil, groupMatches: false)
   }
 
-  /// Repository paths in screen order, for ⇧-click ranges and for dragging several.
+  /// The open groups' ids: those not collapsed, and every one while filtering. Opening and closing
+  /// is saved only without a filter.
+  private func expanded(_ nodes: [Node]) -> Binding<Set<String>> {
+    func groups(_ nodes: [Node]) -> [VaultProjectGroup] {
+      nodes.flatMap { node -> [VaultProjectGroup] in
+        guard case .group(let group) = node.item else { return [] }
+        return [group] + groups(node.children ?? [])
+      }
+    }
+    let all = groups(nodes)
+    return Binding(
+      get: {
+        Set(all.filter { !filter.isEmpty || !library.collapsedGroups.contains($0.id) }.map(SidebarItem.id(of:)))
+      },
+      set: { open in
+        guard filter.isEmpty else { return }
+        for group in all {
+          if open.contains(SidebarItem.id(of: group)) {
+            library.collapsedGroups.remove(group.id)
+          } else {
+            library.collapsedGroups.insert(group.id)
+          }
+        }
+      })
+  }
+
+  /// The items on screen, top to bottom: the open groups' contents follow them.
+  private func visible(_ nodes: [Node]) -> [SidebarItem] {
+    nodes.flatMap { node -> [SidebarItem] in
+      guard case .group(let group) = node.item else { return [node.item] }
+      let isOpen = !library.collapsedGroups.contains(group.id) || !filter.isEmpty
+      return [node.item] + (isOpen ? visible(node.children ?? []) : [])
+    }
+  }
+
+  /// Repository paths in screen order, for ⇧-click ranges and the context menu.
   private func order(_ layout: SidebarLayout) -> [String] {
-    visibleRows(layout).compactMap { row in
-      if case .repository(let repository) = row.item { repository.path } else { nil }
+    visible(nodes(layout)).compactMap { item in
+      if case .repository(let repository) = item { repository.path } else { nil }
     }
   }
 
   var body: some View {
     let layout = layout
-    let rows = visibleRows(layout)
+    let nodes = nodes(layout)
     let hiddenCount = repositories.count { $0.isHidden }
     KitSection(
       "Repositories", meta: meta, systemImage: "folder", hue: .indigo,
       status: library.isImporting ? .working : .idle,
       isExpanded: .init(get: { !isCollapsed }, set: { isCollapsed = !$0 })
     ) {
-      ForEach(rows) { row in
-        switch row.item {
-        case .repository(let repository):
-          repositoryRow(repository, layout: layout)
-            .kitRowIndent(row.depth)
-        case .group(let group):
-          groupHeader(group, layout: layout)
-            .kitRowIndent(row.depth)
+      ReorderableOutline(
+        nodes, children: \.children, expanded: expanded(nodes),
+        move: { id, parent, index in move([id], into: parent, at: index, nodes: nodes) }
+      ) { node in
+        switch node.item {
+        case .repository(let repository): repositoryRow(repository, layout: layout)
+        case .group(let group): groupHeader(group, layout: layout)
         }
       }
-      // Dropping below the last row moves to the end of the top level.
-      Color.clear
-        .frame(height: 6)
-        .overlay(alignment: .top) { InsertionLine(isShown: dropTarget == "end") }
-        .dropDestination(for: URL.self) { urls, _ in
-          drop(urls, into: nil, before: nil, layout: layout)
-        } isTargeted: { setTarget("end", $0) }
+      .dragsTogether(selected.count > 1 ? selected : []) { ids, parent, index in
+        move(ids, into: parent, at: index, nodes: nodes)
+      }
+      .exportsURL { node in
+        if case .repository(let repository) = node.item { repository.url } else { nil }
+      }
+      .dropTitle(root: "Repositories") { $0.item.name }
       if hiddenCount > 0 && filter.isEmpty {
         Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hiddenCount) Hidden") {
           withKitAnimation { showsHidden.toggle() }
@@ -109,7 +138,7 @@ struct RepositoryList: View {
         .help("Add the Git repositories in a folder")
     }
     .help(attentionHelp(layout))
-    .animation(.kit, value: rows.map(\.id))
+    .animation(.kit, value: visible(nodes).map(\.id))
     .onChange(of: isCollapsed) { storedCollapsed = isCollapsed }
     .onChange(of: selection, initial: true) { _, path in
       if let path, !selected.contains(path) || selected.count == 1 {
@@ -161,30 +190,14 @@ struct RepositoryList: View {
     let members = layout.repositories(in: group.id)
     let visible = members.filter { !$0.isHidden }
     let summaries = visible.compactMap { library.summaries[$0.path] }
-    let id = SidebarItem.id(of: group)
     return GroupHeader(
-      group: group, isCollapsed: library.collapsedGroups.contains(group.id),
+      group: group, isCollapsed: library.collapsedGroups.contains(group.id) && filter.isEmpty,
       summary: RepositorySummary(combining: summaries),
       isBusy: members.contains { library.remoteActivity[$0.path] != nil },
-      isTargeted: dropTarget == "in:" + id,
       help: groupHelp(group, members: visible, layout: layout)
     ) {
       withAnimation(.kit) { library.toggleCollapsed(group) }
     }
-    .overlay(alignment: .top) { InsertionLine(isShown: dropTarget == id) }
-    .draggable(SidebarItem.dragURL(for: group)) {
-      DragPreview(title: group.name, count: nil)
-    }
-    .onDrop(
-      of: [.url],
-      delegate: GroupDropDelegate(id: id, target: $dropTarget) { urls, into in
-        if into {
-          _ = drop(urls, into: group.id, before: nil, layout: layout)
-        } else {
-          _ = drop(urls, into: layout.tree.parent(of: group.id), before: id, layout: layout)
-        }
-      }
-    )
     .kitContextMenu { groupMenu(group, members: members, layout: layout) }
     .transition(.row)
   }
@@ -262,13 +275,6 @@ struct RepositoryList: View {
       click(repository.path, layout: layout)
     }
     .opacity(repository.isHidden ? 0.5 : 1)
-    .overlay(alignment: .top) { InsertionLine(isShown: dropTarget == repository.path) }
-    .draggable(repository.url) {
-      DragPreview(title: repository.name, count: isMulti ? selected.count : nil)
-    }
-    .dropDestination(for: URL.self) { urls, _ in
-      drop(urls, into: layout.groupID(of: repository.path), before: repository.path, layout: layout)
-    } isTargeted: { setTarget(repository.path, $0) }
     .kitContextMenu { repositoryMenu(targets(for: repository.path, layout: layout), layout: layout) }
     .transition(.row)
   }
@@ -361,137 +367,42 @@ struct RepositoryList: View {
     return summary.hasUpstream && summary.ahead > 0
   }
 
-  // MARK: Dropping
+  // MARK: Moving
 
-  private func setTarget(_ id: String, _ isTargeted: Bool) {
-    if isTargeted {
-      dropTarget = id
-    } else if dropTarget == id {
-      dropTarget = nil
-    }
-  }
-
-  /// Moves dropped repositories and groups into `groupID` (nil: the top level) before the item
-  /// `before` there, or at the end, and adds dropped folders.
-  private func drop(_ urls: [URL], into groupID: String?, before: String?, layout: SidebarLayout) -> Bool {
-    dropTarget = nil
-    let result = Self.sort(urls, known: Set(repositories.map(\.path)))
-    withAnimation(.kit) {
-      for id in result.groups {
-        library.moveGroup(id, into: groupID, before: before, context: context)
+  /// Moves the dragged items (sidebar ids, top to bottom) into `parent` (a group's sidebar id, nil:
+  /// the top level) at `index` among the items it shows, counted before the move. They go before
+  /// the item that is there, so repositories the list hides keep their places.
+  private func move(_ ids: [String], into parent: String?, at index: Int, nodes: [Node]) {
+    func children(of id: String, in nodes: [Node]) -> [Node]? {
+      for node in nodes {
+        if node.id == id { return node.children }
+        if let found = children(of: id, in: node.children ?? []) { return found }
       }
-      if !result.repositories.isEmpty {
-        library.move(expand(result.repositories, layout: layout), into: groupID, before: before, context: context)
+      return nil
+    }
+    let siblings = parent.map { children(of: $0, in: nodes) ?? [] } ?? nodes
+    let before = siblings.dropFirst(index).first { !ids.contains($0.id) }?.id
+    let groupID = parent.flatMap { layout.vaultID(of: $0) }
+    for id in ids {
+      if let group = layout.vaultID(of: id), id.hasPrefix("group:") {
+        library.moveGroup(group, into: groupID, before: before, context: context)
+      } else {
+        library.move([id], into: groupID, before: before, context: context)
       }
     }
-    if !result.folders.isEmpty {
-      Task { await library.importFolders(result.folders, into: context) }
-    }
-    return true
   }
 
-  /// A drag of one selected row carries the whole selection.
-  private func expand(_ paths: [String], layout: SidebarLayout) -> [String] {
-    guard paths.count == 1, let path = paths.first else { return paths }
-    return targets(for: path, layout: layout)
-  }
-
-  /// Splits dropped URLs into groups, repositories in the list, and folders to import.
-  static func sort(_ urls: [URL], known: Set<String>)
-    -> (groups: [String], repositories: [String], folders: [URL])
-  {
-    var result: (groups: [String], repositories: [String], folders: [URL]) = ([], [], [])
-    for url in urls {
-      if let id = SidebarItem.groupID(fromDragURL: url) {
-        result.groups.append(id)
-      } else if url.isFileURL, known.contains(url.standardizedFileURL.path) {
+  /// Splits dropped URLs into repositories in the list and folders to import.
+  static func sort(_ urls: [URL], known: Set<String>) -> (repositories: [String], folders: [URL]) {
+    var result: (repositories: [String], folders: [URL]) = ([], [])
+    for url in urls where url.isFileURL {
+      if known.contains(url.standardizedFileURL.path) {
         result.repositories.append(url.standardizedFileURL.path)
-      } else if url.isFileURL {
+      } else {
         result.folders.append(url)
       }
     }
     return result
-  }
-}
-
-/// Drops on a group's header: on its top edge before the group (the insertion line shows), anywhere
-/// else into it (the header lights up).
-private struct GroupDropDelegate: DropDelegate {
-  let id: String
-  @Binding var target: String?
-  let perform: (_ urls: [URL], _ into: Bool) -> Void
-
-  /// How far down the header "before" reaches.
-  private static let edge: CGFloat = 7
-
-  private func isInto(_ info: DropInfo) -> Bool { info.location.y >= Self.edge }
-
-  func validateDrop(info: DropInfo) -> Bool { info.hasItemsConforming(to: [.url]) }
-
-  func dropEntered(info: DropInfo) { target = isInto(info) ? "in:" + id : id }
-
-  func dropUpdated(info: DropInfo) -> DropProposal? {
-    target = isInto(info) ? "in:" + id : id
-    return DropProposal(operation: .copy)
-  }
-
-  func dropExited(info: DropInfo) {
-    if target == id || target == "in:" + id { target = nil }
-  }
-
-  func performDrop(info: DropInfo) -> Bool {
-    let into = isInto(info)
-    let providers = info.itemProviders(for: [.url])
-    target = nil
-    Task {
-      var urls: [URL] = []
-      for provider in providers {
-        if let url = await provider.droppedURL() { urls.append(url) }
-      }
-      perform(urls, into)
-    }
-    return true
-  }
-}
-
-extension NSItemProvider {
-  /// The URL a drop carries: a file, or a dragged group's `x-git-group:` URL.
-  fileprivate func droppedURL() async -> URL? {
-    await withCheckedContinuation { continuation in
-      _ = loadObject(ofClass: URL.self) { url, _ in continuation.resume(returning: url) }
-    }
-  }
-}
-
-/// Where a dragged item will land.
-private struct InsertionLine: View {
-  let isShown: Bool
-
-  var body: some View {
-    if isShown {
-      Capsule()
-        .fill(.kitAccent)
-        .frame(height: 2)
-        .padding(.horizontal, 6)
-        .offset(y: -1.5)
-        .allowsHitTesting(false)
-    }
-  }
-}
-
-private struct DragPreview: View {
-  let title: String
-  let count: Int?
-
-  var body: some View {
-    HStack(spacing: 8) {
-      Avatar(name: title, kind: .thing, size: 18)
-      Text(title).fontWeight(.medium)
-      if let count { Count(count, .attention) }
-    }
-    .padding(.horizontal, 10)
-    .frame(height: 32)
-    .kitSurface(.raised)
   }
 }
 
@@ -502,7 +413,6 @@ private struct GroupHeader: View {
   let isCollapsed: Bool
   let summary: RepositorySummary
   let isBusy: Bool
-  let isTargeted: Bool
   let help: String
   let toggle: () -> Void
 
@@ -516,7 +426,6 @@ private struct GroupHeader: View {
     }
     .disclosure(isExpanded: .init(get: { !isCollapsed }, set: { if $0 == isCollapsed { toggle() } }))
     .action(toggle)
-    .kitDropTarget(isTargeted)
     .animation(.kit, value: isCollapsed)
     .help(help)
     .accessibilityLabel("\(group.name), \(StatusMarks.description(summary))")
