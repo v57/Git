@@ -25,7 +25,9 @@ struct RepositoryList: View {
   @State private var dropTarget: String?
   @State private var renaming: VaultProjectGroup?
   @State private var newName = ""
-  @AppStorage("RepositoriesCollapsed") private var isCollapsed = false
+  @AppStorage("RepositoriesCollapsed") private var storedCollapsed = false
+  /// The section's own state, saved to `storedCollapsed`: a defaults write drops the toggle's animation.
+  @State private var isCollapsed = UserDefaults.standard.bool(forKey: "RepositoriesCollapsed")
   @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
@@ -108,6 +110,7 @@ struct RepositoryList: View {
     }
     .help(attentionHelp(layout))
     .animation(.kit, value: rows.map(\.id))
+    .onChange(of: isCollapsed) { storedCollapsed = isCollapsed }
     .onChange(of: selection, initial: true) { _, path in
       if let path, !selected.contains(path) || selected.count == 1 {
         selected = [path]
