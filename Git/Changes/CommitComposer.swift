@@ -111,11 +111,9 @@ struct CommitComposer: View {
   }
 
   private var commitTitle: String {
-    let branch = session.status?.branch ?? "HEAD"
     if state.amend { return "Amend Last Commit" }
-    if stagedCount == 0 { return "Commit to \(branch)" }
-    let files = stagedCount == 1 ? "1 File" : "\(stagedCount) Files"
-    return "Commit \(files) to \(branch)"
+    if stagedCount == 0 { return "Commit" }
+    return stagedCount == 1 ? "Commit 1 File" : "Commit \(stagedCount) Files"
   }
 
   private func prefillAmendMessage() async {
