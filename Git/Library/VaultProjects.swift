@@ -7,29 +7,34 @@ import VaultKit
 /// Code, Dev, Markdown and Shell, and one another app added on this Mac appears here.
 ///
 /// The vault (`../Vault`) is the store every v57 app shares; a project there is a folder per device plus its
-/// remote URL and group. Git publishes when repositories are added, opened (the remote may have changed) or
-/// removed, and adopts the vault's git checkouts on this Mac it doesn't list yet, at launch and whenever any
-/// app changes the vault.
+/// remote URL and its place in the project tree, whose groups are the sidebar's (`SidebarLayout`). Git
+/// publishes when repositories are added, opened (the remote may have changed) or removed, and adopts the
+/// vault's git checkouts on this Mac it doesn't list yet, at launch and whenever any app changes the vault.
 @MainActor final class VaultProjects {
-  private let vault: Vault
+  let vault: Vault
   private var observer: VaultChangeObserver?
 
-  /// Off for debug launches with `--in-memory` (screenshots, scripted runs), which must not change the
-  /// real list.
-  private let isEnabled: Bool
+  /// Whether this is the shared vault. Debug launches with `--in-memory` (screenshots, scripted runs) use
+  /// a vault of their own instead, which must not change the real list.
+  let isShared: Bool
 
-  init(vault: Vault = .shared) {
-    self.vault = vault
+  init() {
     #if DEBUG
-      isEnabled = !ProcessInfo.processInfo.arguments.contains("--in-memory")
-    #else
-      isEnabled = true
+      if ProcessInfo.processInfo.arguments.contains("--in-memory") {
+        let directory = FileManager.default.temporaryDirectory
+          .appendingPathComponent("dev.v57.git-vault-\(UUID().uuidString)", isDirectory: true)
+        vault = Vault(store: try? VaultStore(directory: directory, keys: MemoryKeyProvider(), notifier: nil))
+        isShared = false
+        return
+      }
     #endif
+    vault = .shared
+    isShared = true
   }
 
   /// Starts sync and adoption for the window's context.
   func start(context: ModelContext, library: RepositoryLibrary) {
-    guard isEnabled, observer == nil else { return }
+    guard observer == nil else { return }
     observer = VaultChangeObserver { [weak self, weak library] in
       Task { @MainActor in
         guard let self, let library else { return }
@@ -39,21 +44,19 @@ import VaultKit
     }
     Task {
       await publishMissing(context: context)
+      if isShared { library.moveSavedGroupsToVault(context: context) }
       adopt(into: context, library: library)
     }
   }
 
-  /// Publishes repositories (with their `origin` and sidebar group) to the vault.
+  /// Publishes repositories (with their `origin`) to the vault.
   func publish(_ repositories: [SavedRepository], context: ModelContext) async {
-    guard isEnabled, let store = vault.store, !repositories.isEmpty else { return }
-    let groups = Dictionary(
-      ((try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []).map { ($0.id, $0.name) }
-    ) { first, _ in first }
-    let entries = repositories.map { ($0.path, $0.name, $0.groupID.flatMap { groups[$0] }) }
-    for (path, name, group) in entries {
+    guard let store = vault.store, !repositories.isEmpty else { return }
+    let entries = repositories.map { ($0.path, $0.name) }
+    for (path, name) in entries {
       let remote = try? await Repository(url: URL(fileURLWithPath: path, isDirectory: true)).remoteURL("origin")
       do {
-        try store.addProject(path: path, name: name, remoteURL: remote?.isEmpty == false ? remote : nil, group: group)
+        try store.addProject(path: path, name: name, remoteURL: remote?.isEmpty == false ? remote : nil)
       } catch {
         vault.error = error.localizedDescription
       }
@@ -63,7 +66,6 @@ import VaultKit
 
   /// Removes repositories from the vault (from this Mac; the project goes when no device has it).
   func unpublish(_ paths: [String]) {
-    guard isEnabled else { return }
     vault.perform { store in
       for path in paths { try store.removeProject(path: path) }
     }

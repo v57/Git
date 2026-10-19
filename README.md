@@ -24,9 +24,12 @@ staged and unstaged files. You can:
 The Worktree and Branch headers show which worktrees and branches have commits the current branch
 doesn't. Drop a folder on the sidebar and every Git repository inside it is added. Repositories
 that share a folder become a group named after it, with the folder above as a note (`Hub/Apps/*`
-makes `Apps`, noted `Hub`); groups don't nest, so a repository deeper down joins only its own
-folder's group. Drag repositories and groups to reorder or regroup them; ⌘- and ⇧-click select
-several, and the context menu fetches, pulls, pushes, hides or moves them together.
+makes `Apps`, noted `Hub`), inside the group of the folder above when it has one. Groups nest: drag
+repositories and groups to reorder them, onto a group's header to move them into it (its top edge
+places them before it), or use Move to Group; New Group on repositories inside a group makes a sub
+group. ⌘- and ⇧-click select several, and the context menu fetches, pulls, pushes, hides or moves
+them together. The groups live in the vault's project tree, so the other v57 apps and Macs share
+them; which ones are collapsed is Git's own.
 
 The sidebar shows every repository's state without opening it: an orange dot with the number of
 changed files, ↑ commits to push, ↓ commits to pull, and a merge or rebase in progress. One file
@@ -52,8 +55,9 @@ other repository that needs attention.
                                   no dependency on GitKit
     Git.xcodeproj                 the app; local package ../Git (GitKit), and Code (CodeHighlighting) and Component (ComponentKit) from GitHub
     Git/                          app sources
-      Library/    SavedRepository and SavedGroup (SwiftData), RepositoryLibrary (sessions, summaries,
-                  import, grouping and ordering, fetch/pull/push across repositories)
+      Library/    SavedRepository (SwiftData), VaultProjects (the vault's projects and groups),
+                  RepositoryLibrary (sessions, summaries, import, grouping and ordering, fetch/pull/push
+                  across repositories)
       Sidebar/    groups and repositories with their state, then Workspace, Branches, Remotes, Tags, Worktrees
       Changes/    file list, commit composer, the diff as hunk cards, Resolve Conflicts
       History/    To pull / To push / history cards with the branch graph, commit inspector

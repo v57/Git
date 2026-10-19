@@ -92,7 +92,6 @@ struct SidebarView: View {
       Text(failure.message)
     }
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
-      library.groupExistingRepositories(context: context)
       let shown = repositories.filter { !$0.isHidden }.map(\.path)
       library.watchSummaries(of: shown)
       #if DEBUG
@@ -108,7 +107,7 @@ struct SidebarView: View {
   /// A drop outside the list: repositories and groups move to the end, folders are added.
   private func drop(_ urls: [URL]) {
     let result = RepositoryList.sort(urls, known: Set(repositories.map(\.path)))
-    for id in result.groups { library.moveGroup(id, before: nil, context: context) }
+    for id in result.groups { library.moveGroup(id, into: nil, before: nil, context: context) }
     if !result.repositories.isEmpty {
       let paths =
         result.repositories.count == 1 && selected.count > 1 && selected.contains(result.repositories[0])

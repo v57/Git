@@ -2,13 +2,14 @@ import AppKit
 import ComponentKit
 import GitKit
 import SwiftData
+import VaultKit
 
-/// A top-level sidebar item: a group, or a repository in no group.
+/// A sidebar item: a group, or a repository.
 enum SidebarItem: Identifiable {
-  case group(SavedGroup)
+  case group(VaultProjectGroup)
   case repository(SavedRepository)
 
-  /// A repository's path, or `group:<uuid>`.
+  /// A repository's path, or `group:<id>`.
   var id: String {
     switch self {
     case .group(let group): Self.id(of: group)
@@ -16,7 +17,7 @@ enum SidebarItem: Identifiable {
     }
   }
 
-  static func id(of group: SavedGroup) -> String { "group:\(group.id.uuidString)" }
+  static func id(of group: VaultProjectGroup) -> String { "group:\(group.id)" }
 
   var name: String {
     switch self {
@@ -25,67 +26,83 @@ enum SidebarItem: Identifiable {
     }
   }
 
-  var sortIndex: Int {
-    get {
-      switch self {
-      case .group(let group): group.sortIndex
-      case .repository(let repository): repository.sortIndex
-      }
-    }
-    nonmutating set {
-      switch self {
-      case .group(let group): group.sortIndex = newValue
-      case .repository(let repository): repository.sortIndex = newValue
-      }
-    }
-  }
-
   // MARK: Dragging groups
 
-  /// Groups are dragged as `x-git-group:<uuid>` URLs, so one drop destination for URLs takes
+  /// Groups are dragged as `x-git-group:<id>` URLs, so one drop destination for URLs takes
   /// repositories (file URLs), groups and folders from Finder.
   static let groupScheme = "x-git-group"
 
-  static func dragURL(for group: SavedGroup) -> URL {
-    URL(string: "\(groupScheme):\(group.id.uuidString)")!
+  static func dragURL(for group: VaultProjectGroup) -> URL {
+    URL(string: "\(groupScheme):\(group.id)")!
   }
 
-  static func groupID(fromDragURL url: URL) -> UUID? {
+  static func groupID(fromDragURL url: URL) -> String? {
     guard url.scheme == groupScheme else { return nil }
-    return UUID(uuidString: String(url.absoluteString.dropFirst(groupScheme.count + 1)))
+    let id = String(url.absoluteString.dropFirst(groupScheme.count + 1))
+    return id.isEmpty ? nil : id
   }
 }
 
-/// The sidebar's order: top-level items, and each group's repositories.
+/// The sidebar's arrangement: the vault's project tree (`VaultProjectTree`, shared with the other v57
+/// apps and Macs) cut down to the repositories in the list, with the ones the vault doesn't list yet
+/// at the end of the top level.
 struct SidebarLayout {
-  var items: [SidebarItem]
-  var members: [UUID: [SavedRepository]]
+  /// The groups and projects that hold a repository in the list.
+  let tree: VaultProjectTree
+  private let device: String
+  private let repositories: [String: SavedRepository]
+  /// Path → project id.
+  private let projectIDs: [String: String]
+  private let loose: [SavedRepository]
 
-  init(repositories: [SavedRepository], groups: [SavedGroup]) {
-    let groupIDs = Set(groups.map(\.id))
-    // A repository whose group is gone shows at the top level.
-    let loose = repositories.filter { $0.groupID.map { !groupIDs.contains($0) } ?? true }
-    items = Self.ordered(groups.map(SidebarItem.group) + loose.map(SidebarItem.repository))
-    var members: [UUID: [SavedRepository]] = [:]
-    for repository in repositories {
-      guard let id = repository.groupID, groupIDs.contains(id) else { continue }
-      members[id, default: []].append(repository)
+  init(repositories: [SavedRepository], vault: Vault) {
+    let device = vault.deviceID
+    let byPath = Dictionary(repositories.map { ($0.path, $0) }) { first, _ in first }
+    tree = vault.projectTree.filter { $0.paths[device].map { byPath[$0] != nil } ?? false }
+    var ids: [String: String] = [:]
+    for project in tree.projects() {
+      if let path = project.paths[device] { ids[path] = project.id }
     }
-    self.members = members.mapValues(Self.ordered)
+    self.device = device
+    self.repositories = byPath
+    projectIDs = ids
+    loose = repositories.filter { ids[$0.path] == nil }
+      .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
-  static func ordered(_ items: [SidebarItem]) -> [SidebarItem] {
-    items.sorted {
-      $0.sortIndex != $1.sortIndex
-        ? $0.sortIndex < $1.sortIndex
-        : $0.name.localizedStandardCompare($1.name) == .orderedAscending
+  /// The items in a group, or at the top level when `groupID` is nil.
+  func children(of groupID: String?) -> [SidebarItem] {
+    let items = tree.children(of: groupID).compactMap(item(for:))
+    return groupID == nil ? items + loose.map(SidebarItem.repository) : items
+  }
+
+  private func item(for node: VaultProjectTree.Node) -> SidebarItem? {
+    switch node {
+    case .group(let group, _): .group(group)
+    case .project(let project): project.paths[device].flatMap { repositories[$0] }.map(SidebarItem.repository)
     }
   }
 
-  static func ordered(_ repositories: [SavedRepository]) -> [SavedRepository] {
-    ordered(repositories.map(SidebarItem.repository)).compactMap {
-      if case .repository(let repository) = $0 { repository } else { nil }
-    }
+  /// The group a repository is in; nil at the top level.
+  func groupID(of path: String) -> String? { projectIDs[path].flatMap(tree.parent(of:)) }
+
+  /// The project a repository is in the vault.
+  func projectID(of path: String) -> String? { projectIDs[path] }
+
+  /// The vault id of a sidebar item's id (a path or `group:<id>`).
+  func vaultID(of itemID: String) -> String? {
+    itemID.hasPrefix("group:") ? String(itemID.dropFirst(6)) : projectIDs[itemID]
+  }
+
+  /// The repositories in a group and in the groups inside it, or every one, in sidebar order.
+  func repositories(in groupID: String? = nil) -> [SavedRepository] {
+    let inTree = tree.projects(in: groupID).compactMap { $0.paths[device].flatMap { repositories[$0] } }
+    return groupID == nil ? inTree + loose : inTree
+  }
+
+  /// A group's name with the groups it is in, e.g. "v57 › Agentus".
+  func title(of group: VaultProjectGroup) -> String {
+    (tree.ancestors(of: group.id).map(\.name) + [group.name]).joined(separator: " › ")
   }
 }
 
@@ -134,195 +151,137 @@ struct RemoteFailure: Identifiable {
 }
 
 extension RepositoryLibrary {
-  // MARK: Arranging
-
-  /// Puts repositories that are new or in no group into groups by folder (see `RepoGrouping`):
-  /// siblings join the group made from their folder, created if needed, and a repository whose
-  /// folder already has a group joins it. New repositories left over go to the end of the top
-  /// level, in name order with the new groups.
-  func arrange(_ candidates: [SavedRepository], new: Set<String>, context: ModelContext) {
-    guard !candidates.isEmpty else { return }
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    var groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    let candidatePaths = Set(candidates.map(\.path))
-    let byPath = Dictionary(candidates.map { ($0.path, $0) }) { first, _ in first }
-    let settled = SidebarLayout(
-      repositories: repositories.filter { !new.contains($0.path) }, groups: groups)
-    var nextIndex = (settled.items.map(\.sortIndex).max() ?? -1) + 1
-    var newItems: [SidebarItem] = []
-
-    var nextMemberIndex: [UUID: Int] = [:]
-    func join(_ repository: SavedRepository, _ group: SavedGroup) {
-      let index =
-        nextMemberIndex[group.id]
-        ?? repositories.filter { $0.groupID == group.id && !candidatePaths.contains($0.path) }
-        .map { $0.sortIndex + 1 }.max() ?? 0
-      repository.groupID = group.id
-      repository.sortIndex = index
-      nextMemberIndex[group.id] = index + 1
-    }
-
-    let plan = RepoGrouping.groups(for: candidates.map(\.url))
-    var placed = Set<String>()
-    for planned in plan.groups {
-      let directory = planned.directory.path
-      let group: SavedGroup
-      if let existing = groups.first(where: { $0.directory == directory }) {
-        group = existing
-      } else {
-        group = SavedGroup(name: planned.name, note: planned.note, directory: directory)
-        context.insert(group)
-        groups.append(group)
-        newItems.append(.group(group))
-      }
-      for url in planned.repositories {
-        guard let repository = byPath[url.path] else { continue }
-        join(repository, group)
-        placed.insert(repository.path)
-      }
-    }
-    for repository in candidates where !placed.contains(repository.path) {
-      let folder = repository.url.deletingLastPathComponent().standardizedFileURL.path
-      if let group = groups.first(where: { $0.directory == folder }) {
-        join(repository, group)
-      } else if new.contains(repository.path) {
-        repository.groupID = nil
-        newItems.append(.repository(repository))
-      }
-    }
-    for item in newItems.sorted(by: { $0.name.localizedStandardCompare($1.name) == .orderedAscending }) {
-      item.sortIndex = nextIndex
-      nextIndex += 1
-    }
+  /// The sidebar's arrangement of the repositories in `context`.
+  func layout(_ context: ModelContext) -> SidebarLayout {
+    SidebarLayout(repositories: (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? [], vault: vault)
   }
 
-  /// Groups the repositories added before groups existed, once.
-  func groupExistingRepositories(context: ModelContext) {
-    let key = "GroupedExistingRepositories"
-    #if DEBUG
-      // A scripted in-memory run mustn't mark the real list as done.
-      if ProcessInfo.processInfo.arguments.contains("--in-memory") { return }
-    #endif
-    guard !UserDefaults.standard.bool(forKey: key) else { return }
-    let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    guard !repositories.isEmpty else { return }
-    UserDefaults.standard.set(true, forKey: key)
-    guard groups.isEmpty else { return }
-    arrange(repositories, new: Set(repositories.map(\.path)), context: context)
-    try? context.save()
+  // MARK: Arranging
+
+  /// Puts repositories in no group into groups by folder (see `RepoGrouping`): siblings join the
+  /// group made from their folder, created if needed (inside the group of the nearest folder above
+  /// that has one), and a repository whose folder already has a group joins it. New repositories
+  /// left over go to the end of the top level, in name order with the new groups.
+  func arrange(_ paths: [String], new: Set<String>) {
+    vault.perform { store in
+      let device = store.deviceID
+      let tree = try store.projectTree()
+      var projects: [String: VaultProject] = [:]
+      for project in tree.projects() {
+        if let path = project.paths[device] { projects[path] = project }
+      }
+      let candidates = paths.compactMap { projects[$0] }.filter { tree.parent(of: $0.id) == nil }
+      guard !candidates.isEmpty else { return }
+      var folders = [String: String](
+        tree.groups.compactMap { group in group.paths[device].map { ($0, group.id) } }
+      ) { first, _ in first }
+      var newItems: [(name: String, id: String)] = []
+
+      let plan = RepoGrouping.groups(
+        for: candidates.compactMap { $0.paths[device] }.map { URL(fileURLWithPath: $0, isDirectory: true) })
+      var placed = Set<String>()
+      // Outer folders first, so a folder's group exists before the groups inside it.
+      for planned in plan.groups.sorted(by: { $0.directory.path.count < $1.directory.path.count }) {
+        let directory = planned.directory.path
+        let groupID: String
+        if let existing = folders[directory] {
+          groupID = existing
+        } else {
+          let parent = folders.filter { directory.hasPrefix($0.key + "/") }.max { $0.key.count < $1.key.count }?.value
+          let group = try store.addProjectGroup(
+            name: planned.name, note: planned.note.isEmpty ? nil : planned.note, path: directory, in: parent)
+          folders[directory] = group.id
+          groupID = group.id
+          if parent == nil { newItems.append((group.name, group.id)) }
+        }
+        let ids = planned.repositories.compactMap { projects[$0.path]?.id }
+        try store.moveProjects(ids, into: groupID)
+        placed.formUnion(ids)
+      }
+      for project in candidates where !placed.contains(project.id) {
+        guard let path = project.paths[device] else { continue }
+        let folder = URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL.path
+        if let groupID = folders[folder] {
+          try store.moveProjects([project.id], into: groupID)
+        } else if new.contains(path) {
+          newItems.append((project.name, project.id))
+        }
+      }
+      let order = newItems.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+      try store.moveProjects(order.map(\.id), into: nil)
+    }
   }
 
   // MARK: Moving
 
-  /// Moves repositories into a group (or the top level when `groupID` is nil), before the item
-  /// with id `before` or at the end. Groups left empty are deleted.
-  func move(_ paths: [String], into groupID: UUID?, before: String?, context: ModelContext) {
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    let moving = paths.compactMap { path in repositories.first { $0.path == path } }
-    guard !moving.isEmpty else { return }
-    let movingPaths = Set(moving.map(\.path))
-    let layout = SidebarLayout(repositories: repositories, groups: groups)
-    let formerGroups = Set(moving.compactMap(\.groupID))
+  /// Moves repositories into a group (or the top level when `groupID` is nil), before the sidebar
+  /// item with id `before` or at the end. Groups left empty go.
+  func move(_ paths: [String], into groupID: String?, before: String?, context: ModelContext) {
+    let layout = layout(context)
+    let ids = paths.compactMap(layout.projectID(of:))
+    guard !ids.isEmpty else { return }
+    vault.perform { try $0.moveProjects(ids, into: groupID, before: before.flatMap(layout.vaultID(of:))) }
+  }
 
-    if let groupID {
-      let members = layout.members[groupID] ?? []
-      var rest = members.filter { !movingPaths.contains($0.path) }
-      let index = anchor(before, in: members.map(\.path), skipping: movingPaths)
-        .flatMap { id in rest.firstIndex { $0.path == id } } ?? rest.count
-      rest.insert(contentsOf: moving, at: index)
-      for (index, repository) in rest.enumerated() {
-        repository.groupID = groupID
-        repository.sortIndex = index
+  /// Moves a group into another (or the top level), before the sidebar item with id `before` or at
+  /// the end. A group never moves into itself or a group inside it.
+  func moveGroup(_ id: String, into groupID: String?, before: String?, context: ModelContext) {
+    let layout = layout(context)
+    vault.perform { try $0.moveProjects([id], into: groupID, before: before.flatMap(layout.vaultID(of:))) }
+  }
+
+  /// Moves repositories and groups out of the group they are in, to just after it in the group
+  /// above (or the top level).
+  func moveOut(_ itemIDs: [String], context: ModelContext) {
+    let layout = layout(context)
+    let ids = itemIDs.compactMap(layout.vaultID(of:))
+    vault.perform { store in
+      let tree = try store.projectTree()
+      let byGroup = Dictionary(grouping: ids.filter { tree.parent(of: $0) != nil }) { tree.parent(of: $0)! }
+      for (groupID, ids) in byGroup {
+        let parent = tree.parent(of: groupID)
+        let siblings = tree.children(of: parent).map(\.id)
+        let next = siblings.firstIndex(of: groupID).flatMap { $0 + 1 < siblings.count ? siblings[$0 + 1] : nil }
+        try store.moveProjects(ids, into: parent, before: next)
       }
-    } else {
-      var rest = layout.items.filter { !movingPaths.contains($0.id) }
-      let index = anchor(before, in: layout.items.map(\.id), skipping: movingPaths)
-        .flatMap { id in rest.firstIndex { $0.id == id } } ?? rest.count
-      for repository in moving { repository.groupID = nil }
-      rest.insert(contentsOf: moving.map(SidebarItem.repository), at: index)
-      for (index, item) in rest.enumerated() { item.sortIndex = index }
     }
-    deleteEmptyGroups(formerGroups.subtracting(groupID.map { [$0] } ?? []), context: context)
-    try? context.save()
-  }
-
-  /// Moves a group before the top-level item with id `before`, or to the end.
-  func moveGroup(_ id: UUID, before: String?, context: ModelContext) {
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    guard let group = groups.first(where: { $0.id == id }) else { return }
-    let layout = SidebarLayout(repositories: repositories, groups: groups)
-    let groupItemID = SidebarItem.id(of: group)
-    var rest = layout.items.filter { $0.id != groupItemID }
-    let index = anchor(before, in: layout.items.map(\.id), skipping: [groupItemID])
-      .flatMap { id in rest.firstIndex { $0.id == id } } ?? rest.count
-    rest.insert(.group(group), at: index)
-    for (index, item) in rest.enumerated() { item.sortIndex = index }
-    try? context.save()
-  }
-
-  /// The first id at or after `before` that isn't moving, so dropping on a moving item works.
-  private func anchor(_ before: String?, in ids: [String], skipping moving: Set<String>) -> String? {
-    guard let before, let start = ids.firstIndex(of: before) else { return nil }
-    return ids[start...].first { !moving.contains($0) }
   }
 
   // MARK: Groups
 
-  /// Makes a group of `paths` where the first of them is. It is named after their folder when
-  /// they share one.
+  /// Makes a group of `paths` where the first of them is, inside its group if it is in one. It is
+  /// named after their folder when they share one.
   @discardableResult
-  func newGroup(from paths: [String], context: ModelContext) -> SavedGroup? {
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    let moving = paths.compactMap { path in repositories.first { $0.path == path } }
-    guard let first = moving.first else { return nil }
-    let folders = Set(moving.map { $0.url.deletingLastPathComponent().standardizedFileURL })
-    let group: SavedGroup
-    if folders.count == 1, let folder = folders.first {
-      group = SavedGroup(
-        name: folder.lastPathComponent, note: folder.deletingLastPathComponent().lastPathComponent)
-    } else {
-      group = SavedGroup(name: "New Group")
-    }
-    context.insert(group)
-
-    let layout = SidebarLayout(repositories: repositories, groups: groups)
-    let movingPaths = Set(moving.map(\.path))
-    let place = first.groupID.flatMap { id in groups.first { $0.id == id } }.map(SidebarItem.id(of:))
-      ?? first.path
-    var rest = layout.items.filter { !movingPaths.contains($0.id) }
-    let index = anchor(place, in: layout.items.map(\.id), skipping: movingPaths)
-      .flatMap { id in rest.firstIndex { $0.id == id } } ?? rest.count
-    rest.insert(.group(group), at: index)
-    for (index, item) in rest.enumerated() { item.sortIndex = index }
-
-    let formerGroups = Set(moving.compactMap(\.groupID))
-    for (index, repository) in moving.enumerated() {
-      repository.groupID = group.id
-      repository.sortIndex = index
-    }
-    deleteEmptyGroups(formerGroups, context: context)
-    try? context.save()
+  func newGroup(from paths: [String], context: ModelContext) -> VaultProjectGroup? {
+    let layout = layout(context)
+    let ids = paths.compactMap(layout.projectID(of:))
+    guard !ids.isEmpty else { return nil }
+    let folders = Set(paths.map { URL(fileURLWithPath: $0).deletingLastPathComponent().standardizedFileURL })
+    let name = folders.count == 1 ? folders.first!.lastPathComponent : "New Group"
+    let note = folders.count == 1 ? folders.first!.deletingLastPathComponent().lastPathComponent : nil
+    var group: VaultProjectGroup?
+    vault.perform { group = try $0.groupProjects(ids, name: name, note: note) }
     return group
   }
 
-  /// Deletes a group and puts its repositories where it was.
-  func ungroup(_ group: SavedGroup, context: ModelContext) {
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    let layout = SidebarLayout(repositories: repositories, groups: groups)
-    let members = layout.members[group.id] ?? []
-    var items = layout.items
-    let index = items.firstIndex { $0.id == SidebarItem.id(of: group) } ?? items.count
-    items.remove(at: index)
-    items.insert(contentsOf: members.map(SidebarItem.repository), at: index)
-    for repository in members { repository.groupID = nil }
-    for (index, item) in items.enumerated() { item.sortIndex = index }
-    context.delete(group)
-    try? context.save()
+  /// Deletes a group and puts what it holds where it was.
+  func ungroup(_ group: VaultProjectGroup) {
+    vault.perform { try $0.ungroupProjects(group.id) }
+    collapsedGroups.remove(group.id)
+  }
+
+  func rename(_ group: VaultProjectGroup, to name: String) {
+    var group = group
+    group.name = name
+    vault.save(group)
+  }
+
+  func toggleCollapsed(_ group: VaultProjectGroup) {
+    if collapsedGroups.contains(group.id) {
+      collapsedGroups.remove(group.id)
+    } else {
+      collapsedGroups.insert(group.id)
+    }
   }
 
   func setHidden(_ paths: [String], _ hidden: Bool, context: ModelContext) {
@@ -333,13 +292,63 @@ extension RepositoryLibrary {
     try? context.save()
   }
 
-  func deleteEmptyGroups(_ ids: Set<UUID>, context: ModelContext) {
-    guard !ids.isEmpty else { return }
-    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
+  // MARK: Groups made before the vault had them
+
+  /// Moves the groups Git kept in its own store (`SavedGroup`, one level) into the vault, once. A
+  /// group with the same name that another Mac already moved there is reused.
+  func moveSavedGroupsToVault(context: ModelContext) {
+    let key = "MovedGroupsToVault"
+    guard !UserDefaults.standard.bool(forKey: key), vault.store != nil else { return }
     let groups = (try? context.fetch(FetchDescriptor<SavedGroup>())) ?? []
-    for group in groups where ids.contains(group.id) {
-      if !repositories.contains(where: { $0.groupID == group.id }) { context.delete(group) }
+    let repositories = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
+    let layout = layout(context)
+    vault.perform { store in
+      let tree = try store.projectTree()
+      var ids: [UUID: String] = [:]
+      for saved in groups {
+        if var existing = tree.groups.first(where: { $0.parentID == nil && $0.name == saved.name }) {
+          if !saved.directory.isEmpty, existing.paths[store.deviceID] == nil {
+            existing.paths[store.deviceID] = saved.directory
+            try store.save(existing)
+          }
+          ids[saved.id] = existing.id
+        } else {
+          let group = VaultProjectGroup(
+            id: saved.id.uuidString, name: saved.name, note: saved.note.isEmpty ? nil : saved.note,
+            paths: saved.directory.isEmpty ? [:] : [store.deviceID: saved.directory])
+          try store.save(group)
+          ids[saved.id] = group.id
+        }
+      }
+      // The old order: groups and ungrouped repositories by sortIndex, members by sortIndex.
+      func sorted<T>(_ items: [(index: Int, name: String, id: T)]) -> [T] {
+        items.sorted {
+          $0.index != $1.index ? $0.index < $1.index : $0.name.localizedStandardCompare($1.name) == .orderedAscending
+        }.map(\.id)
+      }
+      let top: [(index: Int, name: String, id: String?)] =
+        groups.map { ($0.sortIndex, $0.name, ids[$0.id]) }
+        + repositories.filter { $0.groupID.flatMap { ids[$0] } == nil }
+        .map { ($0.sortIndex, $0.name, layout.projectID(of: $0.path)) }
+      try store.moveProjects(sorted(top).compactMap { $0 }, into: nil)
+      for saved in groups {
+        guard let id = ids[saved.id] else { continue }
+        let members: [(index: Int, name: String, id: String?)] = repositories.filter { $0.groupID == saved.id }
+          .map { ($0.sortIndex, $0.name, layout.projectID(of: $0.path)) }
+        try store.moveProjects(sorted(members).compactMap { $0 }, into: id)
+      }
+      try store.removeEmptyProjectGroups(ids.values)
     }
+    guard vault.error == nil else { return }
+    for saved in groups where saved.isCollapsed {
+      if let id = vault.projectGroups.first(where: { $0.id == saved.id.uuidString || $0.name == saved.name })?.id {
+        collapsedGroups.insert(id)
+      }
+    }
+    for saved in groups { context.delete(saved) }
+    for repository in repositories { repository.groupID = nil }
+    try? context.save()
+    UserDefaults.standard.set(true, forKey: key)
   }
 
   // MARK: Fetch, pull and push

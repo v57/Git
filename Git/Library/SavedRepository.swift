@@ -10,9 +10,9 @@ import SwiftData
   var addedAt: Date = Date()
   /// When it was last shown in the window, for the Welcome window's Recent list.
   var lastOpenedAt: Date?
-  /// The sidebar group it is in, if any.
+  /// The `SavedGroup` it was in before the groups moved to the vault (`moveSavedGroupsToVault`).
   var groupID: UUID?
-  /// Its place in the sidebar, among its group's repositories or the top-level items.
+  /// Its place among its group's repositories or the top-level items, before the vault.
   var sortIndex: Int = 0
   /// Hidden from the sidebar until Show Hidden.
   var isHidden: Bool = false
@@ -31,7 +31,8 @@ import SwiftData
   }
 }
 
-/// A sidebar group of repositories (one level: groups don't nest).
+/// A sidebar group from before the groups moved to the vault (`VaultProjectGroup`, which nest); read
+/// once by `moveSavedGroupsToVault` and deleted.
 @Model final class SavedGroup {
   @Attribute(.unique) var id: UUID = UUID()
   var name: String = ""

@@ -2,6 +2,7 @@ import AppKit
 import GitKit
 import SwiftData
 import SwiftUI
+import VaultKit
 
 /// What the window shows for a repository: the Workspace items in the sidebar.
 enum RepositoryMode: String, CaseIterable, Identifiable {
@@ -89,8 +90,19 @@ struct CompletedOperation: Equatable {
   /// The repositories a sidebar fetch, pull or push failed in.
   var remoteFailure: RemoteFailure?
 
-  /// Shares the repository list with the other v57 apps through the vault.
+  /// Shares the repository list and its groups with the other v57 apps through the vault.
   @ObservationIgnored let vaultProjects = VaultProjects()
+  /// The store the sidebar's groups live in (`VaultProjectTree`).
+  var vault: Vault { vaultProjects.vault }
+
+  /// The groups collapsed in this app's sidebar (vault group ids); each app keeps its own.
+  var collapsedGroups: Set<String> = RepositoryLibrary.savedCollapsedGroups {
+    didSet { if vaultProjects.isShared { UserDefaults.standard.set(Array(collapsedGroups), forKey: Self.collapsedKey) } }
+  }
+  private static let collapsedKey = "CollapsedGroups"
+  private static var savedCollapsedGroups: Set<String> {
+    Set(UserDefaults.standard.stringArray(forKey: collapsedKey) ?? [])
+  }
 
   private weak var activeSession: RepositorySession?
   /// The repository on screen.
@@ -219,12 +231,12 @@ struct CompletedOperation: Equatable {
     let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
     var added: [SavedRepository] = []
     // Found repositories that are already in the list but in no group are grouped again.
-    var regrouped: [SavedRepository] = []
+    var regrouped: [String] = []
     for folder in folders {
       let repos = found[folder] ?? []
       for repo in repos {
-        if let saved = existing[repo.path] {
-          if saved.groupID == nil, !regrouped.contains(saved) { regrouped.append(saved) }
+        if existing[repo.path] != nil {
+          if !regrouped.contains(repo.path) { regrouped.append(repo.path) }
         } else if !added.contains(where: { $0.path == repo.path }) {
           let saved = SavedRepository(path: repo.path, group: folder.standardizedFileURL.path)
           context.insert(saved)
@@ -232,9 +244,9 @@ struct CompletedOperation: Equatable {
         }
       }
     }
-    arrange(added + regrouped, new: Set(added.map(\.path)), context: context)
     try? context.save()
     await vaultProjects.publish(added, context: context)
+    arrange(added.map(\.path) + regrouped, new: Set(added.map(\.path)))
 
     let foundCount = found.values.reduce(0) { $0 + $1.count }
     if foundCount == 0 {
@@ -255,30 +267,29 @@ struct CompletedOperation: Equatable {
     }
     let saved = SavedRepository(path: path, group: url.deletingLastPathComponent().path)
     context.insert(saved)
-    // A worktree inside a repository in the list joins that repository's group.
-    if let owner = existing.first(where: { path.hasPrefix($0.path + "/") }), let groupID = owner.groupID {
-      saved.groupID = groupID
-      saved.sortIndex = existing.filter { $0.groupID == groupID }.count
-    } else {
-      arrange([saved], new: [path], context: context)
-    }
     try? context.save()
     requestedSelection = path
+    // A worktree inside a repository in the list joins that repository's group.
+    let owner = existing.first { path.hasPrefix($0.path + "/") }.flatMap { layout(context).groupID(of: $0.path) }
     Task {
       await vaultProjects.publish([saved], context: context)
+      if let owner {
+        move([path], into: owner, before: nil, context: context)
+      } else {
+        arrange([path], new: [path])
+      }
       await refreshSummaries([path])
     }
   }
 
   /// Adds repositories another app put in the vault, without selecting them.
   func adopt(_ paths: [String], into context: ModelContext) {
-    let added = paths.map { path in
-      let saved = SavedRepository(path: path, group: (path as NSString).deletingLastPathComponent)
-      context.insert(saved)
-      return saved
+    for path in paths {
+      context.insert(SavedRepository(path: path, group: (path as NSString).deletingLastPathComponent))
     }
-    arrange(added, new: Set(paths), context: context)
     try? context.save()
+    // Projects another app or Mac already put in a group stay there.
+    arrange(paths, new: Set(paths))
     Task { await refreshSummaries(paths) }
   }
 
@@ -308,8 +319,6 @@ struct CompletedOperation: Equatable {
       summaries[repository.path] = nil
       context.delete(repository)
     }
-    try? context.save()
-    deleteEmptyGroups(Set(repositories.compactMap(\.groupID)), context: context)
     try? context.save()
   }
 
