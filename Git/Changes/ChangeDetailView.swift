@@ -29,9 +29,26 @@ struct ChangeDetailView: View {
     }
   }
 
+  /// What the pane shows; every change of it crossfades.
+  private enum Phase: Hashable {
+    case loading, clean, noFile, noChanges
+    case diff(DiffTarget)
+  }
+
+  private var phase: Phase {
+    guard let status = session.status else { return .loading }
+    if status.isClean { return .clean }
+    guard change != nil else { return .noFile }
+    if let loaded, loaded.target == target { return .diff(loaded.target) }
+    return isLoading ? .loading : .noChanges
+  }
+
   var body: some View {
-    Group {
-      if session.status?.isClean == true {
+    // One container with one background: on a `Group` each branch would get its own pane, and the toolbar's strip
+    // goes bare while one replaces another.
+    ZStack {
+      switch phase {
+      case .clean:
         EmptyState(
           systemImage: "checkmark", title: "Working tree clean",
           message: "Nothing left to commit on \(session.status?.branch ?? "HEAD")."
@@ -39,34 +56,35 @@ struct ChangeDetailView: View {
           Button("View History") { withKitAnimation { state.mode = .history } }.buttonStyle(.kit)
         }
         .transition(.page)
-      } else if let change, let loaded, loaded.target == target {
-        VStack(spacing: 0) {
-          header(change, diff: loaded.diff)
-          if loaded.diff.hunks.isEmpty {
-            DiffPlaceholder(diff: loaded.diff)
-          } else {
-            ScrollView {
-              HunkCards(content: loaded, mode: hunkMode(change, diff: loaded.diff), selection: $selection)
-                .padding([.horizontal, .bottom], KitMetrics.gutter)
-                .padding(.bottom, 72)
+      case .diff:
+        if let change, let loaded {
+          VStack(spacing: 0) {
+            header(change, diff: loaded.diff)
+            if loaded.diff.hunks.isEmpty {
+              DiffPlaceholder(diff: loaded.diff)
+            } else {
+              ScrollView {
+                HunkCards(content: loaded, mode: hunkMode(change, diff: loaded.diff), selection: $selection)
+                  .padding([.horizontal, .bottom], KitMetrics.gutter)
+                  .padding(.bottom, 72)
+              }
             }
           }
+          .id(loaded.target)
+          .transition(.page)
         }
-        .id(loaded.target)
-        .transition(.page)
-      } else if change != nil, !isLoading {
-        EmptyState(systemImage: "equal", title: "No Changes")
-      } else if change == nil {
+      case .noChanges:
+        EmptyState(systemImage: "equal", title: "No Changes").transition(.page)
+      case .noFile:
         EmptyState(systemImage: "doc.text", title: "No File Selected", message: "Pick a file to see its changes.")
-      } else {
-        LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
-          .frame(maxWidth: .infinity, maxHeight: .infinity)
+          .transition(.page)
+      case .loading:
+        LiveIcon(systemImage: "doc.text", hue: .gray, status: .working).transition(.opacity)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .kitPane(.secondary)
-    .animation(.kit, value: loaded?.target)
-    .animation(.kit, value: session.status?.isClean)
+    .animation(.kit, value: phase)
     .task(
       id: LoadKey(
         target: target, revision: session.revision, dark: colorScheme == .dark,
