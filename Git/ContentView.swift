@@ -24,13 +24,10 @@ struct ContentView: View {
     } detail: {
       Group {
         if let path = selectedPath {
-          ZStack {
-            RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
-              .id(path)
-              // No rise: the toolbar fades with its screen.
-              .transition(.opacity)
-          }
-          .animation(.kit, value: path)
+          // Another repository swaps in at once: every screen has the same panes and toolbar, so a fade would
+          // redraw the whole pane for what is only new content.
+          RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
+            .id(path)
         } else {
           EmptyState(
             systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
