@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// The parts of GitHub's REST API the apps use, authenticated with a user's token, or anonymous
 /// (public repositories only, 60 requests an hour) without one.
 public struct GitHubAPI: Sendable {

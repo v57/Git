@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 public enum GitHubError: Error, Sendable, Hashable, LocalizedError {
   /// The token was revoked or expired (HTTP 401).
   case unauthorized

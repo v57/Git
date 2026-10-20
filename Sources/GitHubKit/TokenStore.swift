@@ -1,5 +1,10 @@
 import Foundation
-import Security
+
+#if canImport(Security)
+  import Security
+#else
+  import VaultKit
+#endif
 
 /// Keeps the signed-in login and token.
 public protocol TokenStore: Sendable {
@@ -18,6 +23,7 @@ public protocol TokenStore: Sendable {
 /// readable by every app signed by the team that lists the group, and synced through iCloud
 /// Keychain: one sign-in serves Git, Markdown and Dev on all the user's devices. A build that
 /// isn't entitled to the group (ad-hoc signed) keeps its own item instead.
+#if canImport(Security)
 public struct KeychainTokenStore: TokenStore {
   public let service: String
   public let accessGroup: String?
@@ -88,6 +94,54 @@ public struct KeychainTokenStore: TokenStore {
     throw GitHubError.signIn(message)
   }
 }
+#else
+  /// One item in the system's credential store (VaultKit's keychain: the Windows Credential Manager), named after
+  /// `service`: the login, the scopes and the token. Every v57 app of the user reads the shared one.
+  public struct KeychainTokenStore: TokenStore {
+    public let service: String
+    public let accessGroup: String?
+
+    public init(service: String, accessGroup: String? = nil) {
+      self.service = service
+      self.accessGroup = accessGroup
+    }
+
+    public static let shared = KeychainTokenStore(
+      service: "dev.v57.github", accessGroup: "AUCR797TMH.dev.v57.shared")
+
+    private struct Item: Codable {
+      var login: String
+      var token: String
+      var scopes: [String]
+    }
+
+    private var keychain: VaultKeychain { VaultKeychain(service: service) }
+
+    public func load() throws -> GitHubCredential? {
+      do {
+        guard let data = try keychain.read("credential", options: .thisDevice),
+          let item = try? JSONDecoder().decode(Item.self, from: data)
+        else { return nil }
+        return GitHubCredential(login: item.login, token: item.token, scopes: Set(item.scopes))
+      } catch {
+        throw GitHubError.signIn(error.localizedDescription)
+      }
+    }
+
+    public func save(_ credential: GitHubCredential) throws {
+      let item = Item(login: credential.login, token: credential.token, scopes: credential.scopes.sorted())
+      do {
+        try keychain.write(try JSONEncoder().encode(item), account: "credential", options: .thisDevice)
+      } catch {
+        throw GitHubError.signIn(error.localizedDescription)
+      }
+    }
+
+    public func delete() throws {
+      do { try keychain.delete("credential", options: .thisDevice) } catch { throw GitHubError.signIn(error.localizedDescription) }
+    }
+  }
+#endif
 
 /// Keeps the credential in memory, for tests and previews.
 public final class MemoryTokenStore: TokenStore, @unchecked Sendable {

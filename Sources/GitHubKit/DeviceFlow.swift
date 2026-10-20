@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// The code the user enters at `verificationURL` to let the app sign in.
 public struct DeviceCode: Sendable, Hashable {
   /// What the user types on github.com, e.g. `154C-87C2`.

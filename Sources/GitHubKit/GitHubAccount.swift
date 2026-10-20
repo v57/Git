@@ -1,4 +1,8 @@
 import Foundation
+
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
 import Observation
 
 /// The app's GitHub account for a UI: signs in with the device flow for the permissions the user
