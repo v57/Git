@@ -337,6 +337,7 @@ struct RepositoryList: View {
     Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal(targets.map(\.url)) }
     if let only = targets.first, targets.count == 1 {
       Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
+      OtherPlacesMenu(root: only.url)
     }
     Divider()
     if targets.allSatisfy(\.isHidden) {
