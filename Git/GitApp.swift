@@ -28,9 +28,11 @@ struct GitApp: App {
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
       // --light draws the app in light mode, for screenshots.
-      if ProcessInfo.processInfo.arguments.contains("--light") {
-        DispatchQueue.main.async { NSApplication.shared.appearance = NSAppearance(named: .aqua) }
-      }
+      #if os(macOS)
+        if ProcessInfo.processInfo.arguments.contains("--light") {
+          DispatchQueue.main.async { NSApplication.shared.appearance = NSAppearance(named: .aqua) }
+        }
+      #endif
     #endif
   }
 

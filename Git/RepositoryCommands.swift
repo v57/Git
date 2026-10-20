@@ -1,3 +1,4 @@
+import ComponentKit
 import GitKit
 import SwiftUI
 
@@ -56,7 +57,7 @@ struct RepositoryCommands: Commands {
         .keyboardShortcut("a", modifiers: [.command, .shift])
       Button("Unstage All") { run { await $0.unstageAll() } }
       Divider()
-      Button("Show in Finder") {
+      Button("Show in \(KitDesktop.fileManagerName)") {
         if let session { RepositoryLibrary.reveal(session.repository.url) }
       }
       Button("Open in Terminal") {

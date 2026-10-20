@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import ComponentKit
 import GitHubKit
 import GitKit
@@ -41,7 +41,7 @@ extension GitHubAccount {
 
   func openVerificationPage(_ code: DeviceCode) {
     copy(code)
-    NSWorkspace.shared.open(code.verificationURL)
+    KitDesktop.open(code.verificationURL)
   }
 
   func copy(_ code: DeviceCode) {

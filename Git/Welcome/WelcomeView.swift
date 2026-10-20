@@ -1,8 +1,11 @@
-import AppKit
 import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
+
+#if os(macOS)
+  import AppKit
+#endif
 
 /// The Welcome window, shown at launch: clone, open or create a repository on the left, recent
 /// repositories with their state on the right.
@@ -139,14 +142,9 @@ struct WelcomeWindow: View {
   // MARK: Actions
 
   private func openLocal() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.allowsMultipleSelection = true
-    panel.prompt = "Open"
-    guard panel.runModal() == .OK else { return }
-    let urls = panel.urls
     Task {
+      let urls = await KitDesktop.chooseFolders(prompt: "Open", allowsMultipleSelection: true)
+      guard !urls.isEmpty else { return }
       let added = await library.importFolders(urls, into: context)
       if let path = added.first ?? urls.first.map({ $0.standardizedFileURL.path }) {
         library.requestedSelection = path
@@ -156,12 +154,16 @@ struct WelcomeWindow: View {
 
   /// Brings up the main window (opening one if there is none) and closes this one.
   private func showMainWindow() {
-    let main = NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(MainWindow.id) == true }
-    if let main {
-      main.makeKeyAndOrderFront(nil)
-    } else {
+    #if os(macOS)
+      let main = NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(MainWindow.id) == true }
+      if let main {
+        main.makeKeyAndOrderFront(nil)
+      } else {
+        openWindow(id: MainWindow.id)
+      }
+    #else
       openWindow(id: MainWindow.id)
-    }
+    #endif
     dismissWindow(id: Self.id)
   }
 }
@@ -254,13 +256,11 @@ struct CloneSheet: View {
   }
 
   private func chooseLocation() {
-    let panel = NSOpenPanel()
-    panel.canChooseFiles = false
-    panel.canChooseDirectories = true
-    panel.canCreateDirectories = true
-    panel.directoryURL = URL(fileURLWithPath: location)
-    panel.prompt = "Choose"
-    if panel.runModal() == .OK, let url = panel.url { location = url.path }
+    Task {
+      let chosen = await KitDesktop.chooseFolders(
+        prompt: "Choose", directory: URL(fileURLWithPath: location), canCreateDirectories: true)
+      if let url = chosen.first { location = url.path }
+    }
   }
 
   private func clone() {

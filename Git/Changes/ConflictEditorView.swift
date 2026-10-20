@@ -349,7 +349,7 @@ struct ConflictsScreen: View {
   }
 
   private func openFile(_ path: String) {
-    NSWorkspace.shared.open(session.repository.url.appendingPathComponent(path))
+    KitDesktop.open(session.repository.url.appendingPathComponent(path))
   }
 
   /// ⌥⌘← and ⌥⌘→ choose a side for the next open conflict in the selected file.

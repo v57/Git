@@ -41,4 +41,27 @@ for target in package.targets {
   default: break
   }
 }
+#if os(Windows)
+// The app: a DLL the SwiftUI WinUI host loads (SwiftUI's Windows/scripts/build-app.ps1 -PackagePath <this package>
+// -Product GitWinUI), built from the Xcode project's sources with its settings.
+package.dependencies += [v57("Component"), v57("UpdateKit"), v57("Code"), v57("Dev")]
+package.targets.append(
+  .target(
+    name: "GitApp",
+    dependencies: [
+      "GitKit", "GitHubKit", .product(name: "SwiftUI", package: "SwiftUI"), .product(name: "SwiftData", package: "SwiftUI"),
+      .product(name: "SQLite3", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
+      .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "VaultKit", package: "Vault"),
+      .product(name: "CodeHighlighting", package: "Code"), .product(name: "DevScreenshots", package: "Dev"),
+    ],
+    path: "Git", exclude: ["Assets.xcassets", "Git.entitlements"],
+    swiftSettings: [
+      .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
+      // On Apple platforms `import Foundation` brings Combine (ObservableObject, @Published), URLSession and the
+      // file APIs SwiftUIPortability adds along: every file gets them here too.
+      .unsafeFlags(
+        ["Combine", "FoundationNetworking", "SwiftUIPortability"].flatMap { ["-Xfrontend", "-import-module", "-Xfrontend", $0] }),
+    ]))
+package.products.append(.library(name: "GitWinUI", type: .dynamic, targets: ["GitApp"]))
+#endif
 #endif

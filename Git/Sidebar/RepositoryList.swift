@@ -244,7 +244,7 @@ struct RepositoryList: View {
     }
     Divider()
     if let folder = group.paths[library.vault.deviceID] {
-      Button("Show in Finder", systemImage: "folder") {
+      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") {
         RepositoryLibrary.reveal(URL(fileURLWithPath: folder, isDirectory: true))
       }
       Divider()
@@ -287,7 +287,7 @@ struct RepositoryList: View {
 
   /// Click opens; ⌘-click adds or removes; ⇧-click selects the range from the last click.
   private func click(_ path: String, layout: SidebarLayout) {
-    let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+    let flags = KitDesktop.modifierKeys
     if flags.contains(.command) {
       if selected.contains(path) {
         if selected.count > 1 { selected.remove(path) }
@@ -334,7 +334,7 @@ struct RepositoryList: View {
       }
     }
     Divider()
-    Button("Show in Finder", systemImage: "folder") { NSWorkspace.shared.activateFileViewerSelecting(targets.map(\.url)) }
+    Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal(targets.map(\.url)) }
     if let only = targets.first, targets.count == 1 {
       Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
     }

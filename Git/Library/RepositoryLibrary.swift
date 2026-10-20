@@ -1,4 +1,4 @@
-import AppKit
+import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -55,7 +55,7 @@ struct CompletedOperation: Equatable {
   /// The number of conflict blocks each path had, for progress after it is resolved.
   var conflictBlockCounts: [String: Int] = [:]
   var conflictChoices: [String: [Int: ConflictResolution]] = [:]
-  var wholeFileChoices: [String: ConflictSide] = [:]
+  var wholeFileChoices: [String: GitKit.ConflictSide] = [:]
   var selectedConflict: String?
   var completedOperation: CompletedOperation?
 
@@ -295,13 +295,8 @@ struct CompletedOperation: Equatable {
 
   /// Asks where to create a repository, runs `git init` there and adds it.
   func createRepository(into context: ModelContext) async {
-    let panel = NSSavePanel()
-    panel.title = "New Repository"
-    panel.prompt = "Create"
-    panel.nameFieldLabel = "Name:"
-    panel.nameFieldStringValue = "New Repository"
-    panel.canCreateDirectories = true
-    guard panel.runModal() == .OK, let url = panel.url else { return }
+    guard let url = await KitDesktop.chooseSaveLocation(title: "New Repository", prompt: "Create", name: "New Repository")
+    else { return }
     do {
       let repository = try await Repository.initialize(at: url)
       open(repository.url, into: context)
@@ -325,15 +320,10 @@ struct CompletedOperation: Equatable {
   // MARK: Finder and Terminal
 
   static func reveal(_ url: URL) {
-    NSWorkspace.shared.activateFileViewerSelecting([url])
+    KitDesktop.reveal([url])
   }
 
   static func openInTerminal(_ url: URL) {
-    guard
-      let terminal = NSWorkspace.shared.urlForApplication(
-        withBundleIdentifier: "com.apple.Terminal")
-    else { return }
-    NSWorkspace.shared.open(
-      [url], withApplicationAt: terminal, configuration: NSWorkspace.OpenConfiguration())
+    KitDesktop.openTerminal(at: url)
   }
 }

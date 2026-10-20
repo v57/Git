@@ -346,7 +346,7 @@ private struct CommitList: View {
 
   /// Click selects one commit; ⇧-click selects every commit from the anchor to this one.
   private func click(_ commit: Commit) {
-    let flags = NSApp.currentEvent?.modifierFlags ?? NSEvent.modifierFlags
+    let flags = KitDesktop.modifierKeys
     if flags.contains(.shift) { extendSelection(to: commit.id) } else { select(commit.id) }
     isFocused = true
   }

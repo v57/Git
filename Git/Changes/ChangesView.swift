@@ -171,8 +171,8 @@ private struct ChangeList: View {
     }
     Divider()
     let url = session.repository.url.appendingPathComponent(change.path)
-    Button("Open", systemImage: "arrow.up.right.square") { NSWorkspace.shared.open(url) }
-    Button("Show in Finder", systemImage: "folder") { RepositoryLibrary.reveal(url) }
+    Button("Open", systemImage: "arrow.up.right.square") { KitDesktop.open(url) }
+    Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { RepositoryLibrary.reveal(url) }
     Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(change.path) }
   }
 }

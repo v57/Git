@@ -1,4 +1,4 @@
-import AppKit
+import Foundation
 import ComponentKit
 import GitKit
 import SwiftData
