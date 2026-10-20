@@ -57,6 +57,8 @@ public enum RepoDiscovery {
         values.isDirectory == true,
         values.isSymbolicLink != true,
         values.isPackage != true,
+        // Dot folders are hidden by convention (Windows hides by attribute only).
+        !url.lastPathComponent.hasPrefix("."),
         !ignoredNames.contains(url.lastPathComponent)
       else { return nil }
       return url.standardizedFileURL

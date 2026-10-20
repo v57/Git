@@ -35,7 +35,9 @@ for target in package.targets {
       .product(name: "CryptoKit", package: "SwiftUI"), .product(name: "VaultKit", package: "Vault"),
     ]
   case "GitKit":
-    target.dependencies += [.product(name: "os", package: "SwiftUI")]
+    target.dependencies += [
+      .product(name: "os", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
+    ]
   default: break
   }
 }

@@ -28,18 +28,43 @@ public enum GitExecutable {
     return found
   }
 
-  public static let candidates = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
+  #if os(Windows)
+    /// Git for Windows: the PATH's git.exe first, then the installer's places.
+    public static var candidates: [String] {
+      let environment = ProcessInfo.processInfo.environment
+      let path = (environment["PATH"] ?? environment["Path"] ?? "").split(separator: ";").map {
+        String($0).trimmingCharacters(in: CharacterSet(charactersIn: "\"")) + "\\git.exe"
+      }
+      let programs = [environment["ProgramFiles"], environment["ProgramW6432"], environment["LOCALAPPDATA"].map { $0 + "\\Programs" }]
+        .compactMap { $0 }.flatMap { [$0 + "\\Git\\cmd\\git.exe", $0 + "\\Git\\bin\\git.exe"] }
+      return path + programs
+    }
+  #else
+    public static let candidates = ["/opt/homebrew/bin/git", "/usr/local/bin/git", "/usr/bin/git"]
+  #endif
 
   static func locate(customPath: String?) -> URL? {
-    let fm = FileManager.default
-    if let customPath, fm.isExecutableFile(atPath: customPath) {
+    if let customPath, isExecutable(customPath) {
       return URL(fileURLWithPath: customPath)
     }
-    for path in candidates where fm.isExecutableFile(atPath: path) {
-      if path == "/usr/bin/git", !hasDeveloperDirectory() { continue }
+    for path in candidates where isExecutable(path) {
+      #if os(macOS)
+        if path == "/usr/bin/git", !hasDeveloperDirectory() { continue }
+      #endif
       return URL(fileURLWithPath: path)
     }
     return nil
+  }
+
+  /// Whether `path` is a program. On Windows, an existing file: Foundation's `isExecutableFile` there asks the
+  /// shell (`SHGetFileInfo`) about every path that isn't a binary, missing ones included, once per PATH entry.
+  static func isExecutable(_ path: String) -> Bool {
+    #if os(Windows)
+      var isDirectory: ObjCBool = false
+      return FileManager.default.fileExists(atPath: path, isDirectory: &isDirectory) && !isDirectory.boolValue
+    #else
+      return FileManager.default.isExecutableFile(atPath: path)
+    #endif
   }
 
   /// `xcode-select -p` succeeds once Xcode or the Command Line Tools are installed.

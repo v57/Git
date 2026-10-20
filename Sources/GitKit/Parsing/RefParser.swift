@@ -50,7 +50,8 @@ enum RefParser {
       case "worktree":
         let url = URL(fileURLWithPath: value, isDirectory: true).standardizedFileURL
         item = Worktree(
-          url: url, isCurrent: url.resolvingSymlinksInPath() == current.resolvingSymlinksInPath())
+          // Paths, not URLs: one URL may end in a slash and the other not.
+          url: url, isCurrent: url.resolvingSymlinksInPath().path == current.resolvingSymlinksInPath().path)
       case "HEAD": item?.head = value
       case "branch":
         item?.branch = value.hasPrefix("refs/heads/") ? String(value.dropFirst(11)) : value
