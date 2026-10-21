@@ -40,7 +40,8 @@ enum RepositoryStore {
   }
 
   private static func inMemoryContainer(_ schema: Schema) -> ModelContainer {
-    let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true)
+    // Off CloudKit like the disk store: the app has iCloud entitlements, and CloudKit refuses unique constraints.
+    let memory = ModelConfiguration(schema: schema, isStoredInMemoryOnly: true, cloudKitDatabase: .none)
     return try! ModelContainer(for: schema, configurations: [memory])
   }
 
