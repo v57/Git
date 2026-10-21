@@ -312,6 +312,10 @@ public final class RepositorySession {
     }
   }
 
+  public func ignore(_ pattern: String) async {
+    await perform(.staging, failureTitle: "Couldn't add to .gitignore") { try await $0.ignore(pattern) }
+  }
+
   public func stageLines(_ lines: Set<Int>, of diff: FileDiff) async {
     await perform(.staging, failureTitle: "Couldn't stage lines") {
       try await $0.stageLines(lines, of: diff)

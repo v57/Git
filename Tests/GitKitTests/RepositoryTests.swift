@@ -289,6 +289,36 @@ struct TempRepo {
     #expect(try await temp.repo.status().isClean)
   }
 
+  @Test func ignorePatternsNameTheFileItsExtensionAndFolders() {
+    let patterns = Repository.ignorePatterns(for: "build/out [1]/log*.txt")
+    #expect(patterns.file == "/build/out \\[1]/log\\*.txt")
+    #expect(patterns.fileExtension == "*.txt")
+    #expect(patterns.folders == ["/build/out \\[1]/", "/build/"])
+    #expect(Repository.ignorePatterns(for: ".env").fileExtension == nil)
+    #expect(Repository.ignorePatterns(for: ".env").folders.isEmpty)
+  }
+
+  @Test func ignoreAppendsToGitignoreAndUntracksIgnoredFiles() async throws {
+    let temp = try await TempRepo()
+    try temp.write(".gitignore", "*.tmp")
+    try temp.write("build/a.o", "a\n")
+    try temp.write("keep.txt", "keep\n")
+    try await temp.commitAll("init")
+    try temp.write("build/b [1].o", "b\n")
+    try temp.write("notes*.log", "log\n")
+
+    try await temp.repo.ignore(Repository.ignorePatterns(for: "notes*.log").file)
+    try await temp.repo.ignore("/build/")
+    try await temp.repo.ignore("/build/")
+    #expect(try temp.read(".gitignore") == "*.tmp\n/notes\\*.log\n/build/\n")
+    // The tracked file is untracked but kept; the new ones are ignored.
+    #expect(try temp.read("build/a.o") == "a\n")
+    let status = try await temp.repo.status()
+    #expect(status.staged.map(\.path) == ["build/a.o"])
+    #expect(status.staged.first?.kind == .deleted)
+    #expect(status.unstaged.map(\.path) == [".gitignore"])
+  }
+
   @Test func discardStagedDropsIndexAndWorkingTreeChanges() async throws {
     let temp = try await TempRepo()
     try temp.write("a.txt", "a\n")

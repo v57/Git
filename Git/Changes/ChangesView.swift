@@ -169,11 +169,36 @@ private struct ChangeList: View {
     Button("Discard Changes…", systemImage: "trash", role: .destructive) {
       pendingDiscard = PendingDiscard(changes: [change], area: change.area)
     }
+    if change.kind != .deleted, change.path != ".gitignore" {
+      ignoreMenu(for: change)
+    }
     Divider()
     let url = session.repository.url.appendingPathComponent(change.path)
     Button("Open", systemImage: "arrow.up.right.square") { KitDesktop.open(url) }
     Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { RepositoryLibrary.reveal(url) }
     Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(change.path) }
+  }
+
+  /// Add to .gitignore: the file itself, or a submenu that also offers its extension and folders.
+  @ViewBuilder
+  private func ignoreMenu(for change: FileChange) -> some View {
+    let patterns = Repository.ignorePatterns(for: change.path)
+    let ignore = { (pattern: String) in Task { await session.ignore(pattern) } }
+    if patterns.fileExtension == nil, patterns.folders.isEmpty {
+      Button("Add to .gitignore", systemImage: "eye.slash") { _ = ignore(patterns.file) }
+    } else {
+      let folders = change.path.split(separator: "/").dropLast()
+      KitSubmenu("Add to .gitignore", systemImage: "eye.slash") {
+        Button(change.fileName, systemImage: "doc") { _ = ignore(patterns.file) }
+        if let pattern = patterns.fileExtension {
+          let ext = change.fileName.split(separator: ".").last.map(String.init) ?? ""
+          Button("All .\(ext) Files", systemImage: "asterisk") { _ = ignore(pattern) }
+        }
+        ForEach(Array(zip(patterns.folders, folders.indices.reversed())), id: \.0) { pattern, end in
+          Button(folders[...end].joined(separator: "/") + "/", systemImage: "folder") { _ = ignore(pattern) }
+        }
+      }
+    }
   }
 }
 

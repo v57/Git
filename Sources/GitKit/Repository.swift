@@ -834,3 +834,63 @@ extension Repository {
     }
   }
 }
+
+// MARK: - Ignoring
+
+extension Repository {
+  /// The `.gitignore` lines that ignore `path`: the file itself, every file with its extension and
+  /// each folder it sits in, the closest folder first. Paths are anchored at the root (`/build/`)
+  /// and escaped, so they match only what they name.
+  public static func ignorePatterns(for path: String) -> IgnorePatterns {
+    let components = path.split(separator: "/").map(String.init)
+    let folders = components.dropLast().indices.reversed().map { end in
+      "/" + components[...end].map(escapeIgnored).joined(separator: "/") + "/"
+    }
+    let name = components.last ?? path
+    // A dot that starts the name (`.env`) doesn't start an extension.
+    let dot = name.lastIndex(of: ".").flatMap { $0 > name.startIndex ? $0 : nil }
+    let ext = dot.map { String(name[name.index(after: $0)...]) } ?? ""
+    return IgnorePatterns(
+      file: "/" + components.map(escapeIgnored).joined(separator: "/"),
+      fileExtension: ext.isEmpty ? nil : "*." + escapeIgnored(ext),
+      folders: folders)
+  }
+
+  private static func escapeIgnored(_ component: String) -> String {
+    var escaped = ""
+    for character in component {
+      if "\\*?[".contains(character) { escaped.append("\\") }
+      escaped.append(character)
+    }
+    if escaped.hasSuffix(" ") { escaped.insert("\\", at: escaped.index(before: escaped.endIndex)) }
+    return escaped
+  }
+
+  /// Adds `pattern` to the `.gitignore` at the root unless it already has that line, then stops
+  /// tracking the files it ignores (they stay on disk), since git keeps tracking ignored files.
+  public func ignore(_ pattern: String) async throws {
+    let file = url.appendingPathComponent(".gitignore")
+    var text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+    let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
+    if !lines.contains(pattern) {
+      if !text.isEmpty, !text.hasSuffix("\n") { text += "\n" }
+      text += pattern + "\n"
+      try text.write(to: file, atomically: true, encoding: .utf8)
+    }
+    let tracked = try await git(["ls-files", "-z", "--cached", "--ignored", "--exclude=\(pattern)"]).stdout
+    if !tracked.isEmpty {
+      try await git(
+        ["rm", "--cached", "-f", "-q", "--pathspec-from-file=-", "--pathspec-file-nul"], input: tracked)
+    }
+  }
+}
+
+/// The ways to ignore one changed file (`Repository.ignorePatterns(for:)`).
+public struct IgnorePatterns: Sendable, Hashable {
+  /// The file itself, as `/docs/notes.txt`.
+  public var file: String
+  /// Every file with its extension, as `*.txt`; `nil` for a name without one.
+  public var fileExtension: String?
+  /// The folders that hold it, the closest first, as `/docs/`.
+  public var folders: [String]
+}
