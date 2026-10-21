@@ -10,6 +10,8 @@ import SwiftUI
 /// lines by line number. Without the file, the side is rebuilt from the hunks.
 nonisolated enum DiffHighlighter {
   static let maxFileSize = 1_000_000
+  /// The longest diff that gets colors and emphasized changes (about half a second of work).
+  static let maxLines = 20_000
 
   /// Whether `path` may be highlightable: a known name or extension, or no extension (a `#!`
   /// line may decide once the contents are read).
@@ -183,7 +185,8 @@ nonisolated enum DiffHighlighter {
 
   /// Tabs as four spaces (so the column width can be computed) and no carriage return.
   static func display(_ text: String) -> String {
-    withoutCarriageReturn(text).replacingOccurrences(of: "\t", with: "    ")
+    let line = withoutCarriageReturn(text)
+    return line.utf8.contains(UInt8(ascii: "\t")) ? line.replacingOccurrences(of: "\t", with: "    ") : line
   }
 }
 

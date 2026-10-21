@@ -29,7 +29,7 @@ struct HunkCards: View {
 
   @ViewBuilder
   private func card(_ hunk: DiffHunk) -> some View {
-    let lines = hunk.lines.map(kitLine)
+    let lines = content.lines[hunk.id]
     let header = hunk.section.isEmpty ? (content.diff.isNewFile ? "New file" : "") : hunk.section
     let range = "@@ -\(Self.range(hunk.oldStart, hunk.oldCount)) +\(Self.range(hunk.newStart, hunk.newCount)) @@"
     switch mode {
@@ -38,7 +38,7 @@ struct HunkCards: View {
     case .unstaged(let stage, let discard):
       HunkCard(
         header: header, range: range, lines: lines, selection: kitSelection(hunk),
-        stage: { chosen in stage(gitIDs(chosen, in: hunk)) }, overflow: .scroll
+        stage: { chosen in stage(Set(chosen.map(\.id))) }, overflow: .scroll
       )
       .kitContextMenu {
         Button("Discard Hunk…", systemImage: "trash", role: .destructive) { discard(PatchBuilder.lines(in: hunk)) }
@@ -47,7 +47,7 @@ struct HunkCards: View {
       HunkCard(
         header: header, range: range, lines: lines, isStaged: true, summary: summary(hunk),
         selection: kitSelection(hunk), unstage: { unstage(PatchBuilder.lines(in: hunk)) },
-        unstageLines: { chosen in unstage(gitIDs(chosen, in: hunk)) }, overflow: .scroll)
+        unstageLines: { chosen in unstage(Set(chosen.map(\.id))) }, overflow: .scroll)
     }
   }
 
@@ -56,37 +56,14 @@ struct HunkCards: View {
     count == 1 ? "\(start)" : "\(start),\(count)"
   }
 
-  /// The kit's line for a GitKit line, with its syntax colors.
-  private func kitLine(_ line: GitKit.DiffLine) -> ComponentKit.DiffLine {
-    let kind: ComponentKit.DiffLine.Kind =
-      switch line.kind {
-      case .added: .added
-      case .removed: .removed
-      case .context: .context
-      }
-    return ComponentKit.DiffLine(
-      kind, old: line.oldLine, new: line.newLine,
-      text: content.rendered[line.id] ?? AttributedString(DiffHighlighter.display(line.text)))
-  }
-
-  /// The kit's line ids (old and new numbers) to GitKit's.
-  private func ids(_ hunk: DiffHunk) -> [String: Int] {
-    Dictionary(
-      hunk.lines.map { ("\($0.oldLine ?? -1):\($0.newLine ?? -1)", $0.id) }, uniquingKeysWith: { a, _ in a })
-  }
-
-  /// GitKit's line ids for the kit's lines.
-  private func gitIDs(_ lines: [ComponentKit.DiffLine], in hunk: DiffHunk) -> Set<Int> {
-    let ids = ids(hunk)
-    return Set(lines.compactMap { ids[$0.id] })
-  }
-
-  private func kitSelection(_ hunk: DiffHunk) -> Binding<Set<String>> {
-    let ids = ids(hunk)
-    let inHunk = Set(ids.values)
+  /// The selection as the card sees it: the kit's lines carry GitKit's ids, so it's the same set, but the card's
+  /// changes only touch its own lines (a drag in one hunk keeps the lines chosen in the others).
+  private func kitSelection(_ hunk: DiffHunk) -> Binding<Set<Int>> {
+    // A hunk's line ids are consecutive.
+    let ids = (hunk.lines.first?.id ?? 0)..<((hunk.lines.last?.id ?? -1) + 1)
     return Binding(
-      get: { Set(ids.filter { selection.contains($0.value) }.keys) },
-      set: { kit in selection = selection.subtracting(inHunk).union(kit.compactMap { ids[$0] }) })
+      get: { selection },
+      set: { kit in selection = selection.filter { !ids.contains($0) }.union(kit.filter { ids.contains($0) }) })
   }
 
   /// "3 lines added, 1 removed", for a folded staged hunk.
