@@ -74,6 +74,11 @@ struct CompletedOperation: Equatable {
   private(set) var sessions: [String: RepositorySession] = [:]
   private(set) var viewStates: [String: RepositoryViewState] = [:]
   private(set) var summaries: [String: RepositorySummary] = [:]
+  /// When each repository was last committed to, pushed and changed, for the sidebar's sorting and filtering and
+  /// the All Repositories page.
+  private(set) var activities: [String: RepositoryActivity] = [:]
+  /// The All Repositories page is up instead of a repository's screen.
+  var showsAllRepositories = false
   private(set) var isImporting = false
   var isImporterPresented = false
   var isClonePresented = false
@@ -152,6 +157,7 @@ struct CompletedOperation: Equatable {
   func updateSummary(_ path: String, from session: RepositorySession) {
     guard let status = session.status else { return }
     summaries[path] = RepositorySummary(status)
+    Task { await refreshActivity(path) }
   }
 
   /// Keeps every repository's sidebar summary current without opening it: one FSEvents stream
@@ -199,21 +205,30 @@ struct CompletedOperation: Equatable {
 
   /// Reloads branch and change counts for the sidebar, a few repositories at a time.
   func refreshSummaries(_ paths: [String]) async {
-    await withTaskGroup(of: (String, RepositorySummary?).self) { group in
+    await withTaskGroup(of: (String, RepositorySummary?, RepositoryActivity?).self) { group in
       var pending = paths[...]
       func addNext() {
         guard let path = pending.popFirst() else { return }
         group.addTask {
-          let summary = try? await Repository(url: URL(fileURLWithPath: path)).summary()
-          return (path, summary)
+          let repository = Repository(url: URL(fileURLWithPath: path))
+          async let summary = try? repository.summary()
+          async let activity = try? repository.activity()
+          return (path, await summary, await activity)
         }
       }
       for _ in 0..<6 { addNext() }
-      for await (path, summary) in group {
+      for await (path, summary, activity) in group {
         if let summary { summaries[path] = summary } else { summaries[path] = nil }
+        if activities[path] != activity { activities[path] = activity }
         addNext()
       }
     }
+  }
+
+  /// Reloads one repository's dates (the open one, whose summary comes from its session).
+  func refreshActivity(_ path: String) async {
+    let activity = try? await Repository(url: URL(fileURLWithPath: path)).activity()
+    if activities[path] != activity { activities[path] = activity }
   }
 
   /// Adds every repository found in the dropped or picked folders. Returns the added paths.
@@ -312,6 +327,7 @@ struct CompletedOperation: Equatable {
       sessions[repository.path] = nil
       viewStates[repository.path] = nil
       summaries[repository.path] = nil
+      activities[repository.path] = nil
       context.delete(repository)
     }
     try? context.save()

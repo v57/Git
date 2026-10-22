@@ -13,6 +13,10 @@ import VaultKit
 /// slide aside, a row held over a group's middle goes into it (a closed one opens), and a row
 /// dragged out of the app is its folder. Collapsed, the section keeps the open repository visible
 /// and shows an icon for each other repository that needs attention.
+///
+/// The header's Sort and Filter menu orders a long list (by name, recent changes, last commit or last push), hides
+/// repositories unused for a week or without changes behind a Show More row, and groups by folder or not. Without
+/// folders, or sorted by date, the list doesn't reorder by dragging (a drag still moves a repository into a folder).
 struct RepositoryList: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
@@ -27,6 +31,13 @@ struct RepositoryList: View {
   /// The section's own state, saved to `storedCollapsed`: a defaults write drops the toggle's animation.
   @State private var isCollapsed = UserDefaults.standard.bool(forKey: "RepositoriesCollapsed")
   @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
+  @AppStorage("RepositoriesSort") private var sort = RepositorySort.name
+  @AppStorage("RepositoriesHideUnused") private var hidesUnused = false
+  @AppStorage("RepositoriesOnlyWithChanges") private var onlyWithChanges = false
+  @AppStorage("RepositoriesGroupByFolder") private var groupsByFolder = true
+  /// Show More: the repositories the filters hide, until the list is filtered again.
+  @State private var showsMore = false
+  @State private var showsOptions = false
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
 
@@ -38,14 +49,15 @@ struct RepositoryList: View {
   }
 
   /// What the list shows: the shown repositories, and the groups holding one. A group whose
-  /// name matches the filter shows all it holds.
+  /// name matches the filter shows all it holds. Sorted by a date, each group's items go newest first (a group by
+  /// its newest repository); without folders the repositories are one list.
   private func nodes(_ layout: SidebarLayout) -> [Node] {
     func nodes(in groupID: String?, groupMatches: Bool) -> [Node] {
-      layout.children(of: groupID).compactMap { item -> Node? in
+      let nodes = layout.children(of: groupID).compactMap { item -> Node? in
         switch item {
         case .repository(let repository):
           let shown =
-            (showsHidden || !repository.isHidden || repository.path == selection)
+            isListed(repository) && passesOptions(repository)
             && (groupMatches || filter.isEmpty || repository.name.localizedCaseInsensitiveContains(filter))
           return shown ? Node(item: item) : nil
         case .group(let group):
@@ -54,8 +66,47 @@ struct RepositoryList: View {
           return inner.isEmpty ? nil : Node(item: item, children: inner)
         }
       }
+      return sort == .name ? nodes : RepositoryOrder.sorted(nodes, by: sort, name: \.item.name, date: newest)
+    }
+    guard groupsByFolder else {
+      let repositories = layout.repositories().filter { repository in
+        isListed(repository) && passesOptions(repository)
+          && (filter.isEmpty || repository.name.localizedCaseInsensitiveContains(filter))
+      }
+      return RepositoryOrder.sorted(repositories, by: sort, name: \.name) { sort.date(library.activities[$0.path]) }
+        .map { Node(item: .repository($0)) }
     }
     return nodes(in: nil, groupMatches: false)
+  }
+
+  /// A node's date for the sort: a repository's own, a group's newest repository's.
+  private func newest(_ node: Node) -> Date? {
+    switch node.item {
+    case .repository(let repository): sort.date(library.activities[repository.path])
+    case .group: (node.children ?? []).compactMap(newest).max()
+    }
+  }
+
+  /// Not hidden (or Show Hidden is on), or the open one.
+  private func isListed(_ repository: SavedRepository) -> Bool {
+    showsHidden || !repository.isHidden || repository.path == selection
+  }
+
+  /// Passes the menu's filters (Hide Unused for a Week, Only With Changes); the open repository always does, and
+  /// every one does after Show More or while searching.
+  private func passesOptions(_ repository: SavedRepository, showingMore: Bool? = nil) -> Bool {
+    if showingMore ?? showsMore || !filter.isEmpty || repository.path == selection { return true }
+    if onlyWithChanges, library.summaries[repository.path]?.needsAttention != true { return false }
+    if hidesUnused, RepositoryOrder.isUnused(repository, activity: library.activities[repository.path]) {
+      return false
+    }
+    return true
+  }
+
+  /// The listed repositories the filters hide, for the Show More row.
+  private func filteredOut(_ layout: SidebarLayout) -> Int {
+    guard filter.isEmpty, hidesUnused || onlyWithChanges else { return 0 }
+    return layout.repositories().count { isListed($0) && !passesOptions($0, showingMore: false) }
   }
 
   /// The open groups' ids: those not collapsed, and every one while filtering. Opening and closing
@@ -104,27 +155,40 @@ struct RepositoryList: View {
     let layout = layout
     let nodes = nodes(layout)
     let hiddenCount = repositories.count { $0.isHidden }
+    let more = filteredOut(layout)
     KitSection(
-      "Repositories", meta: meta, systemImage: "folder", hue: .indigo,
+      "Repositories", meta: meta(layout, more: more), systemImage: "folder", hue: .indigo,
       status: library.isImporting ? .working : .idle,
       isExpanded: .init(get: { !isCollapsed }, set: { isCollapsed = !$0 })
     ) {
-      ReorderableOutline(
-        nodes, children: \.children, expanded: expanded(nodes),
-        move: { id, parent, index in move([id], into: parent, at: index, nodes: nodes) }
-      ) { node in
-        switch node.item {
-        case .repository(let repository): repositoryRow(repository, layout: layout)
-        case .group(let group): groupHeader(group, layout: layout)
+      if groupsByFolder {
+        ReorderableOutline(
+          nodes, children: \.children, expanded: expanded(nodes),
+          move: { id, parent, index in move([id], into: parent, at: index, nodes: nodes) }
+        ) { node in
+          switch node.item {
+          case .repository(let repository): repositoryRow(repository, layout: layout)
+          case .group(let group): groupHeader(group, layout: layout)
+          }
+        }
+        .dragsTogether(selected.count > 1 ? selected : []) { ids, parent, index in
+          move(ids, into: parent, at: index, nodes: nodes)
+        }
+        .exportsURL { node in
+          if case .repository(let repository) = node.item { repository.url } else { nil }
+        }
+        .dropTitle(root: "Repositories") { $0.item.name }
+      } else {
+        // One list in the sort's order: dragging would move repositories out of their folders.
+        ForEach(nodes) { node in
+          if case .repository(let repository) = node.item { repositoryRow(repository, layout: layout) }
         }
       }
-      .dragsTogether(selected.count > 1 ? selected : []) { ids, parent, index in
-        move(ids, into: parent, at: index, nodes: nodes)
+      if more > 0 || showsMore {
+        ShowMoreRow(count: more, isShowing: showsMore, reason: moreReason) {
+          withKitAnimation { showsMore.toggle() }
+        }
       }
-      .exportsURL { node in
-        if case .repository(let repository) = node.item { repository.url } else { nil }
-      }
-      .dropTitle(root: "Repositories") { $0.item.name }
       if hiddenCount > 0 && filter.isEmpty {
         Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hiddenCount) Hidden") {
           withKitAnimation { showsHidden.toggle() }
@@ -134,10 +198,23 @@ struct RepositoryList: View {
         .padding(.leading, 4)
       }
     } accessory: {
+      Button("Sort and Filter", systemImage: "line.3.horizontal.decrease") { showsOptions = true }
+        .help("All Repositories, sort and filter")
+        .kitMenu(isPresented: $showsOptions) { optionsMenu }
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
         .help("Add the Git repositories in a folder")
     }
     .help(attentionHelp(layout))
+    // A filter turned on again hides what Show More showed.
+    .onChange(of: [hidesUnused, onlyWithChanges]) { showsMore = false }
+    #if DEBUG
+      // --sort-menu opens the Sort and Filter menu (for screenshots).
+      .task {
+        guard LaunchScene.shared.flag("--sort-menu") else { return }
+        try? await Task.sleep(for: .seconds(2))
+        showsOptions = true
+      }
+    #endif
     .animation(.kit, value: visible(nodes).map(\.id))
     .onChange(of: isCollapsed) { storedCollapsed = isCollapsed }
     .onChange(of: selection, initial: true) { _, path in
@@ -161,15 +238,54 @@ struct RepositoryList: View {
 
   // MARK: Header
 
-  /// "5 repositories · 2 with changes", or what the import is doing.
-  private var meta: [String] {
+  /// "5 repositories · 2 with changes", "Recent changes · 14 of 72" while sorted by a date and filtered, or what
+  /// the import is doing.
+  private func meta(_ layout: SidebarLayout, more: Int) -> [String] {
     if library.isImporting { return ["Looking for repositories…"] }
     let shown = repositories.filter { !$0.isHidden }
     let attention = shown.count { library.summaries[$0.path]?.needsAttention == true }
-    return [
-      shown.count == 1 ? "1 repository" : "\(shown.count) repositories",
-      attention > 0 ? "\(attention) with changes" : "",
-    ]
+    let listed = layout.repositories().count(where: isListed)
+    let count =
+      more > 0 && !showsMore
+      ? "\(listed - more) of \(listed)" : shown.count == 1 ? "1 repository" : "\(shown.count) repositories"
+    if let order = sort.metaTitle { return [order, count] }
+    return [count, attention > 0 ? "\(attention) with changes" : ""]
+  }
+
+  /// The All Repositories page, then Sort By and Show, as on the board: the sort's options, then the filters and
+  /// the folders.
+  @ViewBuilder private var optionsMenu: some View {
+    Button("All Repositories", systemImage: "square.grid.2x2") {
+      withKitAnimation { library.showsAllRepositories = true }
+    }
+    Divider()
+    KitMenuSection("Sort By") {
+      KitMenuOptions(
+        selection: Binding(
+          get: { sort },
+          set: { new in
+            withKitAnimation {
+              sort = new
+              // Folders keep their own order: on by name, off by a date.
+              groupsByFolder = new == .name
+            }
+          }),
+        options: RepositorySort.allCases.map { ($0.title, $0) })
+    }
+    KitMenuSection("Show") {
+      Toggle("Hide Unused for a Week", isOn: $hidesUnused.animation(.kit))
+      Toggle("Only With Changes", isOn: $onlyWithChanges.animation(.kit))
+      Toggle("Group by Folder", isOn: $groupsByFolder.animation(.kit))
+    }
+  }
+
+  /// What Show More brings back.
+  private var moreReason: String {
+    switch (hidesUnused, onlyWithChanges) {
+    case (true, true): "unused or unchanged"
+    case (true, false): "unused for a week"
+    default: "without changes"
+    }
   }
 
   /// The other repositories that need attention, for the collapsed section's tooltip.
@@ -303,6 +419,7 @@ struct RepositoryList: View {
       selected = [path]
       anchor = path
       selection = path
+      if library.showsAllRepositories { withKitAnimation { library.showsAllRepositories = false } }
     }
   }
 
@@ -404,6 +521,30 @@ struct RepositoryList: View {
       }
     }
     return result
+  }
+}
+
+/// The row after the list for what its filters hide: "Show 58 More · unused for a week", or Show Fewer.
+private struct ShowMoreRow: View {
+  let count: Int
+  let isShowing: Bool
+  let reason: String
+  let action: () -> Void
+  @Environment(\.kitIdiom) private var idiom
+
+  var body: some View {
+    let title = isShowing ? "Show Fewer" : "Show \(count) More"
+    SidebarRow(title) {
+      Image(systemName: isShowing ? "chevron.up" : "chevron.down")
+        .font(.system(size: 11, weight: .semibold))
+        .foregroundStyle(.kitAccent)
+        .frame(width: KitMetrics.rowTile(idiom))
+    } trailing: {
+      if !isShowing { Text(reason).lineLimit(1) }
+    }
+    .title(Text(title).foregroundStyle(.kitAccent))
+    .action(action)
+    .help(isShowing ? "Hide the repositories the filters leave out" : "Show \(count) repositories \(reason)")
   }
 }
 

@@ -34,6 +34,7 @@ struct SidebarView: View {
         guard let mode, let path = shown else { return }
         let state = library.viewState(for: path)
         withKitAnimation {
+          library.showsAllRepositories = false
           state.mode = mode
           // Changes again leaves the "Merge complete" screen.
           if mode == .changes { state.completedOperation = nil }
@@ -44,7 +45,9 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var library = library
     KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
+      // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
       RepositoryList(selection: $selection, selected: $selected, filter: filter)
+        .kitSticky(top: .titleWhileVisible, bottom: .none)
       if let shown {
         RepositorySections(
           session: library.session(for: shown), state: library.viewState(for: shown),
@@ -122,6 +125,13 @@ struct SidebarView: View {
   private func importFolders(_ urls: [URL]) {
     Task {
       let added = await library.importFolders(urls, into: context)
+      #if DEBUG
+        // --select <path> opens that repository of the added ones (for screenshots).
+        if let path = LaunchScene.shared.value("--select"), added.contains(path) {
+          selection = path
+          return
+        }
+      #endif
       if let first = added.first { selection = first }
     }
   }
@@ -129,7 +139,8 @@ struct SidebarView: View {
 
 // MARK: - The open repository
 
-/// Workspace, Branches, Remotes, Tags and (when there are several) Worktrees.
+/// Workspace, Branches, Remotes, Tags and (when there are several) Worktrees. Below a long list of repositories,
+/// the Workspace card waits at the bottom of the sidebar and the Branches and Remotes titles under it.
 private struct RepositorySections: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
@@ -161,6 +172,7 @@ private struct RepositorySections: View {
         NewBranchSheet(session: session, startPoint: start.value == "HEAD" ? nil : start.value)
       }
       .branchDeletion($pendingDelete, session: session)
+      .kitSticky(top: .titleWhileVisible, bottom: .title)
     }
     let remotes = session.remotes.filter(matches)
     if !remotes.isEmpty {
@@ -179,6 +191,7 @@ private struct RepositorySections: View {
           .disabled(session.isBusy)
           .help("Fetch \(remotes.joined(separator: ", "))")
       }
+      .kitSticky(top: .titleWhileVisible, bottom: .title)
     }
     let tags = session.tags.filter { matches($0.name) }
     if !tags.isEmpty {
@@ -203,6 +216,7 @@ private struct RepositorySections: View {
           .help("Tag \(session.status?.branch ?? "HEAD")")
       }
       .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
+      .kitSticky(top: .titleWhileVisible, bottom: .none)
     }
     if session.worktrees.count > 1 {
       KitSection("Worktrees", meta: worktreesMeta, systemImage: "folder", hue: .teal) {
@@ -215,6 +229,7 @@ private struct RepositorySections: View {
           }
         }
       }
+      .kitSticky(top: .titleWhileVisible, bottom: .none)
     }
   }
 
@@ -248,7 +263,9 @@ private struct RepositorySections: View {
         SizedLiveIcon(hue: .blue, status: session.isRefreshing ? .working : .idle) { BranchGlyph() }
       },
       meta: { WorkspaceMeta(status: status) },
-      accessory: { EmptyView() })
+      accessory: { EmptyView() }
+    )
+    .kitSticky(top: .titleWhileVisible, bottom: .content)
   }
 
   // MARK: Meta lines
