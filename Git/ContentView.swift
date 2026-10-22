@@ -28,7 +28,10 @@ struct ContentView: View {
         .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
     } detail: {
       Group {
-        if let path = screenPath {
+        if library.showsAllRepositories {
+          AllRepositoriesView(selection: $selectedPath)
+            .transition(.page)
+        } else if let path = screenPath {
           // One screen for every repository: as another comes in, each title, count, card and row animates to its
           // values instead of the whole pane fading.
           RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
@@ -78,7 +81,11 @@ struct ContentView: View {
       #endif
     }
     #if DEBUG
-      .task { LaunchScene.shared.prepare(library: library, context: context) }
+      .task {
+        LaunchScene.shared.prepare(library: library, context: context)
+        // --all-repositories opens the All Repositories page.
+        if LaunchScene.shared.flag("--all-repositories") { library.showsAllRepositories = true }
+      }
       // The next screenshot scene: its repositories are added again (SidebarView), and it may want the Welcome
       // window instead.
       .onChange(of: LaunchScene.shared.generation) {

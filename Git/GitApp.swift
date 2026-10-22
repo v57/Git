@@ -27,10 +27,12 @@ struct GitApp: App {
     if syncs { Vault.shared.startSync() }
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
-      // --light draws the app in light mode, for screenshots.
+      // --light and --dark draw the app in that appearance, for screenshots.
       #if os(macOS)
         if ProcessInfo.processInfo.arguments.contains("--light") {
           DispatchQueue.main.async { NSApplication.shared.appearance = NSAppearance(named: .aqua) }
+        } else if ProcessInfo.processInfo.arguments.contains("--dark") {
+          DispatchQueue.main.async { NSApplication.shared.appearance = NSAppearance(named: .darkAqua) }
         }
       #endif
     #endif
