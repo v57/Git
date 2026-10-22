@@ -88,9 +88,9 @@ private struct CommitDetail: View {
     ) {
       Task { await session.revert(commit) }
     }
-    .sheet(item: $branchStart) { commit in NewBranchSheet(session: session, startPoint: commit.id) }
-    .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
-    .sheet(isPresented: $showsFullDiff) { fullDiff }
+    .kitSheet(item: $branchStart) { commit in NewBranchSheet(session: session, startPoint: commit.id) }
+    .kitSheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
+    .kitSheet(isPresented: $showsFullDiff) { fullDiff }
   }
 
   private var headerMeta: [String] {

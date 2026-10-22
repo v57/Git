@@ -9,8 +9,6 @@ struct ContentView: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.modelContext) private var context
-  @Environment(\.openWindow) private var openWindow
-  @Environment(\.dismissWindow) private var dismissWindow
   @SceneStorage("selectedRepository") private var selectedPath: String?
   @State private var columns = NavigationSplitViewVisibility.all
   /// The repository on screen: the selection once its first status has loaded (`showSelection`).
@@ -36,13 +34,9 @@ struct ContentView: View {
           // values instead of the whole pane fading.
           RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
         } else {
-          EmptyState(
-            systemImage: "folder", title: "No Repository Selected", message: "Choose a repository in the sidebar."
-          ) {
-            Button("Show Welcome Window") { openWindow(id: WelcomeWindow.id) }.buttonStyle(.kit)
-          }
-          .kitPane(.content)
-          .kitToolbar("Git") { EmptyView() } tools: {}
+          // No repository open: the welcome (clone, open, recents) is the main screen.
+          RepositoryWelcome()
+            .kitToolbar("Git") { EmptyView() } tools: {}
         }
       }
       .kitSidebarToggle(columnVisibility: $columns)
@@ -55,7 +49,7 @@ struct ContentView: View {
     }
     .focusedSceneValue(\.repositorySession, screenPath.map(library.session(for:)))
     .focusedSceneValue(\.repositoryViewState, screenPath.map(library.viewState(for:)))
-    .sheet(isPresented: $library.isClonePresented) { CloneSheet() }
+    .kitSheet(isPresented: $library.isClonePresented) { CloneSheet() }
     .onChange(of: library.isCreateRequested) { _, requested in
       guard requested else { return }
       library.isCreateRequested = false
@@ -85,16 +79,13 @@ struct ContentView: View {
         LaunchScene.shared.prepare(library: library, context: context)
         // --all-repositories opens the All Repositories page.
         if LaunchScene.shared.flag("--all-repositories") { library.showsAllRepositories = true }
+        // --clone opens the Clone sheet over the window.
+        if LaunchScene.shared.flag("--clone") { library.isClonePresented = true }
       }
-      // The next screenshot scene: its repositories are added again (SidebarView), and it may want the Welcome
-      // window instead.
+      // The next screenshot scene: its repositories are added again (SidebarView); with --welcome none is opened, so
+      // the welcome shows.
       .onChange(of: LaunchScene.shared.generation) {
         selectedPath = nil
-        if LaunchScene.shared.flag("--welcome") {
-          openWindow(id: WelcomeWindow.id)
-        } else {
-          dismissWindow(id: WelcomeWindow.id)
-        }
       }
     #endif
     .onChange(of: scenePhase) { _, phase in
@@ -195,27 +186,26 @@ struct RepositoryScreen: View {
         if old.state == new.state { state.completedOperation = nil }
       }
       .onChange(of: session.repository.url) { search = session.logQuery.search ?? "" }
-      .sheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
-      .alert(
-        session.failure?.title ?? "",
-        isPresented: .init(
-          get: { session.failure != nil }, set: { if !$0 { session.failure = nil } }),
-        presenting: session.failure
-      ) { failure in
+      .kitSheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
+      .kitSheet(item: .init(get: { session.failure }, set: { session.failure = $0 })) { failure in
         // GitHub refuses pushes that change workflows from a token without the workflow scope.
         if failure.message.contains("workflow"), failure.message.contains("scope") {
-          Button("Grant Access…") {
-            gitHubSignIn = GitHubSignInRequest(
-              permissions: gitHub.permissions.union(GitHubPermission.workflows.permissions))
+          MessageSheet(title: failure.title, message: failure.message) {
+            Button("Cancel") { session.failure = nil }
+              .keyboardShortcut(.cancelAction)
+            Button("Grant Access…") {
+              session.failure = nil
+              gitHubSignIn = GitHubSignInRequest(
+                permissions: gitHub.permissions.union(GitHubPermission.workflows.permissions))
+            }
+            .buttonStyle(.kitPrimary)
+            .keyboardShortcut(.defaultAction)
           }
-          Button("Cancel", role: .cancel) {}
         } else {
-          Button("OK") {}
+          MessageSheet(failure.title, message: failure.message)
         }
-      } message: { failure in
-        Text(failure.message)
       }
-      .sheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
+      .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
   }
 
   private struct ModeChange: Equatable {

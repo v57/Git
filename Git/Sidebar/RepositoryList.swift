@@ -223,16 +223,8 @@ struct RepositoryList: View {
         anchor = path
       }
     }
-    .alert(
-      "Rename Group",
-      isPresented: .init(get: { renaming != nil }, set: { if !$0 { renaming = nil } })
-    ) {
-      TextField("Name", text: $newName)
-      Button("Rename") {
-        let name = newName.trimmingCharacters(in: .whitespaces)
-        if let group = renaming, !name.isEmpty { library.rename(group, to: name) }
-      }
-      Button("Cancel", role: .cancel) {}
+    .kitSheet(item: $renaming) { group in
+      RenameGroupSheet(group: group, name: $newName)
     }
   }
 
@@ -521,6 +513,35 @@ struct RepositoryList: View {
       }
     }
     return result
+  }
+}
+
+/// Renames a group, over the window: its name in a field, Rename on Return.
+private struct RenameGroupSheet: View {
+  let group: VaultProjectGroup
+  @Binding var name: String
+  @Environment(RepositoryLibrary.self) private var library
+  @Environment(\.kitDismiss) private var dismiss
+
+  private var trimmed: String { name.trimmingCharacters(in: .whitespaces) }
+
+  var body: some View {
+    KitSheet(title: "Rename Group", meta: group.name, systemImage: "folder", hue: .indigo, width: 400) {
+      FormCard {
+        FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
+      }
+    } footer: {
+      Spacer(minLength: 0)
+      Button("Cancel") { dismiss() }
+        .keyboardShortcut(.cancelAction)
+      Button("Rename") {
+        library.rename(group, to: trimmed)
+        dismiss()
+      }
+      .buttonStyle(.kitPrimary)
+      .keyboardShortcut(.defaultAction)
+      .disabled(trimmed.isEmpty)
+    }
   }
 }
 

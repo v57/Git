@@ -173,13 +173,13 @@ private struct CommitList: View {
     .task(id: session.commits.first?.id) {
       if state.selectedCommit == nil { state.selectedCommit = layout.all.first?.id ?? session.commits.first?.id }
     }
-    .sheet(item: $branchStart) { commit in
+    .kitSheet(item: $branchStart) { commit in
       NewBranchSheet(session: session, startPoint: commit.id)
     }
-    .sheet(item: $tagTarget) { commit in
+    .kitSheet(item: $tagTarget) { commit in
       NewTagSheet(session: session, commit: commit)
     }
-    .sheet(item: $squashRequest) { request in
+    .kitSheet(item: $squashRequest) { request in
       SquashSheet(session: session, commits: request.commits) { select($0) }
     }
     .kitConfirmation(
@@ -672,7 +672,7 @@ private struct SquashSheet: View {
   /// Newest first.
   let commits: [Commit]
   let squashed: (Commit.ID) -> Void
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var summary: String
   @State private var details: String
 

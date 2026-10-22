@@ -51,8 +51,8 @@
       await withCheckedContinuation { opening = $0 }
     }
 
-    /// The scene has loaded in its window: the main window (`welcome` false) or the Welcome window. The other
-    /// window's word doesn't count.
+    /// The scene has loaded: a repository's screen (`welcome` false) or the welcome, the main window's screen with
+    /// no repository open (`--welcome`). The other screen's word doesn't count.
     func loaded(welcome: Bool) {
       guard flag("--welcome") == welcome else { return }
       if let opening {

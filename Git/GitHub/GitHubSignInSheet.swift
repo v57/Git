@@ -7,7 +7,7 @@ import SwiftUI
 /// arrives, so cancelling a change of permissions keeps the old ones.
 struct GitHubSignInSheet: View {
   @Environment(GitHubAccount.self) private var account
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var requested: GitHubPermissions
   /// Whether Continue was pressed; before that the sheet shows the chooser.
   @State private var started = false

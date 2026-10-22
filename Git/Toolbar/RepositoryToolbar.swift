@@ -310,7 +310,7 @@ struct BranchPopover: View {
     }
     .frame(width: 400, height: 440)
     .background(.kitPanel)
-    .sheet(isPresented: $isCreating) {
+    .kitSheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
     .branchDeletion($pendingDelete, session: session)
@@ -433,7 +433,7 @@ struct StashMenu: View {
           }
         }
       }
-      .sheet(isPresented: $isStashing) {
+      .kitSheet(isPresented: $isStashing) {
         StashSheet(session: session)
       }
       .kitConfirmation(
@@ -448,7 +448,7 @@ struct StashMenu: View {
 
 private struct StashSheet: View {
   let session: RepositorySession
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var message = ""
   @State private var includeUntracked = true
 
@@ -484,7 +484,7 @@ private struct StashSheet: View {
 struct NewBranchSheet: View {
   let session: RepositorySession
   let startPoint: String?
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var name = ""
   @State private var checkout = true
   @State private var isValid = false
@@ -535,7 +535,7 @@ struct NewBranchSheet: View {
 struct NewTagSheet: View {
   let session: RepositorySession
   let commit: Commit
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var name = ""
   @State private var message = ""
   @State private var isValid = false
@@ -598,7 +598,7 @@ private struct BranchDeletion: ViewModifier {
         "Delete \(branch?.name ?? "")?",
         isPresented: .init(get: { pending != nil }, set: { if !$0 { pending = nil } }),
         message: message, systemImage: "trash", buttons: buttons)
-      .sheet(item: $everywhere) { item in
+      .kitSheet(item: $everywhere) { item in
         DeleteEverywhereSheet(session: session, branch: item.branch, upstream: item.upstream)
       }
   }
@@ -636,7 +636,7 @@ private struct DeleteEverywhereSheet: View {
   let session: RepositorySession
   let branch: Branch
   let upstream: Branch
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var confirmation = ""
 
   private var remote: String { upstream.remoteName ?? "the remote" }

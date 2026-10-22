@@ -20,7 +20,7 @@ struct GitHubSettingsView: View {
       .animation(.kit, value: account.isSignedIn)
     }
     .frame(maxWidth: .infinity, alignment: .top)
-    .sheet(item: $request) { GitHubSignInSheet(permissions: $0.permissions) }
+    .kitSheet(item: $request) { GitHubSignInSheet(permissions: $0.permissions) }
   }
 
   private var signedOut: some View {

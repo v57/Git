@@ -78,33 +78,22 @@ struct SidebarView: View {
     ) { result in
       if case .success(let urls) = result { importFolders(urls) }
     }
-    .alert(
-      "Nothing to Add",
-      isPresented: .init(
-        get: { library.importMessage != nil }, set: { if !$0 { library.importMessage = nil } })
+    .kitSheet(
+      isPresented: .init(get: { library.importMessage != nil }, set: { if !$0 { library.importMessage = nil } })
     ) {
-      Button("OK") {}
-    } message: {
-      Text(library.importMessage ?? "")
+      MessageSheet("Nothing to Add", message: library.importMessage ?? "", systemImage: "folder", hue: .gray)
     }
-    .alert(
-      library.remoteFailure?.title ?? "",
-      isPresented: .init(
-        get: { library.remoteFailure != nil }, set: { if !$0 { library.remoteFailure = nil } }),
-      presenting: library.remoteFailure
-    ) { _ in
-      Button("OK") {}
-    } message: { failure in
-      Text(failure.message)
+    .kitSheet(item: $library.remoteFailure) { failure in
+      MessageSheet(failure.title, message: failure.message)
     }
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
       let shown = repositories.filter { !$0.isHidden }.map(\.path)
       library.watchSummaries(of: shown)
       #if DEBUG
-        // --add-folder <path> (repeatable) imports folders at launch (or a screenshot scene's), for testing.
-        // With --welcome the Welcome window adds them.
+        // --add-folder <path> (repeatable) imports folders at launch (or a screenshot scene's), for testing. With
+        // --welcome none opens, so the welcome shows them as recent.
         let scene = LaunchScene.shared
-        if !scene.folders.isEmpty, repositories.isEmpty, !scene.flag("--welcome") { importFolders(scene.folders) }
+        if !scene.folders.isEmpty, repositories.isEmpty { importFolders(scene.folders) }
       #endif
       await library.refreshSummaries(shown)
     }
@@ -126,6 +115,7 @@ struct SidebarView: View {
     Task {
       let added = await library.importFolders(urls, into: context)
       #if DEBUG
+        if LaunchScene.shared.flag("--welcome") { return }
         // --select <path> opens that repository of the added ones (for screenshots).
         if let path = LaunchScene.shared.value("--select"), added.contains(path) {
           selection = path
@@ -167,7 +157,7 @@ private struct RepositorySections: View {
         Button("New Branch", systemImage: "plus") { branchStart = session.status?.branch ?? "HEAD" }
           .help("Create a branch from \(session.status?.branch ?? "HEAD")")
       }
-      .sheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) {
+      .kitSheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) {
         start in
         NewBranchSheet(session: session, startPoint: start.value == "HEAD" ? nil : start.value)
       }
@@ -215,7 +205,7 @@ private struct RepositorySections: View {
           .disabled(session.headCommit == nil)
           .help("Tag \(session.status?.branch ?? "HEAD")")
       }
-      .sheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
+      .kitSheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
       .kitSticky(top: .titleWhileVisible, bottom: .none)
     }
     if session.worktrees.count > 1 {

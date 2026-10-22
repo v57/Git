@@ -8,7 +8,7 @@ import SwiftUI
 struct PublishRepositorySheet: View {
   let session: RepositorySession
   @Environment(GitHubAccount.self) private var account
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @State private var name: String
   @State private var description = ""
   /// The organization that will own it, or `nil` for the signed-in user.
@@ -98,7 +98,7 @@ struct PublishRepositorySheet: View {
     }
     .animation(.kit, value: account.isSignedIn)
     .animation(.kit, value: needsPrivateAccess)
-    .sheet(item: $signInRequest) { GitHubSignInSheet(permissions: $0.permissions) }
+    .kitSheet(item: $signInRequest) { GitHubSignInSheet(permissions: $0.permissions) }
     // Picks up organizations joined since sign-in.
     .task(id: account.isSignedIn) { await account.refresh() }
     .onAppear {

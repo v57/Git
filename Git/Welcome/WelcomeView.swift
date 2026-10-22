@@ -3,21 +3,12 @@ import GitKit
 import SwiftData
 import SwiftUI
 
-#if os(macOS)
-  import AppKit
-#endif
-
-/// The Welcome window, shown at launch: clone, open or create a repository on the left, recent
-/// repositories with their state on the right.
-struct WelcomeWindow: View {
-  static let id = "welcome"
-  static let showAtLaunchKey = "ShowWelcomeAtLaunch"
-
+/// The main window's screen while no repository is open: clone, open or create a repository, and the recent
+/// repositories with their state; a recent one opens in this window. The kit's inline welcome, in the detail pane
+/// (Git has no welcome window).
+struct RepositoryWelcome: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
-  @Environment(\.openWindow) private var openWindow
-  @Environment(\.dismissWindow) private var dismissWindow
-  @AppStorage(showAtLaunchKey) private var showAtLaunch = true
   @Query(sort: \SavedRepository.name) private var repositories: [SavedRepository]
   @State private var search = ""
 
@@ -29,35 +20,12 @@ struct WelcomeWindow: View {
       .sorted { ($0.lastOpenedAt ?? $0.addedAt) > ($1.lastOpenedAt ?? $1.addedAt) }
   }
 
-  /// The safe-area inset of a hidden title bar.
-  private static let titleBarInset: CGFloat = 32
-
   var body: some View {
-    @Bindable var library = library
-    // The window is 480 × 640 including the hidden title bar: the clear frame sizes the window
-    // without the title bar's inset, and the welcome fills it, title bar area included.
-    Color.clear
-      .frame(width: 480, height: 640 - Self.titleBarInset)
-      .overlay {
-        welcome
-          .frame(height: 640)
-          .ignoresSafeArea()
-      }
-      .sheet(isPresented: $library.isClonePresented) { CloneSheet() }
-      .onChange(of: library.requestedSelection) { _, path in
-        if path != nil { showMainWindow() }
-      }
-      .task(id: sceneGeneration) { await prepare() }
-  }
-
-  /// The kit's round close button stands in for the window's own buttons.
-  private var welcome: some View {
     KitWelcome(
-      appName: "Git", showAtLaunch: $showAtLaunch,
+      appName: "Git",
       emptyTitle: search.isEmpty ? "No Repositories" : "No Matches",
       emptyMessage: search.isEmpty ? "Repositories you open appear here." : "No repository is named “\(search)”.",
       searchText: $search, searchPrompt: "Search Repositories",
-      close: { dismissWindow(id: Self.id) },
       onDrop: { urls in
         Task {
           if let first = await library.importFolders(urls, into: context).first {
@@ -91,29 +59,15 @@ struct WelcomeWindow: View {
         }
       }
     }
-  }
-
-  private func prepare() async {
-    library.vaultProjects.start(context: context, library: library)
-    #if DEBUG
-      // --add-folder works here too, so the Recent list can be filled for screenshots.
-      let scene = LaunchScene.shared
-      scene.prepare(library: library, context: context)
-      // A later screenshot scene in the main window, which adds its repositories.
-      if !scene.flag("--welcome"), sceneGeneration > 0 {
-        showMainWindow()
-        return
-      }
-      let saved = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-      if !scene.folders.isEmpty, saved.isEmpty {
-        await library.importFolders(scene.folders, into: context)
-      }
-    #endif
-    let paths = ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).map(\.path)
-    await library.refreshSummaries(paths)
-    #if DEBUG
-      LaunchScene.shared.loaded(welcome: true)
-    #endif
+    .kitPane(.content)
+    .task(id: repositories.map(\.path)) {
+      await library.refreshSummaries(repositories.map(\.path))
+      #if DEBUG
+        // A --welcome screenshot scene is ready once its folders are in.
+        let scene = LaunchScene.shared
+        if scene.flag("--welcome"), !repositories.isEmpty || scene.folders.isEmpty { scene.loaded(welcome: true) }
+      #endif
+    }
   }
 
   /// A repository's state as a chip: the operation in progress, its changes, what to push or
@@ -130,15 +84,6 @@ struct WelcomeWindow: View {
     return ("Up to date", .green)
   }
 
-  /// Sets the window up again for each screenshot scene opened in place.
-  private var sceneGeneration: Int {
-    #if DEBUG
-      LaunchScene.shared.generation
-    #else
-      0
-    #endif
-  }
-
   // MARK: Actions
 
   private func openLocal() {
@@ -151,21 +96,6 @@ struct WelcomeWindow: View {
       }
     }
   }
-
-  /// Brings up the main window (opening one if there is none) and closes this one.
-  private func showMainWindow() {
-    #if os(macOS)
-      let main = NSApp.windows.first { $0.identifier?.rawValue.hasPrefix(MainWindow.id) == true }
-      if let main {
-        main.makeKeyAndOrderFront(nil)
-      } else {
-        openWindow(id: MainWindow.id)
-      }
-    #else
-      openWindow(id: MainWindow.id)
-    #endif
-    dismissWindow(id: Self.id)
-  }
 }
 
 enum MainWindow {
@@ -176,7 +106,7 @@ enum MainWindow {
 struct CloneSheet: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
-  @Environment(\.dismiss) private var dismiss
+  @Environment(\.kitDismiss) private var dismiss
   @AppStorage("CloneLocation") private var location = Self.defaultLocation
   @State private var remote = ""
   @State private var name = ""

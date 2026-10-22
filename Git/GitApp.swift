@@ -41,17 +41,6 @@ struct GitApp: App {
   /// The saved repositories, in `RepositoryStore.url` (or in memory with `--in-memory`).
   private static let modelContainer = RepositoryStore.makeContainer()
 
-  /// Whether the Welcome window opens at launch instead of the main window. Debug launches that
-  /// add folders go straight to the main window unless `--welcome` is passed.
-  private static let showsWelcomeAtLaunch: Bool = {
-    let arguments = ProcessInfo.processInfo.arguments
-    #if DEBUG
-      if arguments.contains("--welcome") { return true }
-      if arguments.contains("--add-folder") { return false }
-    #endif
-    return UserDefaults.standard.object(forKey: WelcomeWindow.showAtLaunchKey) as? Bool ?? true
-  }()
-
   /// Screenshot captures build every row at once, so nothing waits to be built as it's taken.
   private static let buildsLazily: Bool = {
     #if DEBUG
@@ -71,25 +60,11 @@ struct GitApp: App {
         .componentKit(accent: .accentColor)
     }
     .defaultSize(width: 1440, height: 900)
-    .defaultLaunchBehavior(Self.showsWelcomeAtLaunch ? .suppressed : .presented)
     .modelContainer(Self.modelContainer)
     .commands {
       RepositoryCommands(library: library)
       UpdaterCommands(updater: updater)
     }
-
-    Window("Welcome to Git", id: WelcomeWindow.id) {
-      WelcomeWindow()
-        .environment(library)
-        .environment(github)
-        .kitLazyLoading(Self.buildsLazily)
-        .componentKit(accent: .accentColor)
-    }
-    .windowStyle(.hiddenTitleBar)
-    .windowResizability(.contentSize)
-    .defaultPosition(.center)
-    .defaultLaunchBehavior(Self.showsWelcomeAtLaunch ? .presented : .suppressed)
-    .modelContainer(Self.modelContainer)
 
     Settings {
       SettingsView()
