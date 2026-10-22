@@ -364,6 +364,28 @@ struct TempRepo {
     _ = parent
   }
 
+  @Test func activityHasTheLastCommitPushAndChange() async throws {
+    let remote = try await TempRepo(bare: true)
+    let clone = try await TempRepo(cloning: remote.root, name: "clone")
+    // Nothing yet: an unborn branch with no upstream.
+    var activity = try await clone.repo.activity()
+    #expect(activity.lastCommit == nil && activity.lastPush == nil && activity.lastChange == nil)
+
+    try clone.write("a.txt", "a\n")
+    try await clone.commitAll("First trip")
+    try await clone.repo.push()
+    try clone.write("b.txt", "b\n")
+    activity = try await clone.repo.activity()
+    #expect(activity.lastCommitSubject == "First trip")
+    #expect(activity.lastCommit != nil && activity.lastPush != nil)
+    #expect(activity.lastChange != nil)
+    #expect(activity.lastWorkedOn == [activity.lastCommit!, activity.lastChange!].max())
+
+    // A fetch isn't a push.
+    let reflog = "1700000300\0fetch: fast-forward\n1700000200\0update by push\n1700000100\0update by push\n"
+    #expect(Repository.lastPush(inReflog: reflog) == Date(timeIntervalSince1970: 1_700_000_200))
+  }
+
   @Test func publishAddsTheRemoteAndTracksIt() async throws {
     let remote = try await TempRepo(bare: true)
     let temp = try await TempRepo(in: remote.root.deletingLastPathComponent())
