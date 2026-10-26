@@ -531,7 +531,6 @@ private struct RenameGroupSheet: View {
         FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
       }
     } footer: {
-      Spacer(minLength: 0)
       Button("Cancel") { dismiss() }
         .keyboardShortcut(.cancelAction)
       Button("Rename") {

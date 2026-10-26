@@ -25,7 +25,6 @@ struct MessageSheet<Buttons: View>: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 4)
     } footer: {
-      Spacer(minLength: 0)
       buttons
     }
   }
