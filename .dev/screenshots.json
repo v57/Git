@@ -1,0 +1,34 @@
+{
+  "build": { "scheme": "Git", "project": "Git.xcodeproj" },
+  "appearances": ["light", "dark"],
+  "variables": { "DEMO": "$ROOT/.build/screenshots-demo" },
+  "watch": ["Git", "Sources", "Tools/screenshots"],
+  "mac": { "window": [1440, 900] },
+  "scenes": [
+    {
+      "id": "01-history",
+      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "history", "--all-branches", "--select-commit", "2"],
+      "caption": "Every branch at a glance"
+    },
+    {
+      "id": "02-changes",
+      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "changes", "--select-change", "Sources/Atlas/TripStore.swift"],
+      "caption": "Stage a whole file, a hunk or a single line"
+    },
+    {
+      "id": "03-conflicts",
+      "arguments": ["--in-memory", "--add-folder", "$DEMO/Merging", "--mode", "changes", "--select-change", "Sources/Atlas/TripStore.swift"],
+      "caption": "Resolve conflicts side by side"
+    },
+    {
+      "id": "04-branches",
+      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "history", "--show-branches"],
+      "caption": "Switch branches without losing your place"
+    },
+    {
+      "id": "05-welcome",
+      "arguments": ["--in-memory", "--welcome", "--add-folder", "$DEMO/Projects"],
+      "caption": "Every repository on your Mac in one list"
+    }
+  ]
+}
