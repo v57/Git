@@ -59,7 +59,8 @@ public struct Repository: Sendable, Hashable, Identifiable {
   ) async throws -> Repository {
     try await runner.run(
       ["clone", "--progress", "--", remote, destination.path],
-      in: destination.deletingLastPathComponent(), environment: GitCredentials.environment(),
+      in: destination.deletingLastPathComponent(),
+      environment: GitCredentials.environment(account: runner.credentialAccount),
       progress: progress)
     return Repository(url: destination, runner: runner)
   }
@@ -710,15 +711,18 @@ extension Repository {
     try await git(["remote", "add", "--", name, url])
   }
 
+  /// The environment network commands run with: the runner's account's credentials.
+  private var credentials: [String: String] { GitCredentials.environment(account: runner.credentialAccount) }
+
   public func fetch(progress: (@Sendable (String) -> Void)? = nil) async throws {
     try await git(
-      ["fetch", "--all", "--prune", "--progress"], environment: GitCredentials.environment(),
+      ["fetch", "--all", "--prune", "--progress"], environment: credentials,
       progress: progress)
   }
 
   /// `git pull` with the user's pull settings (merge, rebase, ff-only).
   public func pull(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(["pull", "--progress"], environment: GitCredentials.environment(), progress: progress)
+    try await git(["pull", "--progress"], environment: credentials, progress: progress)
   }
 
   /// Pushes the current branch. A branch without an upstream is pushed to its push remote (or
@@ -736,7 +740,7 @@ extension Repository {
       let remote = try await pushRemote(for: branch)
       arguments += ["--set-upstream", remote, "HEAD"]
     }
-    try await git(arguments, environment: GitCredentials.environment(), progress: progress)
+    try await git(arguments, environment: credentials, progress: progress)
   }
 
   public func deleteRemoteBranch(_ branch: Branch, progress: (@Sendable (String) -> Void)? = nil)
@@ -749,7 +753,7 @@ extension Repository {
     do {
       try await git(
         ["push", "--progress", "--force-with-lease=\(ref):\(branch.sha)", remote, "--delete", ref],
-        progress: progress)
+        environment: credentials, progress: progress)
     } catch let error as GitError where error.message.contains("(stale info)") {
       throw GitError(
         arguments: error.arguments, exitCode: error.exitCode,

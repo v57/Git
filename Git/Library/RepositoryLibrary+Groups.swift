@@ -352,12 +352,14 @@ extension RepositoryLibrary {
     guard !paths.isEmpty else { return }
     for path in paths { remoteActivity[path] = action }
     var failures: [(name: String, message: String)] = []
+    // Each with the GitHub sign-in of its account.
+    let runners = paths.map { ($0, runner(for: $0)) }
     await withTaskGroup(of: (String, String?).self) { group in
-      var pending = paths[...]
+      var pending = runners[...]
       func addNext() {
-        guard let path = pending.popFirst() else { return }
+        guard let (path, runner) = pending.popFirst() else { return }
         group.addTask {
-          let repository = Repository(url: URL(fileURLWithPath: path, isDirectory: true))
+          let repository = Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner)
           do {
             switch action {
             case .fetch: try await repository.fetch()

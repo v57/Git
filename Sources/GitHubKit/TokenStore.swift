@@ -143,6 +143,19 @@ public struct KeychainTokenStore: TokenStore {
   }
 #endif
 
+extension KeychainTokenStore {
+  /// The vault account Personal is (`VaultAccount.personal.id`).
+  public static let personalAccountID = "personal"
+
+  /// The GitHub sign-in of one vault account. Personal's is `shared`, unchanged; another account's sits beside it
+  /// under its own service (`dev.v57.github.<accountID>`, same access group), so signing in or out there leaves
+  /// Personal's alone, and every v57 app finds the same item for the account.
+  public static func forAccount(_ accountID: String) -> KeychainTokenStore {
+    guard accountID != personalAccountID else { return shared }
+    return KeychainTokenStore(service: "\(shared.service).\(accountID)", accessGroup: shared.accessGroup)
+  }
+}
+
 /// Keeps the credential in memory, for tests and previews.
 public final class MemoryTokenStore: TokenStore, @unchecked Sendable {
   private let lock = NSLock()

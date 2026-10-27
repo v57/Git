@@ -246,4 +246,12 @@ final class ScopedTransport: HTTPTransport, @unchecked Sendable {
     #expect(account.permissions.repositories == .publicOnly)
     #expect(account.user?.login == "octocat")
   }
+
+  @Test func keepsOneSignInPerVaultAccount() {
+    // Personal keeps the item every v57 app had before accounts.
+    #expect(KeychainTokenStore.forAccount("personal").service == KeychainTokenStore.shared.service)
+    let other = KeychainTokenStore.forAccount("acme")
+    #expect(other.service == "dev.v57.github.acme")
+    #expect(other.accessGroup == KeychainTokenStore.shared.accessGroup)
+  }
 }

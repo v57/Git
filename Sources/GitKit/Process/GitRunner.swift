@@ -67,10 +67,15 @@ public struct GitRunner: Sendable {
   public var extraEnvironment: [String: String]
   /// Runs git elsewhere instead of launching this machine's git (always set on iOS, which has none).
   public var transport: (any GitTransport)?
+  /// Whose `GitCredentials` clone, fetch, pull and push use; `nil` for the default ones.
+  public var credentialAccount: String?
 
-  public init(extraEnvironment: [String: String] = [:], transport: (any GitTransport)? = nil) {
+  public init(
+    extraEnvironment: [String: String] = [:], transport: (any GitTransport)? = nil, credentialAccount: String? = nil
+  ) {
     self.extraEnvironment = extraEnvironment
     self.transport = transport
+    self.credentialAccount = credentialAccount
   }
 
   /// Runs `git <arguments>` in `directory`.

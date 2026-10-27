@@ -2,6 +2,7 @@ import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftUI
+import VaultKit
 import VaultUI
 
 enum SettingsKeys {
@@ -17,7 +18,7 @@ struct SettingsView: View {
   var body: some View {
     KitSettings(selection: $pane) {
       SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
-      SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { GitHubSettingsView() }
+      SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { AccountGitHubSettings() }
       SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
         VaultAccountsSettings()
       }
@@ -52,5 +53,33 @@ private struct GeneralSettingsView: View {
       resolved = GitExecutable.current?.path
       version = await GitExecutable.version()
     }
+  }
+}
+
+/// Settings › GitHub for one vault account: the frontmost window's, or the one picked at the top (shown while
+/// there are accounts beside Personal). Each account signs in on its own (`GitHubAccount.forAccount`).
+private struct AccountGitHubSettings: View {
+  @State private var vaults = Vaults.shared
+  @State private var frontmost = FrontmostAccount.shared
+  /// The account picked here; nil follows the frontmost window.
+  @State private var picked: String?
+
+  private var accountID: String {
+    // A deleted account falls back to Personal.
+    vaults.account(id: picked ?? frontmost.id)?.id ?? VaultAccount.personal.id
+  }
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 14) {
+      if !vaults.accounts.isEmpty {
+        KitAccountPicker(
+          accounts: vaults.allAccounts.map(\.kitAccount),
+          selection: Binding(get: { accountID }, set: { picked = $0 }), style: .compact)
+      }
+      GitHubSettingsView()
+        .environment(GitHubAccount.forAccount(accountID))
+        .id(accountID)
+    }
+    .onChange(of: frontmost.id) { picked = nil }
   }
 }

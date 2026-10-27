@@ -1,4 +1,5 @@
 import ComponentKit
+import GitHubKit
 import GitKit
 import SwiftData
 import SwiftUI
@@ -104,6 +105,16 @@ struct CompletedOperation: Equatable {
     vaultProjects = VaultProjects(vault: vault)
   }
 
+  /// Repositories of another account that `open` showed in this window, by path, with their account (nil for
+  /// Personal).
+  private var otherAccounts: [String: String?] = [:]
+
+  /// How git runs in a repository: with the GitHub sign-in of the account it belongs to (`SavedRepository.accountID`,
+  /// `GitCredentials`' account, nil for Personal), which is the window's for every repository it lists.
+  func runner(for path: String) -> GitRunner {
+    GitRunner(credentialAccount: otherAccounts[path] ?? (vault.isPersonal ? nil : vault.accountID))
+  }
+
   /// Whether a repository is in this window's account (`SavedRepository.accountID`).
   func owns(_ repository: SavedRepository) -> Bool { vaultProjects.owns(repository) }
 
@@ -133,7 +144,8 @@ struct CompletedOperation: Equatable {
 
   func session(for path: String) -> RepositorySession {
     if let session = sessions[path] { return session }
-    let session = RepositorySession(url: URL(fileURLWithPath: path, isDirectory: true))
+    let session = RepositorySession(
+      repository: Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner(for: path)))
     sessions[path] = session
     return session
   }
@@ -290,7 +302,12 @@ struct CompletedOperation: Equatable {
   func open(_ url: URL, into context: ModelContext) {
     let path = url.standardizedFileURL.path
     let existing = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
-    if existing.contains(where: { $0.path == path }) {
+    if let saved = existing.first(where: { $0.path == path }) {
+      if !owns(saved) {
+        // Pushes there use its own account's sign-in, loaded now so git has the token.
+        otherAccounts[path] = saved.accountID
+        _ = GitHubAccount.forAccount(saved.accountID ?? VaultAccount.personal.id)
+      }
       requestedSelection = path
       return
     }

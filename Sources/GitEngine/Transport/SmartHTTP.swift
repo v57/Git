@@ -110,7 +110,7 @@ final class SmartHTTP: Sendable {
     return request
   }
 
-  private var hasCredential: Bool { baseURL.host.flatMap(GitCredentials.credential(for:)) != nil }
+  private var hasCredential: Bool { baseURL.host.flatMap { GitCredentials.credential(for: $0) } != nil }
 
   private func load(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     do {

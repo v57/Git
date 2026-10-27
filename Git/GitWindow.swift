@@ -1,3 +1,4 @@
+import GitHubKit
 import SwiftUI
 import VaultKit
 import VaultUI
@@ -48,17 +49,31 @@ struct GitWindow: View {
   }
 }
 
-/// The window's content on one account.
+/// The window's content on one account, with that account's GitHub sign-in.
 private struct AccountWindow: View {
   @State private var library: RepositoryLibrary
+  @State private var github: GitHubAccount
+  @Environment(\.appearsActive) private var appearsActive
 
   init(vault: Vault) {
     _library = State(initialValue: RepositoryLibrary(vault: vault))
+    // Restored before the library runs git, so its pushes have the account's token.
+    _github = State(initialValue: GitHubAccount.forAccount(vault.accountID))
   }
 
   var body: some View {
     ContentView()
       .environment(library)
+      .environment(github)
       .focusedSceneValue(\.repositoryLibrary, library)
+      .onChange(of: appearsActive, initial: true) { _, active in
+        if active { FrontmostAccount.shared.id = library.vault.accountID }
+      }
   }
+}
+
+/// The account of the main window that was frontmost last, whose GitHub sign-in Settings shows.
+@MainActor @Observable final class FrontmostAccount {
+  static let shared = FrontmostAccount()
+  var id = VaultAccount.personal.id
 }

@@ -203,11 +203,13 @@ struct CloneSheet: View {
     }
     let remote = remote.trimmingCharacters(in: .whitespaces)
     let progress = progress
+    // With the GitHub sign-in of the window's account, which the clone joins.
+    let runner = library.runner(for: destination.path)
     error = nil
     cloning = Task {
       defer { cloning = nil }
       do {
-        try await Repository.clone(remote, to: destination) { line in
+        try await Repository.clone(remote, to: destination, runner: runner) { line in
           Task { @MainActor in progress.line = line }
         }
         library.open(destination, into: context)

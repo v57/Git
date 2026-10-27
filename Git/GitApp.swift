@@ -8,7 +8,6 @@ import VaultKit
 
 @main
 struct GitApp: App {
-  @State private var github = GitHubAccount.app
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
 
   /// Updates from GitHub Releases (Git.zip, built by Dev's release tool from release.env): checked
@@ -24,6 +23,8 @@ struct GitApp: App {
     #endif
     // The repository list syncs with the other v57 apps and devices through the vault.
     if syncs { Vault.shared.startSync() }
+    // Personal's GitHub sign-in hands git its token at launch, as before accounts.
+    _ = GitHubAccount.app
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
       // --light and --dark draw the app in that appearance, for screenshots.
@@ -51,9 +52,8 @@ struct GitApp: App {
 
   var body: some Scene {
     WindowGroup("Git", id: MainWindow.id) {
-      // Each window shows one vault account and keeps its own repository list (GitWindow).
+      // Each window shows one vault account, with its own repository list and GitHub sign-in (GitWindow).
       GitWindow()
-        .environment(github)
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
         .kitLazyLoading(Self.buildsLazily)
         .componentKit(accent: .accentColor)
@@ -67,7 +67,6 @@ struct GitApp: App {
 
     Settings {
       SettingsView()
-        .environment(github)
         .componentKit(accent: .accentColor)
     }
   }

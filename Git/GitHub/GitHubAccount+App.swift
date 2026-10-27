@@ -4,28 +4,38 @@ import GitHubKit
 import GitKit
 
 extension GitHubAccount {
-  /// The app's account. Its token is the v57 apps' shared sign-in (`KeychainTokenStore.shared`, in
-  /// the shared keychain group and iCloud Keychain), so Markdown and Dev are signed in too. With
-  /// access to private repositories, git uses it for github.com over HTTPS instead of gh or
-  /// osxkeychain; a token limited to public repositories can't push to private ones, so git keeps
-  /// the user's own credentials then.
-  static let app: GitHubAccount = {
+  /// Personal's sign-in: the v57 apps' shared one (`KeychainTokenStore.shared`, in the shared keychain group and
+  /// iCloud Keychain), so Markdown and Dev are signed in too. The iPhone and iPad app has only this one.
+  static var app: GitHubAccount { forAccount(KeychainTokenStore.personalAccountID) }
+
+  private static var signIns: [String: GitHubAccount] = [:]
+
+  /// The GitHub sign-in of a vault account (`KeychainTokenStore.forAccount`, the one Markdown and Dev use for it),
+  /// made and restored the first time a window or Settings asks for it. With access to private repositories, git
+  /// uses it for github.com over HTTPS in that account's repositories (`GitCredentials`' account, nil for
+  /// Personal) instead of gh or osxkeychain; a token limited to public repositories can't push to private ones, so
+  /// git keeps the user's own credentials then.
+  static func forAccount(_ accountID: String) -> GitHubAccount {
+    if let account = signIns[accountID] { return account }
+    let isPersonal = accountID == KeychainTokenStore.personalAccountID
     let account = GitHubAccount(
       // The "Git" OAuth App (github.com/settings/applications/3928259), with device flow on.
-      clientID: "Ov23liDnMAUwLO9o0eyX", store: KeychainTokenStore.shared)
+      clientID: "Ov23liDnMAUwLO9o0eyX", store: KeychainTokenStore.forAccount(accountID))
+    let gitAccount = isPersonal ? nil : accountID
     account.onCredentialChange = { credential in
       let forGit = credential.flatMap { $0.permissions.repositories == .all ? $0 : nil }
       GitCredentials.set(
-        forGit.map { GitCredential(username: $0.login, password: $0.token) }, for: "github.com")
+        forGit.map { GitCredential(username: $0.login, password: $0.token) }, for: "github.com", account: gitAccount)
     }
+    signIns[accountID] = account
     #if DEBUG
       // Screenshots and test launches don't touch the keychain.
       if ProcessInfo.processInfo.arguments.contains("--in-memory") { return account }
     #endif
-    moveLegacyToken()
+    if isPersonal { moveLegacyToken() }
     account.restore()
     return account
-  }()
+  }
 
   /// Moves a token saved by builds before the shared sign-in into it.
   private static func moveLegacyToken() {

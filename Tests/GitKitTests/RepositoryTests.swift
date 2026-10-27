@@ -438,6 +438,25 @@ struct TempRepo {
       ["credential", "approve"], input: request("other.test", credential), environment: environment)
     #expect(try String(contentsOf: saved, encoding: .utf8).contains("other.test"))
   }
+
+  @Test func eachAccountHasItsOwnCredentials() {
+    let host = "accounts-\(UUID().uuidString.prefix(8).lowercased()).test"
+    let account = "acme-\(UUID().uuidString.prefix(8))"
+    GitCredentials.set(GitCredential(username: "octo", password: "default"), for: host)
+    GitCredentials.set(GitCredential(username: "acme-bot", password: "acme"), for: host, account: account)
+    defer {
+      GitCredentials.set(nil, for: host)
+      GitCredentials.set(nil, for: host, account: account)
+    }
+    #expect(GitCredentials.credential(for: host)?.password == "default")
+    #expect(GitCredentials.credential(for: host, account: account)?.password == "acme")
+    #expect(GitCredentials.environment().values.contains("default"))
+    #expect(!GitCredentials.environment().values.contains("acme"))
+    let accounts = GitCredentials.environment(account: account)
+    #expect(accounts.values.contains("acme") && !accounts.values.contains("default"))
+    // An account without a sign-in leaves git to the user's own helpers.
+    #expect(GitCredentials.environment(account: "nobody-\(UUID().uuidString)").isEmpty)
+  }
 }
 
 @Suite struct HistoryEditingTests {

@@ -19,23 +19,34 @@ public struct GitCredential: Sendable, Hashable {
 /// cleared, so git neither reads the user's stored credential nor saves the app's token anywhere.
 /// The token reaches git only through that one process's environment, never its arguments, which
 /// other users can read with `ps`.
+///
+/// Each account (an app's sign-in, e.g. a vault account's GitHub sign-in) has its own credentials;
+/// `nil` is the default one. A repository uses its runner's `credentialAccount`, so two windows
+/// signed in to different accounts push with their own tokens.
 public enum GitCredentials {
-  private static let store = OSAllocatedUnfairLock<[String: GitCredential]>(initialState: [:])
-
-  /// Sets the credential for `host` (e.g. `github.com`), or removes it with `nil`.
-  public static func set(_ credential: GitCredential?, for host: String) {
-    store.withLock { $0[host.lowercased()] = credential }
+  private struct Key: Hashable {
+    var account: String?
+    var host: String
   }
 
-  public static func credential(for host: String) -> GitCredential? {
-    store.withLock { $0[host.lowercased()] }
+  private static let store = OSAllocatedUnfairLock<[Key: GitCredential]>(initialState: [:])
+
+  /// Sets the credential for `host` (e.g. `github.com`) in `account`, or removes it with `nil`.
+  public static func set(_ credential: GitCredential?, for host: String, account: String? = nil) {
+    store.withLock { $0[Key(account: account, host: host.lowercased())] = credential }
   }
 
-  /// The environment for a network command: config entries in `GIT_CONFIG_COUNT` form, which
-  /// git reads after every config file, and the credentials themselves. Empty without
-  /// credentials.
-  static func environment() -> [String: String] {
-    let credentials = store.withLock { $0 }.sorted { $0.key < $1.key }
+  public static func credential(for host: String, account: String? = nil) -> GitCredential? {
+    store.withLock { $0[Key(account: account, host: host.lowercased())] }
+  }
+
+  /// The environment for a network command with `account`'s credentials: config entries in
+  /// `GIT_CONFIG_COUNT` form, which git reads after every config file, and the credentials
+  /// themselves. Empty without credentials, so git uses the user's own helpers.
+  static func environment(account: String? = nil) -> [String: String] {
+    let credentials = store.withLock { store in
+      store.compactMap { $0.key.account == account ? ($0.key.host, $0.value) : nil }
+    }.sorted { $0.0 < $1.0 }
     guard !credentials.isEmpty else { return [:] }
     var environment: [String: String] = [:]
     var count = 0
