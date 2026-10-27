@@ -14,8 +14,19 @@ nonisolated struct LoadedDiff: Sendable {
   @concurrent static func load(
     _ target: DiffTarget, repository: Repository, isDark: Bool, ignoreWhitespace: Bool = false
   ) async throws -> LoadedDiff? {
-    guard let diff = try await repository.diff(target, ignoreWhitespace: ignoreWhitespace)
-    else { return nil }
+    try await load(
+      target, isDark: isDark,
+      diff: { try await repository.diff(target, ignoreWhitespace: ignoreWhitespace) },
+      contents: { await repository.contents(of: $0, at: $1) })
+  }
+
+  /// Loads the diff from wherever `diff` and `contents` read it (in the iOS app, a repository on the device, which
+  /// GitEngine reads, or one on a Mac).
+  @concurrent static func load(
+    _ target: DiffTarget, isDark: Bool, diff: @Sendable () async throws -> FileDiff?,
+    contents: @Sendable (String, FileRevision) async -> Data?
+  ) async throws -> LoadedDiff? {
+    guard let diff = try await diff() else { return nil }
     var rendered: [Int: AttributedString] = [:]
     if !diff.isBinary, diff.lineCount <= DiffHighlighter.maxLines, DiffHighlighter.mayHighlight(diff.path) {
       var oldText: String?
@@ -32,10 +43,10 @@ nonisolated struct LoadedDiff: Sendable {
         sides = (parent.map(FileRevision.commit), .commit(sha))
       }
       if !diff.isNewFile, let revision = sides.0 {
-        oldText = await repository.contents(of: oldPath, at: revision).flatMap(Self.text)
+        oldText = await contents(oldPath, revision).flatMap(Self.text)
       }
       if !diff.isDeletedFile, let revision = sides.1 {
-        newText = await repository.contents(of: newPath, at: revision).flatMap(Self.text)
+        newText = await contents(newPath, revision).flatMap(Self.text)
       }
       rendered = DiffHighlighter.render(diff, oldText: oldText, newText: newText, isDark: isDark)
     }

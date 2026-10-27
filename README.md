@@ -1,7 +1,8 @@
 # Git
 
-A Git client for macOS: a library (`GitKit`) that does everything git-related and a small SwiftUI app (`Git`)
-on top of it.
+A Git client for macOS, iPhone and iPad: a library (`GitKit`) that does everything git-related and a small
+SwiftUI app (`Git`) on top of it. On iPhone and iPad, `GitEngine` (git in Swift) handles repositories on the
+device, and GitKit runs your Mac's git over SSH for repositories there (see [iPhone and iPad](#iphone-and-ipad)).
 
 The app shows commit history, colored diffs with word-level highlights, and the working tree's
 staged and unstaged files. You can:
@@ -50,6 +51,13 @@ other repository that needs attention.
       Discovery/  RepoDiscovery: finds repositories inside a folder; RepoGrouping: groups them by folder
       Session/    RepositorySession (@Observable state + actions), RepositoryWatcher (FSEvents)
       Repository.swift   every git operation, as async methods on a Sendable struct
+    Sources/GitEngine/            git in Swift, for repositories on iPhone and iPad: LocalRepository
+                                  (+Status/History/Staging/Branches/Remotes) speaking GitKit's models;
+      Objects/ Pack/ Refs/        object IDs, zlib and the loose store; pack and .idx reading, deltas, the
+                                  streaming indexer and the pack writer; refs, lock files, upstreams, refspecs
+      Config/ Index/ Ignore/      config files; the index (v2–v4); wildmatch and .gitignore
+      Status/ Diff/ Walk/         status; Myers diffs with xdiff's sliding, hunks, tree diffs and renames;
+      Checkout/ Transport/        history walks; checkout; pkt-lines, smart HTTP, upload-pack v2/v0, receive-pack
     Sources/GitHubKit/            GitHub sign-in (OAuth device flow) for chosen GitHubPermissions, the token
                                   and its granted scopes in the app's own keychain item (KeychainTokenStore),
                                   the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
@@ -70,6 +78,10 @@ other repository that needs attention.
       Welcome/    the Welcome window: clone, open, new repository, recent repositories
       GitHub/     the app's GitHubAccount (client ID, hands its token to GitCredentials), the
                   sign-in sheet and its animated connection header, Settings › GitHub, Publish sheet
+    Git-iOS/                      the iPhone and iPad app (target Git iOS); a few of Git/'s files are shared into it
+      Local/      LocalRepositories (the app's Documents folder: clone, create, delete), the commit author
+      Remote/     RemoteRepositories (the vault's projects and saved folders on SSH hosts), SSHGitTransport
+      Repository/ GitBackend (one protocol over GitEngine and GitKit), RepositoryModel, Changes, History, diff
 
 The UI is ComponentKit (`../Component`): the kit's sidebar, sections, toolbar title and tool cards, inspector,
 sheets, buttons and badges. Screens, panels and selections change with the kit's one animation, `Animation.kit`
@@ -112,11 +124,30 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
 - **Not sandboxed.** The app is distributed with Developer ID and the hardened runtime, because it runs git and
   your hooks on arbitrary folders.
 
+## iPhone and iPad
+
+The app lists two kinds of repositories:
+- **On this iPhone or iPad.** Clone one over HTTPS or create one. It lives in the app's folder, which the Files
+  app shows under Git. `GitEngine` reads and writes it with no git binary. It supports changes and diffs, staging
+  whole files, discarding, commits, history, creating and switching branches, fetch, fast-forward pull and
+  push. Sign in to GitHub in Settings to clone and push private repositories. Commits use the repository's
+  `user.name`/`user.email`, or the name and email from Settings.
+- **On your devices.** The vault's projects on Macs of your Hub are listed by themselves; Open on a Mac adds
+  a folder on any SSH host saved in the Vault app. Git logs in with this device's key, and GitKit runs the
+  Mac's own git there. `GitRunner.transport` sends each git call down a channel of one SSH connection
+  (`SSHConnection` from `../SSH`), and files are read and written with `cat`. So everything Changes does on
+  the Mac works, line staging and amend included, and the Mac's config, hooks and credentials apply. Status
+  refreshes every few seconds instead of from FSEvents.
+
+GitEngine compares itself with real git in its tests. It has no `.gitattributes`, autocrlf, submodules,
+shallow clones or SHA-256 repositories yet, and push sends the current branch only, never forced.
+
 ## Usage
 
 ```bash
 swift build && swift test
 xcodebuild -project Git.xcodeproj -scheme Git -destination 'platform=macOS' build
+xcodebuild -workspace Git-Local.xcworkspace -scheme "Git iOS" -destination 'platform=iOS Simulator,name=<an arm64 simulator>' build
 ```
 
 The app's v57 packages (Code, Vault, UpdateKit) come from GitHub's `main` branch. To work on them together, clone

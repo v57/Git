@@ -8,6 +8,7 @@ import SwiftUI
 struct GitHubSignInSheet: View {
   @Environment(GitHubAccount.self) private var account
   @Environment(\.kitDismiss) private var dismiss
+  @Environment(\.kitIdiom) private var idiom
   @State private var requested: GitHubPermissions
   /// Whether Continue was pressed; before that the sheet shows the chooser.
   @State private var started = false
@@ -54,9 +55,10 @@ struct GitHubSignInSheet: View {
       }
       .id(step)
       .transition(.page)
-      .padding([.horizontal, .bottom], 28)
+      .padding([.horizontal, .bottom], idiom == .phone ? 20 : 28)
     }
-    .frame(width: 540)
+    // A phone's sheet is as wide as the screen.
+    .frame(width: idiom == .phone ? nil : 540)
     .animation(.kit, value: step)
     .onDisappear {
       if step == .waiting { account.cancelSignIn() } else { account.endSignIn() }
@@ -78,6 +80,7 @@ struct GitHubSignInSheet: View {
 
 private struct ChooseStep: View {
   @Environment(GitHubAccount.self) private var account
+  @Environment(\.kitIdiom) private var idiom
   @Binding var requested: GitHubPermissions
   let start: () -> Void
   let cancel: () -> Void
@@ -93,7 +96,8 @@ private struct ChooseStep: View {
           .font(.system(size: 12, weight: .semibold))
           .foregroundStyle(.kitSecondary)
           .padding(.horizontal, 2)
-        HStack(spacing: 8) {
+        // Side by side, or one above the other on a phone.
+        (idiom == .phone ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))) {
           RepositoryOption(
             title: "Public and private", scope: "repo",
             detail: "Read and write every repository you can access.",
@@ -105,6 +109,7 @@ private struct ChooseStep: View {
             isSelected: requested.repositories == .publicOnly
           ) { requested.repositories = .publicOnly }
         }
+        .fixedSize(horizontal: false, vertical: idiom == .phone)
       }
 
       VStack(spacing: 0) {
@@ -114,22 +119,27 @@ private struct ChooseStep: View {
       }
       .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
 
-      HStack(spacing: 8) {
+      // The buttons go under the scopes on a phone.
+      (idiom == .phone
+        ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 12)) : AnyLayout(HStackLayout(spacing: 8)))
+      {
         (Text("Requests ") + Text(requested.scopes.joined(separator: " · ")).font(.system(size: 11).monospaced()))
           .font(.system(size: 11))
           .foregroundStyle(.kitSecondary)
           .contentTransition(.interpolate)
           .animation(.kit, value: requested)
-        Spacer()
-        Button("Cancel", action: cancel)
-          .buttonStyle(.kit)
-          .keyboardShortcut(.cancelAction)
-        Button(action: start) {
-          Label("Continue on GitHub", systemImage: "arrow.up.right")
-            .labelStyle(TrailingIconLabelStyle())
+          .frame(maxWidth: .infinity, alignment: .leading)
+        HStack(spacing: 8) {
+          Button("Cancel", action: cancel)
+            .buttonStyle(.kit)
+            .keyboardShortcut(.cancelAction)
+          Button(action: start) {
+            Label("Continue on GitHub", systemImage: "arrow.up.right")
+              .labelStyle(TrailingIconLabelStyle())
+          }
+          .buttonStyle(.kitPrimary)
+          .keyboardShortcut(.defaultAction)
         }
-        .buttonStyle(.kitPrimary)
-        .keyboardShortcut(.defaultAction)
       }
       .padding(.top, 2)
     }
@@ -286,6 +296,7 @@ private struct CopyLabel: View {
 private struct DeviceCodeView: View {
   let code: String
   @State private var shown = false
+  @Environment(\.kitIdiom) private var idiom
 
   var body: some View {
     HStack(spacing: 6) {
@@ -295,7 +306,7 @@ private struct DeviceCodeView: View {
             Text("–").foregroundStyle(.kitTertiary).frame(width: 14)
           } else {
             Text(String(character))
-              .frame(width: 40, height: 54)
+              .frame(width: idiom == .phone ? 32 : 40, height: 54)
               .background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 9, style: .continuous))
               .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.separator))
           }
