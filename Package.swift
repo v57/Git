@@ -73,5 +73,29 @@ package.targets.append(
         ["Combine", "FoundationNetworking", "SwiftUIPortability"].flatMap { ["-Xfrontend", "-import-module", "-Xfrontend", $0] }),
     ]))
 package.products.append(.library(name: "GitWinUI", type: .dynamic, targets: ["GitApp"]))
+#elseif os(Linux)
+// The app on SwiftUI's GTK backend: an executable built from the Xcode project's sources with its settings
+// (V57_LOCAL=1 swift build --product Git; SwiftUI's Linux/scripts/build-app stages it).
+// Not Dev's DevScreenshots: Dev's Linux app depends on this package, and SwiftPM 6.4 hangs resolving a cycle of
+// packages; the app builds without its screenshot scenes (`canImport(DevScreenshots)`).
+package.dependencies += [v57("Component"), v57("UpdateKit"), v57("Code")]
+package.targets.append(
+  .executableTarget(
+    name: "GitApp",
+    dependencies: [
+      "GitKit", "GitHubKit", .product(name: "SwiftUI", package: "SwiftUI"), .product(name: "SwiftData", package: "SwiftUI"),
+      .product(name: "SQLite3", package: "SwiftUI"), .product(name: "ComponentKit", package: "Component"),
+      .product(name: "UpdateKit", package: "UpdateKit"), .product(name: "VaultKit", package: "Vault"),
+      .product(name: "VaultUI", package: "Vault"), .product(name: "CodeHighlighting", package: "Code"),
+    ],
+    path: "Git", exclude: ["Assets.xcassets", "Git.entitlements", "AppIcon.icon"],
+    swiftSettings: [
+      .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
+      // On Apple platforms `import Foundation` brings Combine (ObservableObject, @Published), URLSession and the
+      // file APIs SwiftUIPortability adds along: every file gets them here too.
+      .unsafeFlags(
+        ["Combine", "FoundationNetworking", "SwiftUIPortability"].flatMap { ["-Xfrontend", "-import-module", "-Xfrontend", $0] }),
+    ]))
+package.products.append(.executable(name: "Git", targets: ["GitApp"]))
 #endif
 #endif
