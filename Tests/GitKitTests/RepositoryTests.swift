@@ -126,6 +126,19 @@ struct TempRepo {
     #expect(text.contains("line 2\n") && text.contains("LINE 15\n"))
   }
 
+  @Test func stagesSelectedLinesOfACRLFFile() async throws {
+    let temp = try await TempRepo()
+    try temp.write("w.txt", "one\r\ntwo\r\nthree\r\n")
+    try await temp.commitAll("init")
+    try temp.write("w.txt", "ONE\r\ntwo\r\nTHREE\r\n")
+    let diff = try #require(try await temp.repo.diff(.unstaged(path: "w.txt", untracked: false)))
+    #expect(diff.lines.count == 5)
+    let first = Set(diff.lines.filter { $0.isChange && $0.text.lowercased() == "one\r" }.map(\.id))
+    #expect(first.count == 2)
+    try await temp.repo.stageLines(first, of: diff)
+    #expect(try await temp.index("w.txt") == "ONE\r\ntwo\r\nthree\r\n")
+  }
+
   @Test func stagesPartOfAnUntrackedFile() async throws {
     let temp = try await TempRepo()
     try temp.write("a.txt", "a\n")

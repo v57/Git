@@ -168,6 +168,13 @@ struct DiffParserTests {
     #expect(files[4].path == "café.txt" && files[4].isModeChangeOnly)
   }
 
+  @Test func keepsCarriageReturns() throws {
+    let text = "diff --git a/w.txt b/w.txt\n--- a/w.txt\n+++ b/w.txt\n@@ -1,2 +1,2 @@\n one\r\n-two\r\n+TWO\r\n"
+    let file = try #require(DiffParser.parse(text).first)
+    #expect(file.lines.map(\.text) == ["one\r", "two\r", "TWO\r"])
+    #expect(file.additions == 1 && file.deletions == 1)
+  }
+
   @Test func flagsInvalidUTF8() {
     var data = Data("diff --git a/l.txt b/l.txt\n--- a/l.txt\n+++ b/l.txt\n@@ -1 +1 @@\n-caf".utf8)
     data.append(0xE9)

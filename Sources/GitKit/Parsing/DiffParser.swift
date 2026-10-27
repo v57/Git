@@ -19,7 +19,8 @@ enum DiffParser {
   }
 
   static func parse(_ text: String) -> [FileDiff] {
-    var lines = text.split(separator: "\n", omittingEmptySubsequences: false)[...]
+    // Split on the scalar: "\r\n" is one Character, so a CRLF file would be one line. Lines keep their "\r".
+    var lines = text.unicodeScalars.split(separator: "\n", omittingEmptySubsequences: false).map { Substring($0) }[...]
     if lines.last == "" { lines.removeLast() }
     var files: [FileDiff] = []
     var current: FileDiff?
