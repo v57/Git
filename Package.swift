@@ -7,15 +7,23 @@ let package = Package(
   products: [
     .library(name: "GitKit", targets: ["GitKit"]),
     .library(name: "GitHubKit", targets: ["GitHubKit"]),
+    .library(name: "GitEngine", targets: ["GitEngine"]),
   ],
   targets: [
     .target(name: "GitKit", swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
     .target(name: "GitHubKit", swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
+    // Git in Swift for repositories on iPhone and iPad, which have no git binary.
+    .target(
+      name: "GitEngine", dependencies: ["GitKit"],
+      swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], linkerSettings: [.linkedLibrary("z")]),
     .testTarget(
       name: "GitKitTests", dependencies: ["GitKit"],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
     .testTarget(
       name: "GitHubKitTests", dependencies: ["GitHubKit"],
+      swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
+    .testTarget(
+      name: "GitEngineTests", dependencies: ["GitEngine", "GitKit"],
       swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
   ])
 
@@ -34,6 +42,8 @@ for target in package.targets {
     target.dependencies += [
       .product(name: "CryptoKit", package: "SwiftUI"), .product(name: "VaultKit", package: "Vault"),
     ]
+  case "GitEngine":
+    target.dependencies += [.product(name: "CryptoKit", package: "SwiftUI")]
   case "GitKit":
     target.dependencies += [
       .product(name: "os", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
