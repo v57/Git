@@ -7,6 +7,8 @@ struct CommitQueue {
 
   var isEmpty: Bool { items.isEmpty }
   var ids: [ObjectID] { items.map(\.id) }
+  /// The date of the commit `pop` returns next.
+  var newestDate: Int? { items.first?.date }
 
   private func before(_ lhs: Int, _ rhs: Int) -> Bool {
     let a = items[lhs]
@@ -92,11 +94,15 @@ enum RevWalk {
     }
     for id in left { try mark(id, 1) }
     for id in right { try mark(id, 2) }
-    while let id = queue.pop() {
+    // The oldest commit walked while only one side reached it: a queued commit as old or older may still be its
+    // descendant on the other side (commits made in the same second share a date) and has to pass the news on.
+    var oldestOneSided = Int.max
+    while let date = queue.newestDate, let id = queue.pop() {
       let flag = flags[id] ?? 0
+      if flag != 3 { oldestOneSided = min(oldestOneSided, date) }
       for parent in (try? store.commit(id).parents) ?? [] { try mark(parent, flag) }
-      // Done when every queued commit is reachable from both sides.
-      if queue.ids.allSatisfy({ flags[$0] == 3 }) { break }
+      // Done when every queued commit is reachable from both sides and newer than none of the one-sided ones.
+      if let newest = queue.newestDate, newest < oldestOneSided, queue.ids.allSatisfy({ flags[$0] == 3 }) { break }
     }
     var onlyLeft: [ObjectID] = []
     var onlyRight: [ObjectID] = []

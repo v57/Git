@@ -51,6 +51,14 @@ for target in package.targets {
   default: break
   }
 }
+#if os(Linux)
+// zlib under Apple's module name for GitEngine (`apt install zlib1g-dev`).
+package.targets.append(.systemLibrary(name: "zlib", path: "Sources/zlib", providers: [.apt(["zlib1g-dev"])]))
+for target in package.targets where target.name == "GitEngine" {
+  target.dependencies.append("zlib")
+}
+// RepositoryWatcher runs on inotify (SwiftUIPortability's DirectoryWatcher), which GitKit already depends on.
+#endif
 #if os(Windows)
 // The app: a DLL the SwiftUI WinUI host loads (SwiftUI's Windows/scripts/build-app.ps1 -PackagePath <this package>
 // -Product GitWinUI), built from the Xcode project's sources with its settings.

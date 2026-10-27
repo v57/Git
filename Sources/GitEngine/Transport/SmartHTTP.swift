@@ -1,6 +1,19 @@
 import Foundation
 import GitKit
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+
+  /// A response's bytes. swift-corelibs-foundation has no `URLSession.bytes(for:)`: the body arrives whole.
+  struct ResponseBytes: AsyncSequence {
+    typealias Element = UInt8
+    let data: Data
+    func makeAsyncIterator() -> DataByteIterator { DataByteIterator(data) }
+  }
+#else
+  typealias ResponseBytes = URLSession.AsyncBytes
+#endif
+
 /// A ref a server advertises.
 struct RemoteRef: Equatable {
   var name: String
@@ -75,16 +88,21 @@ final class SmartHTTP: Sendable {
   }
 
   /// POSTs `body` to `service` and returns the response's bytes as they arrive.
-  func post(_ service: String, body: Data, version2: Bool) async throws -> URLSession.AsyncBytes {
+  func post(_ service: String, body: Data, version2: Bool) async throws -> ResponseBytes {
     var request = request(baseURL.appendingPathComponent(service))
     request.httpMethod = "POST"
     request.httpBody = body
     request.setValue("application/x-\(service)-request", forHTTPHeaderField: "Content-Type")
     request.setValue("application/x-\(service)-result", forHTTPHeaderField: "Accept")
     if version2 { request.setValue("version=2", forHTTPHeaderField: "Git-Protocol") }
-    let (bytes, response): (URLSession.AsyncBytes, URLResponse)
+    let (bytes, response): (ResponseBytes, URLResponse)
     do {
-      (bytes, response) = try await session.bytes(for: request)
+      #if canImport(FoundationNetworking)
+        let (data, answer) = try await session.data(for: request)
+        (bytes, response) = (ResponseBytes(data: data), answer)
+      #else
+        (bytes, response) = try await session.bytes(for: request)
+      #endif
     } catch {
       throw Self.networkError(error, host: baseURL.host)
     }

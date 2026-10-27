@@ -1,6 +1,6 @@
 import Foundation
 
-#if os(Windows)
+#if os(Windows) || os(Linux)
   import SwiftUIPortability
 #endif
 
@@ -216,9 +216,10 @@ public struct GitRunner: Sendable {
       return try Self.check(result, arguments: fullArguments, allowedExitCodes: allowedExitCodes)
     }
 
-    #if os(Windows)
+    #if os(Windows) || os(Linux)
       /// git as a `ChildProcess`: on Windows a `Process` child inherits every handle the app can pass on (other gits'
-      /// pipes, files being replaced), so gits running side by side kept each other's output open and blocked writes.
+      /// pipes, files being replaced), so gits running side by side kept each other's output open and blocked writes;
+      /// on Linux swift-corelibs-foundation's `Process`es started side by side waited on one another's exit.
       private func launch(
         _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
         environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
@@ -435,7 +436,9 @@ private final class RunState: @unchecked Sendable {
 
   private func resumeIfDone() {
     let done = lock.withLock { () -> (CheckedContinuation<GitResult, any Error>, GitResult)? in
-      guard openStreams == 0, let exitCode, let continuation else { return nil }
+      // After a timeout git is gone, but a process it started (an alias, a hook, a credential helper) may keep the
+      // pipes open: don't wait for their end.
+      guard openStreams == 0 || timedOut, let exitCode, let continuation else { return nil }
       self.continuation = nil
       let result = GitResult(stdout: stdout, stderr: stderr, exitCode: exitCode, timedOut: timedOut)
       return (continuation, result)
@@ -473,7 +476,7 @@ private actor ProcessLimiter {
 }
 
 /// Lets the cancellation handler terminate a process that may not have started yet.
-#if os(Windows)
+#if os(Windows) || os(Linux)
   /// The running git, terminated on cancellation (even one that hasn't started yet).
   private final class ChildBox: @unchecked Sendable {
     private let lock = NSLock()

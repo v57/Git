@@ -17,11 +17,16 @@ struct FileStat: Equatable {
   static func of(_ path: String) -> FileStat? {
     var info = stat()
     guard lstat(path, &info) == 0 else { return nil }
+    #if canImport(Darwin)
+      let (ctime, mtime) = (info.st_ctimespec, info.st_mtimespec)
+    #else
+      let (ctime, mtime) = (info.st_ctim, info.st_mtim)
+    #endif
     return FileStat(
-      ctimeSeconds: UInt32(truncatingIfNeeded: info.st_ctimespec.tv_sec),
-      ctimeNanoseconds: UInt32(truncatingIfNeeded: info.st_ctimespec.tv_nsec),
-      mtimeSeconds: UInt32(truncatingIfNeeded: info.st_mtimespec.tv_sec),
-      mtimeNanoseconds: UInt32(truncatingIfNeeded: info.st_mtimespec.tv_nsec),
+      ctimeSeconds: UInt32(truncatingIfNeeded: ctime.tv_sec),
+      ctimeNanoseconds: UInt32(truncatingIfNeeded: ctime.tv_nsec),
+      mtimeSeconds: UInt32(truncatingIfNeeded: mtime.tv_sec),
+      mtimeNanoseconds: UInt32(truncatingIfNeeded: mtime.tv_nsec),
       device: UInt32(truncatingIfNeeded: info.st_dev), inode: UInt32(truncatingIfNeeded: info.st_ino),
       uid: info.st_uid, gid: info.st_gid, size: UInt32(truncatingIfNeeded: info.st_size),
       mode: UInt32(info.st_mode))

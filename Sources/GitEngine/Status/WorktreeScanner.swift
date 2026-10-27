@@ -99,7 +99,12 @@ struct WorktreeScanner {
     var names: [(String, Bool)] = []
     while let item = readdir(directory) {
       let name = withUnsafeBytes(of: item.pointee.d_name) { buffer in
-        String(decoding: buffer.prefix(Int(item.pointee.d_namlen)), as: UTF8.self)
+        #if canImport(Darwin)
+          String(decoding: buffer.prefix(Int(item.pointee.d_namlen)), as: UTF8.self)
+        #else
+          // glibc's dirent has no name length: the name ends at its NUL.
+          String(decoding: buffer.prefix { $0 != 0 }, as: UTF8.self)
+        #endif
       }
       if name == "." || name == ".." || name == ".git" { continue }
       var isDirectory = Int32(item.pointee.d_type) == DT_DIR

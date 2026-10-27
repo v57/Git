@@ -1,5 +1,18 @@
 import Foundation
 
+#if canImport(Darwin)
+  import Darwin
+  /// The C library's `write` (`LockFile.write` hides the plain name inside the type).
+  private func systemWrite(_ descriptor: Int32, _ buffer: UnsafeRawPointer, _ count: Int) -> Int {
+    Darwin.write(descriptor, buffer, count)
+  }
+#else
+  import Glibc
+  private func systemWrite(_ descriptor: Int32, _ buffer: UnsafeRawPointer, _ count: Int) -> Int {
+    Glibc.write(descriptor, buffer, count)
+  }
+#endif
+
 /// git's way to replace a file atomically: write `<file>.lock` (created exclusively, so two writers can't both hold
 /// it), then rename it over the file.
 struct LockFile {
@@ -29,7 +42,7 @@ struct LockFile {
     let written = data.withUnsafeBytes { buffer -> Bool in
       var offset = 0
       while offset < buffer.count {
-        let count = Darwin.write(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+        let count = systemWrite(descriptor, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
         if count <= 0 { return false }
         offset += count
       }

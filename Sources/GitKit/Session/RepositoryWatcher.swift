@@ -2,10 +2,13 @@
   import CoreServices
 #elseif os(Windows)
   import WinSDK
+#elseif os(Linux)
+  import SwiftUIPortability
 #endif
 import Foundation
 
-/// Watches a working tree and its `.git` directory with FSEvents and calls `onChange` (on a
+/// Watches a working tree and its `.git` directory with FSEvents (ReadDirectoryChangesW on Windows, inotify on
+/// Linux) and calls `onChange` (on a
 /// background queue) after changes settle. Object writes and lock files are ignored, so git's own
 /// bookkeeping doesn't trigger refresh loops.
 public final class RepositoryWatcher: @unchecked Sendable {
@@ -14,6 +17,8 @@ public final class RepositoryWatcher: @unchecked Sendable {
   private let queue = DispatchQueue(label: "dev.v57.GitKit.watcher")
   #if os(macOS)
     private var stream: FSEventStreamRef?
+  #elseif os(Linux)
+    private var watcher: DirectoryWatcher?
   #elseif !os(Windows)
     private var timer: DispatchSourceTimer?
   #endif
@@ -127,6 +132,23 @@ public final class RepositoryWatcher: @unchecked Sendable {
       let stop = { [self] in
         for reader in readers { reader.close() }
         readers = []
+      }
+      if DispatchQueue.getSpecific(key: Self.queueKey) != nil { stop() } else { queue.sync(execute: stop) }
+    }
+  #elseif os(Linux)
+    public func start() {
+      queue.sync {
+        guard watcher == nil else { return }
+        watcher = DirectoryWatcher(paths: paths, latency: latency, queue: queue) { [weak self] changes in
+          self?.handle(ArraySlice(changes.map(\.path)))
+        }
+      }
+    }
+
+    public func stop() {
+      let stop = { [self] in
+        watcher?.stop()
+        watcher = nil
       }
       if DispatchQueue.getSpecific(key: Self.queueKey) != nil { stop() } else { queue.sync(execute: stop) }
     }

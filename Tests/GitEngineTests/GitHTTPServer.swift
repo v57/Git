@@ -17,7 +17,11 @@ final class GitHTTPServer: @unchecked Sendable {
 
   init(root: URL) throws {
     self.root = root
-    listener = socket(AF_INET, SOCK_STREAM, 0)
+    #if canImport(Darwin)
+      listener = socket(AF_INET, SOCK_STREAM, 0)
+    #else
+      listener = socket(AF_INET, Int32(SOCK_STREAM.rawValue), 0)
+    #endif
     var yes: Int32 = 1
     setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, socklen_t(MemoryLayout<Int32>.size))
     var address = sockaddr_in()
@@ -51,7 +55,7 @@ final class GitHTTPServer: @unchecked Sendable {
 
   func stop() {
     lock.withLock { running = false }
-    shutdown(listener, SHUT_RDWR)
+    shutdown(listener, Int32(SHUT_RDWR))
     close(listener)
   }
 
