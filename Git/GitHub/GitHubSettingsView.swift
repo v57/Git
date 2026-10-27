@@ -7,6 +7,8 @@ import SwiftUI
 struct GitHubSettingsView: View {
   @Environment(GitHubAccount.self) private var account
   @State private var request: GitHubSignInRequest?
+  /// Other vault accounts' sign-ins, while this one has none.
+  @State private var offers: [GitHubSignInOffer] = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 18) {
@@ -21,6 +23,7 @@ struct GitHubSettingsView: View {
     }
     .frame(maxWidth: .infinity, alignment: .top)
     .kitSheet(item: $request) { GitHubSignInSheet(permissions: $0.permissions) }
+    .task(id: account.isSignedIn) { offers = account.signInOffers }
   }
 
   private var signedOut: some View {
@@ -42,6 +45,17 @@ struct GitHubSettingsView: View {
       Button("Sign In…") { request = GitHubSignInRequest(permissions: .recommended) }
         .buttonStyle(.kitPrimary)
         .padding(.top, 4)
+      if !offers.isEmpty {
+        VStack(spacing: 0) {
+          ForEach(offers) { offer in
+            if offer.id != offers.first?.id { Divider().padding(.horizontal, 12) }
+            GitHubSignInOfferRow(offer: offer) { account.use(offer) }
+          }
+        }
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
+        .frame(maxWidth: 400)
+        .padding(.top, 10)
+      }
     }
     .padding(.horizontal, 32)
     .padding(.top, 34)

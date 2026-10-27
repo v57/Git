@@ -154,6 +154,17 @@ extension KeychainTokenStore {
     guard accountID != personalAccountID else { return shared }
     return KeychainTokenStore(service: "\(shared.service).\(accountID)", accessGroup: shared.accessGroup)
   }
+
+  /// The accounts among `accountIDs` that are signed in, in that order and one per GitHub login: the sign-ins an
+  /// account without one can offer to use (`GitHubAccount.signIn(with:)`).
+  public static func signIns(of accountIDs: [String]) -> [(accountID: String, credential: GitHubCredential)] {
+    var logins: Set<String> = []
+    return accountIDs.compactMap { id in
+      guard let credential = try? forAccount(id).load(), logins.insert(credential.login.lowercased()).inserted
+      else { return nil }
+      return (id, credential)
+    }
+  }
 }
 
 /// Keeps the credential in memory, for tests and previews.

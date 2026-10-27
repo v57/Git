@@ -247,6 +247,19 @@ final class ScopedTransport: HTTPTransport, @unchecked Sendable {
     #expect(account.user?.login == "octocat")
   }
 
+  @Test func signsInWithAnotherAccountsCredential() throws {
+    let credential = GitHubCredential(login: "octocat", token: "gho_token", scopes: ["repo"])
+    let store = MemoryTokenStore()
+    let account = GitHubAccount(clientID: "client", store: store, transport: FakeTransport([]))
+    var credentials: [GitHubCredential?] = []
+    account.onCredentialChange = { credentials.append($0) }
+    try account.signIn(with: credential)
+    #expect(account.credential == credential && account.user?.login == "octocat")
+    #expect(try store.load() == credential)
+    #expect(credentials == [credential])
+    #expect(account.signInStep == nil)
+  }
+
   @Test func keepsOneSignInPerVaultAccount() {
     // Personal keeps the item every v57 app had before accounts.
     #expect(KeychainTokenStore.forAccount("personal").service == KeychainTokenStore.shared.service)

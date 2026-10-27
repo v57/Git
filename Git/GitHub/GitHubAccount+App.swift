@@ -2,6 +2,7 @@ import Foundation
 import ComponentKit
 import GitHubKit
 import GitKit
+import VaultKit
 
 extension GitHubAccount {
   /// Personal's sign-in: the v57 apps' shared one (`KeychainTokenStore.shared`, in the shared keychain group and
@@ -44,6 +45,34 @@ extension GitHubAccount {
     if (try? KeychainTokenStore.shared.save(credential)) != nil { try? legacy.delete() }
   }
 
+  /// The vault account this sign-in is (nil for one made elsewhere).
+  var vaultAccountID: String? { Self.signIns.first { $0.value === self }?.key }
+
+  /// The sign-ins the other vault accounts have, one per GitHub login, Personal's first: a signed-out account
+  /// offers them, so the user needn't sign in to GitHub again.
+  var signInOffers: [GitHubSignInOffer] {
+    #if DEBUG
+      if ProcessInfo.processInfo.arguments.contains("--in-memory") { return [] }
+    #endif
+    guard !isSignedIn, let own = vaultAccountID else { return [] }
+    let others = Vaults.shared.allAccounts.filter { $0.id != own }
+    return KeychainTokenStore.signIns(of: others.map(\.id)).compactMap { signIn in
+      others.first { $0.id == signIn.accountID }.map {
+        GitHubSignInOffer(accountName: $0.name, credential: signIn.credential)
+      }
+    }
+  }
+
+  /// Signs in with another account's sign-in: this account keeps a copy of its own.
+  func use(_ offer: GitHubSignInOffer) {
+    do {
+      try signIn(with: offer.credential)
+      Task { await refresh() }
+    } catch {
+      notice = (error as? GitHubError)?.errorDescription ?? error.localizedDescription
+    }
+  }
+
   /// Starts the device flow, then copies the code and opens github.com's page to enter it.
   func signInInBrowser(requesting permissions: GitHubPermissions) {
     signIn(requesting: permissions) { [weak self] code in self?.openVerificationPage(code) }
@@ -57,6 +86,13 @@ extension GitHubAccount {
   func copy(_ code: DeviceCode) {
     KitPasteboard.copy(code.userCode)
   }
+}
+
+/// A GitHub sign-in another vault account has, which one without a sign-in can use too.
+struct GitHubSignInOffer: Identifiable {
+  var accountName: String
+  var credential: GitHubCredential
+  var id: String { credential.login }
 }
 
 /// A sign-in sheet to show, starting from `permissions`.

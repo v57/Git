@@ -12,6 +12,8 @@ struct GitHubSignInSheet: View {
   @State private var requested: GitHubPermissions
   /// Whether Continue was pressed; before that the sheet shows the chooser.
   @State private var started = false
+  /// What another account's sign-in that was used instead has (`GitHubSignInOffer`).
+  @State private var used: GitHubPermissions?
 
   init(permissions: GitHubPermissions) {
     _requested = State(initialValue: permissions)
@@ -22,6 +24,7 @@ struct GitHubSignInSheet: View {
   }
 
   private var step: Step {
+    if used != nil { return .done }
     guard started else { return .choose }
     switch account.signInStep {
     case nil: return .choose
@@ -47,9 +50,9 @@ struct GitHubSignInSheet: View {
         .padding(.bottom, 14)
       ZStack {
         switch step {
-        case .choose: ChooseStep(requested: $requested, start: start, cancel: close)
+        case .choose: ChooseStep(requested: $requested, start: start, use: use, cancel: close)
         case .waiting: WaitingStep(cancel: close)
-        case .done: DoneStep(requested: requested, finish: close)
+        case .done: DoneStep(requested: used ?? requested, finish: close)
         case .failed: FailedStep(retry: start, cancel: close)
         }
       }
@@ -70,6 +73,11 @@ struct GitHubSignInSheet: View {
     account.signInInBrowser(requesting: requested)
   }
 
+  private func use(_ offer: GitHubSignInOffer) {
+    account.use(offer)
+    if account.isSignedIn { used = offer.credential.permissions }
+  }
+
   private func close() {
     if step == .waiting { account.cancelSignIn() } else { account.endSignIn() }
     dismiss()
@@ -83,13 +91,36 @@ private struct ChooseStep: View {
   @Environment(\.kitIdiom) private var idiom
   @Binding var requested: GitHubPermissions
   let start: () -> Void
+  let use: (GitHubSignInOffer) -> Void
   let cancel: () -> Void
+  /// Other vault accounts' sign-ins, while this one has none.
+  @State private var offers: [GitHubSignInOffer] = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       StepTitle(
         account.isSignedIn ? "Change GitHub permissions" : "Sign in to GitHub",
         "Choose what Git can do with your account. GitHub lists the same permissions before you approve.")
+
+      if !offers.isEmpty {
+        VStack(alignment: .leading, spacing: 6) {
+          Text("Signed in on another account")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.kitSecondary)
+            .padding(.horizontal, 2)
+          VStack(spacing: 0) {
+            ForEach(offers) { offer in
+              if offer.id != offers.first?.id { Divider().padding(.horizontal, 12) }
+              GitHubSignInOfferRow(offer: offer) { use(offer) }
+            }
+          }
+          .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
+        }
+        Text("Or sign in to GitHub with these permissions:")
+          .font(.system(size: 12, weight: .semibold))
+          .foregroundStyle(.kitSecondary)
+          .padding(.horizontal, 2)
+      }
 
       VStack(alignment: .leading, spacing: 6) {
         Text("Repositories")
@@ -143,6 +174,30 @@ private struct ChooseStep: View {
       }
       .padding(.top, 2)
     }
+    .onAppear { offers = account.signInOffers }
+  }
+}
+
+/// Another vault account's GitHub sign-in, with Use: the account without one keeps a copy of its own.
+struct GitHubSignInOfferRow: View {
+  let offer: GitHubSignInOffer
+  let use: () -> Void
+
+  var body: some View {
+    HStack(spacing: 10) {
+      GitHubAvatar(url: nil, name: offer.credential.login, size: 28)
+      VStack(alignment: .leading, spacing: 1) {
+        Text("@\(offer.credential.login)").fontWeight(.semibold)
+        Text("Signed in on \(offer.accountName)")
+          .font(.system(size: 12))
+          .foregroundStyle(.kitSecondary)
+      }
+      .frame(maxWidth: .infinity, alignment: .leading)
+      Button("Use", action: use)
+        .buttonStyle(.kit)
+    }
+    .padding(.horizontal, 12)
+    .padding(.vertical, 9)
   }
 }
 

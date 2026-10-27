@@ -125,6 +125,18 @@ public final class GitHubAccount {
     }
   }
 
+  /// Signs in with a credential another sign-in already has (another vault account's), without the device flow.
+  /// It is saved in this account's store, so each keeps its own copy and signing out here leaves the other signed
+  /// in. Only `login` is known until `refresh()`.
+  public func signIn(with credential: GitHubCredential) throws {
+    cancelSignIn()
+    try store.save(credential)
+    notice = nil
+    if credential.login != user?.login { organizations = [] }
+    user = GitHubUser(login: credential.login)
+    self.credential = credential
+  }
+
   /// Stops a running sign-in. The account stays as it was.
   public func cancelSignIn() {
     signInTask?.cancel()
