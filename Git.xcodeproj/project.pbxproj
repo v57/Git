@@ -12,6 +12,7 @@
 		A10000000000000000000003 /* GitHubKit in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000013 /* GitHubKit */; };
 		D5C0DE000000000000000003 /* UpdateKit in Frameworks */ = {isa = PBXBuildFile; productRef = D5C0DE000000000000000002 /* UpdateKit */; };
 		D39EDACC65EAD1D9FA7BB391 /* VaultKit in Frameworks */ = {isa = PBXBuildFile; productRef = 562DD26DC24C46D32E895A4E /* VaultKit */; };
+		A11C0A550000000000000001 /* VaultUI in Frameworks */ = {isa = PBXBuildFile; productRef = A11C0A550000000000000002 /* VaultUI */; };
 		DE5C2EE10000000000000001 /* DevScreenshots in Frameworks */ = {isa = PBXBuildFile; productRef = DE5C2EE10000000000000002 /* DevScreenshots */; };
 		C0C0A1000000000000000003 /* ComponentKit in Frameworks */ = {isa = PBXBuildFile; productRef = C0C0A1000000000000000002 /* ComponentKit */; };
 /* End PBXBuildFile section */
@@ -37,6 +38,7 @@
 				A10000000000000000000003 /* GitHubKit in Frameworks */,
 				D5C0DE000000000000000003 /* UpdateKit in Frameworks */,
 				D39EDACC65EAD1D9FA7BB391 /* VaultKit in Frameworks */,
+				A11C0A550000000000000001 /* VaultUI in Frameworks */,
 				DE5C2EE10000000000000001 /* DevScreenshots in Frameworks */,
 				C0C0A1000000000000000003 /* ComponentKit in Frameworks */,
 			);
@@ -83,6 +85,7 @@
 				A10000000000000000000013 /* GitHubKit */,
 				D5C0DE000000000000000002 /* UpdateKit */,
 				562DD26DC24C46D32E895A4E /* VaultKit */,
+				A11C0A550000000000000002 /* VaultUI */,
 				DE5C2EE10000000000000002 /* DevScreenshots */,
 				C0C0A1000000000000000002 /* ComponentKit */,
 			);
@@ -445,6 +448,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */;
 			productName = VaultKit;
+		};
+		A11C0A550000000000000002 /* VaultUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2EA6ED1B6B478505AA212C49 /* XCRemoteSwiftPackageReference "Vault" */;
+			productName = VaultUI;
 		};
 		DE5C2EE10000000000000002 /* DevScreenshots */ = {
 			isa = XCSwiftPackageProductDependency;

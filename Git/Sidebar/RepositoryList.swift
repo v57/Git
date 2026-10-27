@@ -20,7 +20,9 @@ import VaultKit
 struct RepositoryList: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
-  @Query private var repositories: [SavedRepository]
+  @Query private var savedRepositories: [SavedRepository]
+  /// The window's account's repositories.
+  private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @Binding var selection: String?
   @Binding var selected: Set<String>
   let filter: String

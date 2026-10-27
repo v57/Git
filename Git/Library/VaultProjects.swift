@@ -18,18 +18,32 @@ import VaultKit
   /// a vault of their own instead, which must not change the real list.
   let isShared: Bool
 
-  init() {
+  /// The window's vault: Personal or the account the window shows (`VaultAccountScope`).
+  init(vault: Vault) {
     #if DEBUG
-      if ProcessInfo.processInfo.arguments.contains("--in-memory") {
-        let directory = FileManager.default.temporaryDirectory
-          .appendingPathComponent("dev.v57.git-vault-\(UUID().uuidString)", isDirectory: true)
-        vault = Vault(store: try? VaultStore(directory: directory, keys: MemoryKeyProvider(), notifier: nil))
+      if let memory = Self.inMemory {
+        self.vault = memory
         isShared = false
         return
       }
     #endif
-    vault = .shared
+    self.vault = vault
     isShared = true
+  }
+
+  #if DEBUG
+    /// The `--in-memory` launches' vault, one for every window.
+    private static let inMemory: Vault? = {
+      guard ProcessInfo.processInfo.arguments.contains("--in-memory") else { return nil }
+      let directory = FileManager.default.temporaryDirectory
+        .appendingPathComponent("dev.v57.git-vault-\(UUID().uuidString)", isDirectory: true)
+      return Vault(store: try? VaultStore(directory: directory, keys: MemoryKeyProvider(), notifier: nil))
+    }()
+  #endif
+
+  /// Whether a repository belongs to the window's account; repositories saved before accounts are Personal's.
+  func owns(_ repository: SavedRepository) -> Bool {
+    (repository.accountID ?? VaultAccount.personal.id) == vault.accountID
   }
 
   /// Starts sync and adoption for the window's context.
@@ -44,7 +58,7 @@ import VaultKit
     }
     Task {
       await publishMissing(context: context)
-      if isShared { library.moveSavedGroupsToVault(context: context) }
+      if isShared && vault.isPersonal { library.moveSavedGroupsToVault(context: context) }
       adopt(into: context, library: library)
     }
   }
@@ -74,11 +88,14 @@ import VaultKit
   /// Repositories the vault doesn't have yet (the first launch with the vault, or ones added offline).
   private func publishMissing(context: ModelContext) async {
     let known = Set(vault.localProjects.compactMap(\.localPath))
-    let repositories = ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).filter { !known.contains($0.path) }
+    let repositories = ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).filter {
+      owns($0) && !known.contains($0.path)
+    }
     await publish(repositories, context: context)
   }
 
-  /// Adds the vault's projects on this Mac that are git checkouts and aren't in the sidebar.
+  /// Adds the vault's projects on this Mac that are git checkouts and aren't in the sidebar (of any account: a
+  /// repository is in one account's list).
   func adopt(into context: ModelContext, library: RepositoryLibrary) {
     let saved = Set(((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).map(\.path))
     let fileManager = FileManager.default

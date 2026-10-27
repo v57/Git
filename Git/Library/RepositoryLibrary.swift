@@ -68,8 +68,8 @@ struct CompletedOperation: Equatable {
   }
 }
 
-/// The app's repositories: one session and view state per repository, sidebar summaries, and
-/// recursive folder import.
+/// A window's repositories: one session and view state per repository, sidebar summaries, and
+/// recursive folder import. Each window has its own, on the vault account it shows (`GitWindow`).
 @MainActor @Observable final class RepositoryLibrary {
   private(set) var sessions: [String: RepositorySession] = [:]
   private(set) var viewStates: [String: RepositoryViewState] = [:]
@@ -96,9 +96,24 @@ struct CompletedOperation: Equatable {
   var remoteFailure: RemoteFailure?
 
   /// Shares the repository list and its groups with the other v57 apps through the vault.
-  @ObservationIgnored let vaultProjects = VaultProjects()
-  /// The store the sidebar's groups live in (`VaultProjectTree`).
+  @ObservationIgnored let vaultProjects: VaultProjects
+  /// The store the sidebar's groups live in (`VaultProjectTree`): the window's account.
   var vault: Vault { vaultProjects.vault }
+
+  init(vault: Vault) {
+    vaultProjects = VaultProjects(vault: vault)
+  }
+
+  /// Whether a repository is in this window's account (`SavedRepository.accountID`).
+  func owns(_ repository: SavedRepository) -> Bool { vaultProjects.owns(repository) }
+
+  /// Saves a repository in the window's account.
+  private func insert(path: String, group: String, into context: ModelContext) -> SavedRepository {
+    let saved = SavedRepository(path: path, group: group)
+    if !vault.isPersonal { saved.accountID = vault.accountID }
+    context.insert(saved)
+    return saved
+  }
 
   /// The groups collapsed in this app's sidebar (vault group ids); each app keeps its own.
   var collapsedGroups: Set<String> = RepositoryLibrary.savedCollapsedGroups {
@@ -250,12 +265,11 @@ struct CompletedOperation: Equatable {
     for folder in folders {
       let repos = found[folder] ?? []
       for repo in repos {
-        if existing[repo.path] != nil {
-          if !regrouped.contains(repo.path) { regrouped.append(repo.path) }
+        if let saved = existing[repo.path] {
+          // One in another account's list stays there.
+          if owns(saved), !regrouped.contains(repo.path) { regrouped.append(repo.path) }
         } else if !added.contains(where: { $0.path == repo.path }) {
-          let saved = SavedRepository(path: repo.path, group: folder.standardizedFileURL.path)
-          context.insert(saved)
-          added.append(saved)
+          added.append(insert(path: repo.path, group: folder.standardizedFileURL.path, into: context))
         }
       }
     }
@@ -280,12 +294,11 @@ struct CompletedOperation: Equatable {
       requestedSelection = path
       return
     }
-    let saved = SavedRepository(path: path, group: url.deletingLastPathComponent().path)
-    context.insert(saved)
+    let saved = insert(path: path, group: url.deletingLastPathComponent().path, into: context)
     try? context.save()
     requestedSelection = path
     // A worktree inside a repository in the list joins that repository's group.
-    let owner = existing.first { path.hasPrefix($0.path + "/") }.flatMap { layout(context).groupID(of: $0.path) }
+    let owner = existing.first { owns($0) && path.hasPrefix($0.path + "/") }.flatMap { layout(context).groupID(of: $0.path) }
     Task {
       await vaultProjects.publish([saved], context: context)
       if let owner {
@@ -300,7 +313,7 @@ struct CompletedOperation: Equatable {
   /// Adds repositories another app put in the vault, without selecting them.
   func adopt(_ paths: [String], into context: ModelContext) {
     for path in paths {
-      context.insert(SavedRepository(path: path, group: (path as NSString).deletingLastPathComponent))
+      _ = insert(path: path, group: (path as NSString).deletingLastPathComponent, into: context)
     }
     try? context.save()
     // Projects another app or Mac already put in a group stay there.

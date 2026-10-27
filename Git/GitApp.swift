@@ -8,7 +8,6 @@ import VaultKit
 
 @main
 struct GitApp: App {
-  @State private var library = RepositoryLibrary()
   @State private var github = GitHubAccount.app
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
 
@@ -52,8 +51,8 @@ struct GitApp: App {
 
   var body: some Scene {
     WindowGroup("Git", id: MainWindow.id) {
-      ContentView()
-        .environment(library)
+      // Each window shows one vault account and keeps its own repository list (GitWindow).
+      GitWindow()
         .environment(github)
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
         .kitLazyLoading(Self.buildsLazily)
@@ -62,7 +61,7 @@ struct GitApp: App {
     .defaultSize(width: 1440, height: 900)
     .modelContainer(Self.modelContainer)
     .commands {
-      RepositoryCommands(library: library)
+      RepositoryCommands()
       UpdaterCommands(updater: updater)
     }
 

@@ -16,6 +16,8 @@ import SwiftData
   var sortIndex: Int = 0
   /// Hidden from the sidebar until Show Hidden.
   var isHidden: Bool = false
+  /// The vault account whose window lists it (`VaultAccount.id`); nil for Personal, as before accounts.
+  var accountID: String?
 
   init(path: String, group: String, addedAt: Date = .now) {
     self.path = path

@@ -3,6 +3,7 @@ import GitKit
 import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
+import VaultUI
 
 /// The sidebar: every repository with its state at a glance, then the open repository's
 /// Workspace (Changes, History, Stashes), Branches, Remotes and Tags, each a card whose header
@@ -13,7 +14,9 @@ import UniformTypeIdentifiers
 struct SidebarView: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
-  @Query(sort: \SavedRepository.name, order: .forward) private var repositories: [SavedRepository]
+  @Query(sort: \SavedRepository.name, order: .forward) private var savedRepositories: [SavedRepository]
+  /// The window's account's repositories.
+  private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @Binding var selection: String?
   /// The repository on screen, which the Workspace and the sections below follow: a newly selected one comes in
   /// once it has loaded.
@@ -45,6 +48,8 @@ struct SidebarView: View {
   var body: some View {
     @Bindable var library = library
     KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
+      // The window's account, while there is more than Personal.
+      VaultAccountPicker(meta: repositories.count == 1 ? "1 repository" : "\(repositories.count) repositories")
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
       RepositoryList(selection: $selection, selected: $selected, filter: filter)
         .kitSticky(top: .titleWhileVisible, bottom: .none)

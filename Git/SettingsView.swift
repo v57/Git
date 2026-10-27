@@ -2,18 +2,25 @@ import ComponentKit
 import GitHubKit
 import GitKit
 import SwiftUI
+import VaultUI
 
 enum SettingsKeys {
   static let gitPath = "GitExecutablePath"
+  /// The Settings window's pane, and the Accounts pane's id (a window's account picker opens it).
+  static let pane = "SettingsPane"
+  static let accountsPane = "Accounts"
 }
 
 struct SettingsView: View {
-  @AppStorage("SettingsPane") private var pane = "General"
+  @AppStorage(SettingsKeys.pane) private var pane = "General"
 
   var body: some View {
     KitSettings(selection: $pane) {
       SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
       SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { GitHubSettingsView() }
+      SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
+        VaultAccountsSettings()
+      }
     }
     .frame(width: 680, height: 460)
   }

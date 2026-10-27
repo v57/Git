@@ -9,7 +9,9 @@ import VaultKit
 /// fetches every repository shown. Clicking one opens it. The sidebar's Repositories header opens the page.
 struct AllRepositoriesView: View {
   @Environment(RepositoryLibrary.self) private var library
-  @Query(sort: \SavedRepository.name, order: .forward) private var repositories: [SavedRepository]
+  @Query(sort: \SavedRepository.name, order: .forward) private var savedRepositories: [SavedRepository]
+  /// The window's account's repositories.
+  private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @Binding var selection: String?
   @AppStorage("AllRepositoriesLayout") private var layout = AllRepositoriesLayout.grid
   @State private var search = ""

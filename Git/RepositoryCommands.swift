@@ -3,25 +3,30 @@ import GitKit
 import SwiftUI
 
 extension FocusedValues {
+  /// The focused window's repositories (its account's).
+  @Entry var repositoryLibrary: RepositoryLibrary?
   @Entry var repositorySession: RepositorySession?
   @Entry var repositoryViewState: RepositoryViewState?
 }
 
 struct RepositoryCommands: Commands {
-  let library: RepositoryLibrary
+  @FocusedValue(\.repositoryLibrary) private var library
   @FocusedValue(\.repositorySession) private var session
   @FocusedValue(\.repositoryViewState) private var state
 
   var body: some Commands {
     CommandGroup(after: .newItem) {
-      Button("Clone Repository…") { library.isClonePresented = true }
-        .keyboardShortcut("c", modifiers: [.command, .shift])
-      Button("New Repository…") { library.isCreateRequested = true }
-        .keyboardShortcut("n", modifiers: [.command, .option])
-      Button("Open Repository…") { library.isImporterPresented = true }
-        .keyboardShortcut("o", modifiers: .command)
-      Button("Add Folder…") { library.isImporterPresented = true }
-        .keyboardShortcut("o", modifiers: [.command, .shift])
+      Group {
+        Button("Clone Repository…") { library?.isClonePresented = true }
+          .keyboardShortcut("c", modifiers: [.command, .shift])
+        Button("New Repository…") { library?.isCreateRequested = true }
+          .keyboardShortcut("n", modifiers: [.command, .option])
+        Button("Open Repository…") { library?.isImporterPresented = true }
+          .keyboardShortcut("o", modifiers: .command)
+        Button("Add Folder…") { library?.isImporterPresented = true }
+          .keyboardShortcut("o", modifiers: [.command, .shift])
+      }
+      .disabled(library == nil)
     }
     CommandGroup(after: .toolbar) {
       HideWhitespaceToggle()

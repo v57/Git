@@ -146,7 +146,7 @@ struct RemoteFailure: Identifiable {
 extension RepositoryLibrary {
   /// The sidebar's arrangement of the repositories in `context`.
   func layout(_ context: ModelContext) -> SidebarLayout {
-    SidebarLayout(repositories: (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? [], vault: vault)
+    SidebarLayout(repositories: ((try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []).filter(owns), vault: vault)
   }
 
   // MARK: Arranging

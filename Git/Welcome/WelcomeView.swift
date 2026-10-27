@@ -9,7 +9,9 @@ import SwiftUI
 struct RepositoryWelcome: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
-  @Query(sort: \SavedRepository.name) private var repositories: [SavedRepository]
+  @Query(sort: \SavedRepository.name) private var savedRepositories: [SavedRepository]
+  /// The window's account's repositories.
+  private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @State private var search = ""
 
   /// The repositories, last opened first, that match the search by name or folder.
