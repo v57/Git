@@ -5,6 +5,9 @@ public struct Repository: Sendable, Hashable, Identifiable {
   public let url: URL
   let runner: GitRunner
 
+  /// Where git runs: this machine, or another one through `runner.transport`.
+  public var isRemote: Bool { runner.transport != nil }
+
   public init(url: URL, runner: GitRunner = GitRunner()) {
     self.url = url.standardizedFileURL
     self.runner = runner
@@ -88,14 +91,14 @@ extension Repository {
   /// A merge, rebase, cherry-pick or revert that is waiting to be continued or aborted.
   public func operationInProgress() async throws -> RepositoryOperation? {
     let gitDir = try await gitDirectory()
-    let fm = FileManager.default
-    func exists(_ name: String) -> Bool {
-      fm.fileExists(atPath: gitDir.appendingPathComponent(name).path)
+    func exists(_ name: String) async -> Bool {
+      await runner.fileExists(at: gitDir.appendingPathComponent(name))
     }
-    if exists("rebase-merge") || exists("rebase-apply") { return .rebase }
-    if exists("MERGE_HEAD") { return .merge }
-    if exists("CHERRY_PICK_HEAD") { return .cherryPick }
-    if exists("REVERT_HEAD") { return .revert }
+    if await exists("rebase-merge") { return .rebase }
+    if await exists("rebase-apply") { return .rebase }
+    if await exists("MERGE_HEAD") { return .merge }
+    if await exists("CHERRY_PICK_HEAD") { return .cherryPick }
+    if await exists("REVERT_HEAD") { return .revert }
     return nil
   }
 
@@ -133,7 +136,8 @@ extension Repository {
       guard let gitDir = try? await gitDirectory() else { return nil }
       for folder in ["rebase-merge", "rebase-apply"] {
         let url = gitDir.appendingPathComponent(folder).appendingPathComponent("head-name")
-        if let ref = try? String(contentsOf: url, encoding: .utf8) {
+        if let data = try? await runner.contents(of: url) {
+          let ref = String(decoding: data, as: UTF8.self)
           return ref.trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "refs/heads/", with: "")
         }
@@ -232,9 +236,12 @@ extension Repository {
     var unstagedCounts = NumstatParser.parse(try await unstaged)
     for path in untracked {
       let url = url.appendingPathComponent(path)
-      guard let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize, size < 2_000_000,
-        let data = try? Data(contentsOf: url)
-      else { continue }
+      if runner.transport == nil,
+        (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap({ $0 }).map({ $0 >= 2_000_000 }) ?? true
+      {
+        continue
+      }
+      guard let data = try? await runner.contents(of: url), data.count < 2_000_000 else { continue }
       unstagedCounts[path] =
         data.contains(0)
         ? LineCounts(added: nil, removed: nil)
@@ -263,7 +270,7 @@ extension Repository {
   @concurrent public func contents(of path: String, at revision: FileRevision) async -> Data? {
     switch revision {
     case .workingTree:
-      return try? Data(contentsOf: url.appendingPathComponent(path))
+      return try? await runner.contents(of: url.appendingPathComponent(path))
     case .index:
       return try? await git(["show", ":\(path)"]).stdout
     case .commit(let sha):
@@ -347,8 +354,7 @@ extension Repository {
       try await git(["restore", "--worktree", "--"] + tracked)
     }
     for change in untracked {
-      try FileManager.default.trashItem(
-        at: url.appendingPathComponent(change.path), resultingItemURL: nil)
+      try await runner.discard(url.appendingPathComponent(change.path))
     }
   }
 
@@ -801,20 +807,14 @@ extension Repository {
   /// The working-tree text of a conflicted file split into blocks, or `nil` when it has no
   /// conflict markers (binary, deleted, or already edited by hand).
   @concurrent public func conflictedFile(_ path: String) async throws -> ConflictedFile? {
-    let url = url.appendingPathComponent(path)
-    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
-    let data = try Data(contentsOf: url)
+    guard let data = try await runner.contents(of: url.appendingPathComponent(path)) else { return nil }
     guard !data.contains(0), let text = String(data: data, encoding: .utf8) else { return nil }
     return ConflictParser.parse(text)
   }
 
   /// Writes the resolved `text` to `path` and marks it resolved. The file keeps its permissions.
   public func resolveConflict(_ path: String, with text: String) async throws {
-    let url = url.appendingPathComponent(path)
-    let handle = try FileHandle(forWritingTo: url)
-    try handle.truncate(atOffset: 0)
-    try handle.write(contentsOf: Data(text.utf8))
-    try handle.close()
+    try await runner.write(Data(text.utf8), to: url.appendingPathComponent(path))
     try await markResolved([path])
   }
 
@@ -870,12 +870,17 @@ extension Repository {
   /// tracking the files it ignores (they stay on disk), since git keeps tracking ignored files.
   public func ignore(_ pattern: String) async throws {
     let file = url.appendingPathComponent(".gitignore")
-    var text = (try? String(contentsOf: file, encoding: .utf8)) ?? ""
+    let existing = try await runner.contents(of: file)
+    var text = existing.map { String(decoding: $0, as: UTF8.self) } ?? ""
     let lines = text.split(whereSeparator: \.isNewline).map { $0.trimmingCharacters(in: .whitespaces) }
     if !lines.contains(pattern) {
       if !text.isEmpty, !text.hasSuffix("\n") { text += "\n" }
       text += pattern + "\n"
-      try text.write(to: file, atomically: true, encoding: .utf8)
+      if existing == nil, runner.transport == nil {
+        try text.write(to: file, atomically: true, encoding: .utf8)
+      } else {
+        try await runner.write(Data(text.utf8), to: file)
+      }
     }
     let tracked = try await git(["ls-files", "-z", "--cached", "--ignored", "--exclude=\(pattern)"]).stdout
     if !tracked.isEmpty {

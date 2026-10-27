@@ -67,21 +67,23 @@ public enum GitExecutable {
     #endif
   }
 
-  /// `xcode-select -p` succeeds once Xcode or the Command Line Tools are installed.
-  static func hasDeveloperDirectory() -> Bool {
-    let process = Process()
-    process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
-    process.arguments = ["-p"]
-    process.standardOutput = FileHandle.nullDevice
-    process.standardError = FileHandle.nullDevice
-    do {
-      try process.run()
-      process.waitUntilExit()
-      return process.terminationStatus == 0
-    } catch {
-      return false
+  #if os(macOS)
+    /// `xcode-select -p` succeeds once Xcode or the Command Line Tools are installed.
+    static func hasDeveloperDirectory() -> Bool {
+      let process = Process()
+      process.executableURL = URL(fileURLWithPath: "/usr/bin/xcode-select")
+      process.arguments = ["-p"]
+      process.standardOutput = FileHandle.nullDevice
+      process.standardError = FileHandle.nullDevice
+      do {
+        try process.run()
+        process.waitUntilExit()
+        return process.terminationStatus == 0
+      } catch {
+        return false
+      }
     }
-  }
+  #endif
 
   /// `git --version`, e.g. `git version 2.54.0`.
   public static func version() async -> String? {

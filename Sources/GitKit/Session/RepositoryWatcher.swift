@@ -1,4 +1,4 @@
-#if canImport(CoreServices)
+#if os(macOS)
   import CoreServices
 #elseif os(Windows)
   import WinSDK
@@ -12,8 +12,10 @@ public final class RepositoryWatcher: @unchecked Sendable {
   private let paths: [String]
   private let onChange: @Sendable ([String]) -> Void
   private let queue = DispatchQueue(label: "dev.v57.GitKit.watcher")
-  #if canImport(CoreServices)
+  #if os(macOS)
     private var stream: FSEventStreamRef?
+  #elseif !os(Windows)
+    private var timer: DispatchSourceTimer?
   #endif
 
   public convenience init(
@@ -128,7 +130,7 @@ public final class RepositoryWatcher: @unchecked Sendable {
       }
       if DispatchQueue.getSpecific(key: Self.queueKey) != nil { stop() } else { queue.sync(execute: stop) }
     }
-  #else
+  #elseif os(macOS)
     public func start() {
       queue.sync {
         guard stream == nil else { return }
@@ -164,6 +166,32 @@ public final class RepositoryWatcher: @unchecked Sendable {
         self.stream = nil
       }
       if DispatchQueue.getSpecific(key: Self.queueKey) != nil { stop() } else { queue.sync(execute: stop) }
+    }
+  #else
+    /// Where there's no file system to watch (git runs on another machine), the working tree is checked every
+    /// `latency`, which the caller sets to a few seconds: `onChanges` gets no paths.
+    public func start() {
+      queue.sync {
+        guard timer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: queue)
+        let interval = max(latency, 2)
+        timer.schedule(deadline: .now() + interval, repeating: interval)
+        timer.setEventHandler { [onChange] in onChange([]) }
+        timer.resume()
+        self.timer = timer
+      }
+    }
+
+    public func stop() {
+      if DispatchQueue.getSpecific(key: Self.queueKey) != nil {
+        timer?.cancel()
+        timer = nil
+      } else {
+        queue.sync {
+          timer?.cancel()
+          timer = nil
+        }
+      }
     }
   #endif
 

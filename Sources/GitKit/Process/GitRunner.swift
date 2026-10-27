@@ -12,9 +12,39 @@ public struct GitResult: Sendable {
   /// git ran past its timeout and was terminated.
   var timedOut = false
 
+  public init(stdout: Data, stderr: Data, exitCode: Int32) {
+    self.stdout = stdout
+    self.stderr = stderr
+    self.exitCode = exitCode
+  }
+
+  init(stdout: Data, stderr: Data, exitCode: Int32, timedOut: Bool) {
+    self.init(stdout: stdout, stderr: stderr, exitCode: exitCode)
+    self.timedOut = timedOut
+  }
+
   /// stdout decoded as UTF-8 (invalid bytes replaced).
   public var output: String { String(decoding: stdout, as: UTF8.self) }
   public var errorOutput: String { String(decoding: stderr, as: UTF8.self) }
+}
+
+/// Where git runs when it isn't this machine's git binary: another machine (a Mac over SSH from the iOS app), with
+/// the repository's working tree on that machine too. `Repository` reaches the working tree's files through it as
+/// well, so a URL is a path on that machine.
+public protocol GitTransport: Sendable {
+  /// Runs `git <arguments>` in `directory` with `input` on its stdin and `environment` added to git's own, reporting
+  /// stderr lines to `progress` as they arrive. Returns whatever git exited with; cancelling the task stops it.
+  func run(
+    _ arguments: [String], in directory: URL?, input: Data?, environment: [String: String],
+    progress: (@Sendable (String) -> Void)?
+  ) async throws -> GitResult
+  /// The file's contents, or nil when nothing is there.
+  func contents(of url: URL) async throws -> Data?
+  /// Replaces the file's contents in place, so it keeps its permissions.
+  func write(_ data: Data, to url: URL) async throws
+  func fileExists(at url: URL) async -> Bool
+  /// Throws an untracked file away, to the Trash where that machine has one.
+  func discard(_ url: URL) async throws
 }
 
 /// Runs git with an argument vector (never through a shell).
@@ -35,9 +65,12 @@ public struct GitRunner: Sendable {
   private static let limiter = ProcessLimiter(limit: maxConcurrentProcesses)
 
   public var extraEnvironment: [String: String]
+  /// Runs git elsewhere instead of launching this machine's git (always set on iOS, which has none).
+  public var transport: (any GitTransport)?
 
-  public init(extraEnvironment: [String: String] = [:]) {
+  public init(extraEnvironment: [String: String] = [:], transport: (any GitTransport)? = nil) {
     self.extraEnvironment = extraEnvironment
+    self.transport = transport
   }
 
   /// Runs `git <arguments>` in `directory`.
@@ -53,155 +86,249 @@ public struct GitRunner: Sendable {
     allowedExitCodes: Set<Int32> = [0], environment: [String: String] = [:],
     timeout: Duration? = nil, progress: (@Sendable (String) -> Void)? = nil
   ) async throws -> GitResult {
-    guard let executable = GitExecutable.current else {
-      throw GitError(
-        arguments: arguments,
-        message: "git was not found. Install the Command Line Tools (xcode-select --install) "
-          + "or Homebrew git, or choose a git binary in Settings.")
-    }
-    let fullArguments = Self.globalConfig + arguments
-
-    await Self.limiter.acquire()
-    let outcome = await Result {
-      try Task.checkCancellation()
-      return try await launch(
-        executable, arguments: fullArguments, in: directory, input: input,
+    if let transport {
+      return try await run(
+        arguments, through: transport, in: directory, input: input, allowedExitCodes: allowedExitCodes,
         environment: environment, timeout: timeout, progress: progress)
     }
-    await Self.limiter.release()
-    let result = try outcome.get()
+    #if os(iOS)
+      throw GitError(arguments: arguments, message: "git can only run on another device here.")
+    #else
+      return try await runHere(
+        arguments, in: directory, input: input, allowedExitCodes: allowedExitCodes, environment: environment,
+        timeout: timeout, progress: progress)
+    #endif
+  }
 
-    try Task.checkCancellation()
-    if result.timedOut, let timeout {
-      throw GitError(
-        arguments: fullArguments, exitCode: result.exitCode,
-        message: "git didn't finish within \(timeout.components.seconds) seconds and was stopped.")
+  // MARK: Files
+
+  /// The working tree's files on the machine git runs on.
+  func contents(of url: URL) async throws -> Data? {
+    if let transport { return try await transport.contents(of: url) }
+    guard FileManager.default.fileExists(atPath: url.path) else { return nil }
+    return try Data(contentsOf: url)
+  }
+
+  func write(_ data: Data, to url: URL) async throws {
+    if let transport { return try await transport.write(data, to: url) }
+    let handle = try FileHandle(forWritingTo: url)
+    try handle.truncate(atOffset: 0)
+    try handle.write(contentsOf: data)
+    try handle.close()
+  }
+
+  func fileExists(at url: URL) async -> Bool {
+    if let transport { return await transport.fileExists(at: url) }
+    return FileManager.default.fileExists(atPath: url.path)
+  }
+
+  /// Moves an untracked file to the Trash.
+  func discard(_ url: URL) async throws {
+    if let transport { return try await transport.discard(url) }
+    #if os(iOS)
+      try FileManager.default.removeItem(at: url)
+    #else
+      try FileManager.default.trashItem(at: url, resultingItemURL: nil)
+    #endif
+  }
+
+  /// Runs git through `transport`, with the same config, the same success check and, for a timeout, the task
+  /// cancelled and the same error.
+  private func run(
+    _ arguments: [String], through transport: any GitTransport, in directory: URL?, input: Data?,
+    allowedExitCodes: Set<Int32>, environment: [String: String], timeout: Duration?,
+    progress: (@Sendable (String) -> Void)?
+  ) async throws -> GitResult {
+    let fullArguments = Self.globalConfig + arguments
+    let environment = extraEnvironment.merging(environment) { $1 }
+    let result: GitResult
+    if let timeout {
+      result = try await withThrowingTaskGroup(of: GitResult?.self) { group in
+        group.addTask {
+          try await transport.run(
+            fullArguments, in: directory, input: input, environment: environment, progress: progress)
+        }
+        group.addTask {
+          try await Task.sleep(for: timeout)
+          return nil
+        }
+        defer { group.cancelAll() }
+        guard let first = try await group.next(), let result = first else {
+          throw GitError(
+            arguments: fullArguments,
+            message: "git didn't finish within \(timeout.components.seconds) seconds and was stopped.")
+        }
+        return result
+      }
+    } else {
+      result = try await transport.run(
+        fullArguments, in: directory, input: input, environment: environment, progress: progress)
     }
+    try Task.checkCancellation()
+    return try Self.check(result, arguments: fullArguments, allowedExitCodes: allowedExitCodes)
+  }
+
+  private static func check(_ result: GitResult, arguments: [String], allowedExitCodes: Set<Int32>) throws
+    -> GitResult
+  {
     guard allowedExitCodes.contains(result.exitCode) else {
       var message = result.errorOutput
       if message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { message = result.output }
-      throw GitError(arguments: fullArguments, exitCode: result.exitCode, message: message)
+      throw GitError(arguments: arguments, exitCode: result.exitCode, message: message)
     }
     return result
   }
 
-  #if os(Windows)
-    /// git as a `ChildProcess`: on Windows a `Process` child inherits every handle the app can pass on (other gits'
-    /// pipes, files being replaced), so gits running side by side kept each other's output open and blocked writes.
-    private func launch(
-      _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
+  #if !os(iOS)
+    private func runHere(
+      _ arguments: [String], in directory: URL?, input: Data?, allowedExitCodes: Set<Int32>,
       environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
     ) async throws -> GitResult {
-      let state = RunState(progress: progress)
-      let box = ChildBox()
-      let timer = timeout.map { timeout in
-        Task {
-          try await Task.sleep(for: timeout)
-          state.markTimedOut()
-          box.cancel()
-        }
+      guard let executable = GitExecutable.current else {
+        throw GitError(
+          arguments: arguments,
+          message: "git was not found. Install the Command Line Tools (xcode-select --install) "
+            + "or Homebrew git, or choose a git binary in Settings.")
       }
-      defer { timer?.cancel() }
-      let environment = Self.environment(merging: extraEnvironment.merging(environment) { $1 })
+      let fullArguments = Self.globalConfig + arguments
 
-      return try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { continuation in
-          state.start(continuation)
-          let child: ChildProcess
-          do {
-            child = try ChildProcess(
-              executable: executable, arguments: arguments, directory: directory, environment: environment,
-              input: input != nil)
-          } catch {
-            state.fail(GitError(arguments: arguments, message: error.localizedDescription))
-            return
-          }
-          box.set(child)
-          Thread.detachNewThread {
-            child.read(.output) { state.append($0, to: .stdout) }
-            state.close(.stdout)
-          }
-          Thread.detachNewThread {
-            child.read(.error) { state.append($0, to: .stderr) }
-            state.close(.stderr)
-          }
-          if let input {
-            DispatchQueue.global(qos: .userInitiated).async {
-              child.write(input)
-              child.closeInput()
-            }
-          }
-          Thread.detachNewThread { state.exit(child.waitUntilExit()) }
-        }
-      } onCancel: {
-        box.cancel()
+      await Self.limiter.acquire()
+      let outcome = await Result {
+        try Task.checkCancellation()
+        return try await launch(
+          executable, arguments: fullArguments, in: directory, input: input,
+          environment: environment, timeout: timeout, progress: progress)
       }
+      await Self.limiter.release()
+      let result = try outcome.get()
+
+      try Task.checkCancellation()
+      if result.timedOut, let timeout {
+        throw GitError(
+          arguments: fullArguments, exitCode: result.exitCode,
+          message: "git didn't finish within \(timeout.components.seconds) seconds and was stopped.")
+      }
+      return try Self.check(result, arguments: fullArguments, allowedExitCodes: allowedExitCodes)
     }
-  #else
-    private func launch(
-      _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
-      environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
-    ) async throws -> GitResult {
-      let process = Process()
-      process.executableURL = executable
-      process.arguments = arguments
-      if let directory { process.currentDirectoryURL = directory }
-      process.environment = Self.environment(merging: extraEnvironment.merging(environment) { $1 })
 
-      let stdout = Pipe()
-      let stderr = Pipe()
-      let stdin = input == nil ? nil : Pipe()
-      process.standardOutput = stdout
-      process.standardError = stderr
-      process.standardInput = stdin ?? FileHandle.nullDevice
+    #if os(Windows)
+      /// git as a `ChildProcess`: on Windows a `Process` child inherits every handle the app can pass on (other gits'
+      /// pipes, files being replaced), so gits running side by side kept each other's output open and blocked writes.
+      private func launch(
+        _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
+        environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
+      ) async throws -> GitResult {
+        let state = RunState(progress: progress)
+        let box = ChildBox()
+        let timer = timeout.map { timeout in
+          Task {
+            try await Task.sleep(for: timeout)
+            state.markTimedOut()
+            box.cancel()
+          }
+        }
+        defer { timer?.cancel() }
+        let environment = Self.environment(merging: extraEnvironment.merging(environment) { $1 })
 
-      let state = RunState(progress: progress)
-      let box = ProcessBox(process)
-      let timer = timeout.map { timeout in
-        Task {
-          try await Task.sleep(for: timeout)
-          state.markTimedOut()
+        return try await withTaskCancellationHandler {
+          try await withCheckedThrowingContinuation { continuation in
+            state.start(continuation)
+            let child: ChildProcess
+            do {
+              child = try ChildProcess(
+                executable: executable, arguments: arguments, directory: directory, environment: environment,
+                input: input != nil)
+            } catch {
+              state.fail(GitError(arguments: arguments, message: error.localizedDescription))
+              return
+            }
+            box.set(child)
+            Thread.detachNewThread {
+              child.read(.output) { state.append($0, to: .stdout) }
+              state.close(.stdout)
+            }
+            Thread.detachNewThread {
+              child.read(.error) { state.append($0, to: .stderr) }
+              state.close(.stderr)
+            }
+            if let input {
+              DispatchQueue.global(qos: .userInitiated).async {
+                child.write(input)
+                child.closeInput()
+              }
+            }
+            Thread.detachNewThread { state.exit(child.waitUntilExit()) }
+          }
+        } onCancel: {
           box.cancel()
         }
       }
-      defer { timer?.cancel() }
+    #else
+      private func launch(
+        _ executable: URL, arguments: [String], in directory: URL?, input: Data?,
+        environment: [String: String], timeout: Duration?, progress: (@Sendable (String) -> Void)?
+      ) async throws -> GitResult {
+        let process = Process()
+        process.executableURL = executable
+        process.arguments = arguments
+        if let directory { process.currentDirectoryURL = directory }
+        process.environment = Self.environment(merging: extraEnvironment.merging(environment) { $1 })
 
-      return try await withTaskCancellationHandler {
-        try await withCheckedThrowingContinuation { continuation in
-          state.start(continuation)
-          for (pipe, stream) in [(stdout, RunState.Stream.stdout), (stderr, .stderr)] {
-            pipe.fileHandleForReading.readabilityHandler = { handle in
-              let data = handle.availableData
-              if data.isEmpty {
-                handle.readabilityHandler = nil
-                state.close(stream)
-              } else {
-                state.append(data, to: stream)
+        let stdout = Pipe()
+        let stderr = Pipe()
+        let stdin = input == nil ? nil : Pipe()
+        process.standardOutput = stdout
+        process.standardError = stderr
+        process.standardInput = stdin ?? FileHandle.nullDevice
+
+        let state = RunState(progress: progress)
+        let box = ProcessBox(process)
+        let timer = timeout.map { timeout in
+          Task {
+            try await Task.sleep(for: timeout)
+            state.markTimedOut()
+            box.cancel()
+          }
+        }
+        defer { timer?.cancel() }
+
+        return try await withTaskCancellationHandler {
+          try await withCheckedThrowingContinuation { continuation in
+            state.start(continuation)
+            for (pipe, stream) in [(stdout, RunState.Stream.stdout), (stderr, .stderr)] {
+              pipe.fileHandleForReading.readabilityHandler = { handle in
+                let data = handle.availableData
+                if data.isEmpty {
+                  handle.readabilityHandler = nil
+                  state.close(stream)
+                } else {
+                  state.append(data, to: stream)
+                }
+              }
+            }
+            process.terminationHandler = { process in state.exit(process.terminationStatus) }
+            do {
+              try process.run()
+            } catch {
+              stdout.fileHandleForReading.readabilityHandler = nil
+              stderr.fileHandleForReading.readabilityHandler = nil
+              state.fail(GitError(arguments: arguments, message: error.localizedDescription))
+              return
+            }
+            if box.cancelled { process.terminate() }
+            if let stdin, let input {
+              DispatchQueue.global(qos: .userInitiated).async {
+                // git may exit before reading everything (e.g. on an error); ignore EPIPE.
+                try? stdin.fileHandleForWriting.write(contentsOf: input)
+                try? stdin.fileHandleForWriting.close()
               }
             }
           }
-          process.terminationHandler = { process in state.exit(process.terminationStatus) }
-          do {
-            try process.run()
-          } catch {
-            stdout.fileHandleForReading.readabilityHandler = nil
-            stderr.fileHandleForReading.readabilityHandler = nil
-            state.fail(GitError(arguments: arguments, message: error.localizedDescription))
-            return
-          }
-          if box.cancelled { process.terminate() }
-          if let stdin, let input {
-            DispatchQueue.global(qos: .userInitiated).async {
-              // git may exit before reading everything (e.g. on an error); ignore EPIPE.
-              try? stdin.fileHandleForWriting.write(contentsOf: input)
-              try? stdin.fileHandleForWriting.close()
-            }
-          }
+        } onCancel: {
+          box.cancel()
         }
-      } onCancel: {
-        box.cancel()
       }
-    }
+    #endif
   #endif
 
   /// The app's environment plus a PATH that finds Homebrew tools (credential helpers, gpg, hooks)
@@ -366,19 +493,21 @@ private actor ProcessLimiter {
   }
 #endif
 
-private final class ProcessBox: @unchecked Sendable {
-  private let lock = NSLock()
-  private let process: Process
-  private var _cancelled = false
+#if !os(iOS)
+  private final class ProcessBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private let process: Process
+    private var _cancelled = false
 
-  init(_ process: Process) { self.process = process }
+    init(_ process: Process) { self.process = process }
 
-  var cancelled: Bool { lock.withLock { _cancelled } }
+    var cancelled: Bool { lock.withLock { _cancelled } }
 
-  func cancel() {
-    lock.withLock {
-      _cancelled = true
-      if process.isRunning { process.terminate() }
+    func cancel() {
+      lock.withLock {
+        _cancelled = true
+        if process.isRunning { process.terminate() }
+      }
     }
   }
-}
+#endif

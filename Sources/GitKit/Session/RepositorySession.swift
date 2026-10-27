@@ -122,7 +122,9 @@ public final class RepositorySession {
       {
         paths.append(gitDir)
       }
-      let watcher = RepositoryWatcher(paths: paths) { [weak self] in
+      // Git on another machine: nothing to watch here, so the session looks again every few seconds.
+      let latency: TimeInterval = repository.runner.transport == nil ? 0.4 : 5
+      let watcher = RepositoryWatcher(paths: paths, latency: latency) { [weak self] in
         Task { @MainActor in await self?.refresh() }
       }
       watcher.start()
