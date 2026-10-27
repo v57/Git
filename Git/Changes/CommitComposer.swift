@@ -95,7 +95,7 @@ struct CommitComposer: View {
               .truncationMode(.middle)
               .contentTransition(.numericText(value: Double(stagedCount)))
               .animation(.kit, value: commitTitle)
-            Text("⌘↩")
+            Text(Keycaps.label("⌘↩"))
               .font(.system(size: 11))
               .opacity(0.75)
           }
