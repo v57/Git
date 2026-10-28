@@ -135,11 +135,13 @@ struct PublishRepositorySheet: View {
       description: description.trimmingCharacters(in: .whitespacesAndNewlines),
       isPrivate: isPrivate, organization: organization)
     let session = session
+    let owner = owner
     error = nil
     creating = Task {
       defer { creating = nil }
       do {
-        let created = try await api.createRepository(repository)
+        // An empty repository of the same name (one a cancelled publish created) becomes the remote.
+        let created = try await api.createOrAdoptRepository(repository, owner: owner)
         dismiss()
         // Pushing shows in the toolbar; a failure shows in the window's alert, and the remote
         // stays so Push retries it.

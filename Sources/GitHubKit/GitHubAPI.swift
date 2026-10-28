@@ -50,6 +50,23 @@ public struct GitHubAPI: Sendable {
     return try await send("POST", path, body: body)
   }
 
+  /// Creates the repository, or takes over the one `owner` already has under its name when that one is empty (as a
+  /// publish cancelled after GitHub created it leaves it): it gets `repository`'s visibility and description. One
+  /// with commits is refused.
+  public func createOrAdoptRepository(_ repository: NewRepository, owner: String) async throws -> GitHubRepository {
+    do {
+      return try await createRepository(repository)
+    } catch GitHubError.api(status: 422, let message) where message.localizedCaseInsensitiveContains("already exists") {
+      let existing = try await self.repository(owner: owner, name: repository.name)
+      guard try await isEmpty(owner: owner, name: repository.name) else {
+        throw GitHubError.api(
+          status: 422, message: "github.com/\(existing.fullName) already exists and has commits. Choose another name.")
+      }
+      return try await updateRepository(
+        owner: owner, name: repository.name, description: repository.description, isPrivate: repository.isPrivate)
+    }
+  }
+
   // MARK: Requests
 
   func send<Response: Decodable>(

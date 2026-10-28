@@ -135,6 +135,42 @@ actor Waits {
     }
   }
 
+  @Test func adoptsAnEmptyRepositoryOfTheSameName() async throws {
+    let taken = #"{"errors":[{"field":"name","message":"name already exists on this account"}]}"#
+    let repository = """
+      {"name":"SSH","full_name":"octocat/SSH","private":%@,"html_url":"https://github.com/octocat/SSH",\
+      "clone_url":"https://github.com/octocat/SSH.git"}
+      """
+    let transport = FakeTransport([
+      (422, taken), (200, repository.replacingOccurrences(of: "%@", with: "false")), (200, "[]"),
+      (200, repository.replacingOccurrences(of: "%@", with: "true")),
+    ])
+    let api = GitHubAPI(token: "t", transport: transport)
+    let adopted = try await api.createOrAdoptRepository(NewRepository(name: "SSH", isPrivate: true), owner: "octocat")
+    #expect(adopted.cloneURL.absoluteString == "https://github.com/octocat/SSH.git" && adopted.isPrivate)
+    #expect(transport.requests.map { "\($0.httpMethod ?? "") \($0.url?.path ?? "")" } == [
+      "POST /user/repos", "GET /repos/octocat/SSH", "GET /repos/octocat/SSH/branches", "PATCH /repos/octocat/SSH",
+    ])
+    #expect(transport.body(3) == #"{"private":true}"#)
+  }
+
+  @Test func refusesATakenRepositoryWithCommits() async throws {
+    let taken = #"{"errors":[{"field":"name","message":"name already exists on this account"}]}"#
+    let repository = """
+      {"name":"SSH","full_name":"octocat/SSH","private":false,"html_url":"https://github.com/octocat/SSH",\
+      "clone_url":"https://github.com/octocat/SSH.git"}
+      """
+    let transport = FakeTransport([(422, taken), (200, repository), (200, #"[{"name":"main"}]"#)])
+    let api = GitHubAPI(token: "t", transport: transport)
+    await #expect(
+      throws: GitHubError.api(
+        status: 422, message: "github.com/octocat/SSH already exists and has commits. Choose another name.")
+    ) {
+      try await api.createOrAdoptRepository(NewRepository(name: "SSH", isPrivate: false), owner: "octocat")
+    }
+    #expect(transport.requests.count == 3)
+  }
+
   @Test func normalizesNamesLikeGitHub() {
     #expect(NewRepository.normalizedName("My Project") == "My-Project")
     #expect(NewRepository.normalizedName("  a  b!c.d_e ") == "a-b-c.d_e")

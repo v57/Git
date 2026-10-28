@@ -46,6 +46,25 @@ extension GitHubAPI {
     try await send("GET", Self.repoPath(owner, name))
   }
 
+  /// Whether the repository has no branches yet: nothing was ever pushed to it.
+  public func isEmpty(owner: String, name: String) async throws -> Bool {
+    struct Branch: Decodable { var name: String }
+    let branches: [Branch] = try await send("GET", Self.repoPath(owner, name) + "/branches?per_page=1")
+    return branches.isEmpty
+  }
+
+  /// Sets the repository's visibility and, unless `description` is empty, its description.
+  public func updateRepository(owner: String, name: String, description: String = "", isPrivate: Bool)
+    async throws -> GitHubRepository
+  {
+    struct Body: Encodable {
+      var description: String?
+      var `private`: Bool
+    }
+    let body = Body(description: description.isEmpty ? nil : description, private: isPrivate)
+    return try await send("PATCH", Self.repoPath(owner, name), body: body)
+  }
+
   /// The commit `branch` points at.
   public func head(owner: String, name: String, branch: String) async throws -> String {
     struct Ref: Decodable {
