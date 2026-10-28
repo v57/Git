@@ -140,6 +140,10 @@ public struct RepositorySummary: Sendable, Hashable {
     operation = summaries.lazy.compactMap(\.operation).first
   }
 
+  /// On a branch with commits and no upstream: none of it is on a remote yet, so the toolbar offers Publish. Never
+  /// for a group's totals.
+  public var isUnpublished: Bool { !hasUpstream && branch != nil && headOID != nil }
+
   /// Uncommitted changes, commits to push or pull, or an operation to finish.
   public var needsAttention: Bool {
     changeCount > 0 || ahead > 0 || behind > 0 || operation != nil

@@ -37,6 +37,17 @@ struct StatusParserTests {
     let detached = StatusParser.parse("# branch.oid abc\0# branch.head (detached)\0")
     #expect(detached.isDetached)
   }
+
+  @Test func marksBranchesWithoutUpstreamUnpublished() {
+    let local = StatusParser.parse("# branch.oid abc\0# branch.head main\0")
+    let tracking = StatusParser.parse("# branch.oid abc\0# branch.head main\0# branch.upstream origin/main\0")
+    #expect(RepositorySummary(local).isUnpublished)
+    #expect(!RepositorySummary(tracking).isUnpublished)
+    // Nothing to publish yet, or not on a branch, or a group's totals.
+    #expect(!RepositorySummary(StatusParser.parse("# branch.oid (initial)\0# branch.head main\0")).isUnpublished)
+    #expect(!RepositorySummary(StatusParser.parse("# branch.oid abc\0# branch.head (detached)\0")).isUnpublished)
+    #expect(!RepositorySummary(combining: [RepositorySummary(local)]).isUnpublished)
+  }
 }
 
 struct LogParserTests {

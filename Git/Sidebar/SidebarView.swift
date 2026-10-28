@@ -411,7 +411,8 @@ extension RepositoryMode {
 }
 
 /// A repository's state at a glance: the operation in progress, an orange dot with the number of
-/// changed files, ↑ commits to push and ↓ commits to pull. Nothing when it is up to date.
+/// changed files, ↑ commits to push and ↓ commits to pull, and a gray dot while its branch isn't published. Nothing
+/// when it is up to date.
 struct StatusMarks: View {
   let summary: RepositorySummary
 
@@ -421,6 +422,7 @@ struct StatusMarks: View {
         Chip(operation.title, hue: .orange).controlSize(.small)
       }
       SyncCounts(changes: summary.changeCount, ahead: summary.ahead, behind: summary.behind)
+      if summary.isUnpublished { StatusDot(hue: .gray) }
     }
     .animation(.kit, value: summary)
     .accessibilityElement(children: .ignore)
@@ -438,6 +440,7 @@ struct StatusMarks: View {
     if summary.changeCount > 0 { parts.append(count(summary.changeCount, "uncommitted change")) }
     if summary.ahead > 0 { parts.append(count(summary.ahead, "commit") + " to push") }
     if summary.behind > 0 { parts.append(count(summary.behind, "commit") + " to pull") }
+    if summary.isUnpublished { parts.append(parts.isEmpty ? "Not published" : "not published") }
     return parts.isEmpty ? "Up to date" : parts.joined(separator: ", ")
   }
 }
