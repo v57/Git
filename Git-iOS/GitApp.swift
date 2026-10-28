@@ -293,9 +293,9 @@ struct RepositoriesSidebar: View {
     }
   }
 
-  /// The devices, and "via Hub" or the folder.
+  /// The devices it is on, as Code lists its projects: "via Hub" after each repeated itself on every row.
   private func subtitle(_ repository: RemoteRepository) -> String {
-    repository.targets.map { "\($0.name) · \($0.detail)" }.joined(separator: ", ")
+    repository.targets.map(\.name).joined(separator: ", ")
   }
 
   @ViewBuilder private var chevron: some View {
