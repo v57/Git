@@ -1,0 +1,18 @@
+{
+  "continueOnFailure" : false,
+  "id" : "pull-request",
+  "name" : "Pull Request",
+  "steps" : [
+    {
+      "id" : "build",
+      "kind" : "release",
+      "name" : "Build",
+      "parallel" : false,
+      "releaseStep" : "build",
+      "runner" : "mac"
+    }
+  ],
+  "trigger" : {
+    "branch" : "main"
+  }
+}

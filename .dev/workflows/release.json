@@ -1,0 +1,42 @@
+{
+  "continueOnFailure" : false,
+  "id" : "release",
+  "name" : "Release",
+  "steps" : [
+    {
+      "id" : "build",
+      "kind" : "release",
+      "name" : "Build",
+      "parallel" : false,
+      "releaseStep" : "build",
+      "runner" : "mac"
+    },
+    {
+      "id" : "archive",
+      "kind" : "release",
+      "name" : "Archive",
+      "parallel" : false,
+      "releaseStep" : "archive",
+      "runner" : "mac"
+    },
+    {
+      "id" : "direct",
+      "kind" : "release",
+      "name" : "Sign & Notarize",
+      "parallel" : false,
+      "releaseStep" : "direct",
+      "runner" : "mac"
+    },
+    {
+      "id" : "github",
+      "kind" : "release",
+      "name" : "GitHub Release",
+      "parallel" : false,
+      "releaseStep" : "github",
+      "runner" : "mac"
+    }
+  ],
+  "trigger" : {
+    "tag" : "v*"
+  }
+}
