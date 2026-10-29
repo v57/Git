@@ -259,9 +259,13 @@ struct CompletedOperation: Equatable {
     if activities[path] != activity { activities[path] = activity }
   }
 
-  /// Adds every repository found in the dropped or picked folders. Returns the added paths.
+  /// Adds every repository found in the dropped or picked folders, the new items (repositories, groups for folders
+  /// of several) into `group` (a vault group id; `nil`: the top level) before the sidebar item `before` (`nil`: in
+  /// name order at the end). Returns the added paths.
   @discardableResult
-  func importFolders(_ urls: [URL], into context: ModelContext) async -> [String] {
+  func importFolders(
+    _ urls: [URL], into context: ModelContext, group: String? = nil, before: String? = nil
+  ) async -> [String] {
     let folders = urls.filter {
       $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
     }
@@ -288,7 +292,9 @@ struct CompletedOperation: Equatable {
     }
     try? context.save()
     await vaultProjects.publish(added, context: context)
-    arrange(added.map(\.path) + regrouped, new: Set(added.map(\.path)))
+    arrange(
+      added.map(\.path) + regrouped, new: Set(added.map(\.path)), into: group,
+      before: before.flatMap(layout(context).vaultID(of:)))
 
     let foundCount = found.values.reduce(0) { $0 + $1.count }
     if foundCount == 0 {

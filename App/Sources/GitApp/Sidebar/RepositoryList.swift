@@ -2,6 +2,7 @@ import ComponentKit
 import GitKit
 import SwiftData
 import SwiftUI
+import UniformTypeIdentifiers
 import VaultKit
 
 /// The Repositories section: groups, which nest, and repositories in the order they were dragged
@@ -180,6 +181,10 @@ struct RepositoryList: View {
           if case .repository(let repository) = node.item { repository.url } else { nil }
         }
         .dropTitle(root: "Repositories") { $0.item.name }
+        // Folders from Finder go where the rows make room for them, as a dragged row would (into a group held over).
+        .acceptsDrops(of: [.fileURL]) { providers, parent, index in
+          KitDroppedFiles.load(providers) { drop($0, into: parent, at: index, nodes: nodes) }
+        }
       } else {
         // One list in the sort's order: dragging would move repositories out of their folders.
         ForEach(nodes) { node in
@@ -485,6 +490,21 @@ struct RepositoryList: View {
   /// the top level) at `index` among the items it shows, counted before the move. They go before
   /// the item that is there, so repositories the list hides keep their places.
   private func move(_ ids: [String], into parent: String?, at index: Int, nodes: [Node]) {
+    let (groupID, before) = destination(of: ids, into: parent, at: index, nodes: nodes)
+    for id in ids {
+      if let group = layout.vaultID(of: id), id.hasPrefix("group:") {
+        library.moveGroup(group, into: groupID, before: before, context: context)
+      } else {
+        library.move([id], into: groupID, before: before, context: context)
+      }
+    }
+  }
+
+  /// The group (vault id) and the item to go before (sidebar id; `nil`: the end) for items going into `parent` at
+  /// `index`, as `move` counts them.
+  private func destination(of ids: [String], into parent: String?, at index: Int, nodes: [Node]) -> (
+    group: String?, before: String?
+  ) {
     func children(of id: String, in nodes: [Node]) -> [Node]? {
       for node in nodes {
         if node.id == id { return node.children }
@@ -494,13 +514,18 @@ struct RepositoryList: View {
     }
     let siblings = parent.map { children(of: $0, in: nodes) ?? [] } ?? nodes
     let before = siblings.dropFirst(index).first { !ids.contains($0.id) }?.id
-    let groupID = parent.flatMap { layout.vaultID(of: $0) }
-    for id in ids {
-      if let group = layout.vaultID(of: id), id.hasPrefix("group:") {
-        library.moveGroup(group, into: groupID, before: before, context: context)
-      } else {
-        library.move([id], into: groupID, before: before, context: context)
-      }
+    return (parent.flatMap { layout.vaultID(of: $0) }, before)
+  }
+
+  /// Files dropped on a row: repositories in the list move there, as their rows would; folders are added there.
+  private func drop(_ urls: [URL], into parent: String?, at index: Int, nodes: [Node]) {
+    let result = Self.sort(urls, known: Set(repositories.map(\.path)))
+    if !result.repositories.isEmpty { move(result.repositories, into: parent, at: index, nodes: nodes) }
+    guard !result.folders.isEmpty else { return }
+    let (groupID, before) = destination(of: [], into: parent, at: index, nodes: nodes)
+    Task {
+      let added = await library.importFolders(result.folders, into: context, group: groupID, before: before)
+      if let first = added.first { selection = first }
     }
   }
 

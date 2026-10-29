@@ -74,10 +74,8 @@ struct SidebarView: View {
       }
     }
     .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
-    .dropDestination(for: URL.self) { urls, _ in
-      drop(urls)
-      return true
-    } isTargeted: { isDropTargeted = $0 }
+    // The kit's: a drop over a repository row the list doesn't take comes here too.
+    .kitFileDrop(isTargeted: $isDropTargeted) { drop($0) }
     .fileImporter(
       isPresented: $library.isImporterPresented, allowedContentTypes: [.folder],
       allowsMultipleSelection: true

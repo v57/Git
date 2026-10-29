@@ -154,8 +154,9 @@ extension RepositoryLibrary {
   /// Puts repositories in no group into groups by folder (see `RepoGrouping`): siblings join the
   /// group made from their folder, created if needed (inside the group of the nearest folder above
   /// that has one), and a repository whose folder already has a group joins it. New repositories
-  /// left over go to the end of the top level, in name order with the new groups.
-  func arrange(_ paths: [String], new: Set<String>) {
+  /// left over go, in name order with the new groups, into `group` (a vault id; `nil`: the top level)
+  /// before the item `before` (a vault id; `nil`: at its end).
+  func arrange(_ paths: [String], new: Set<String>, into group: String? = nil, before: String? = nil) {
     vault.perform { store in
       let device = store.deviceID
       let tree = try store.projectTree()
@@ -201,7 +202,7 @@ extension RepositoryLibrary {
         }
       }
       let order = newItems.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-      try store.moveProjects(order.map(\.id), into: nil)
+      try store.moveProjects(order.map(\.id), into: group, before: before)
     }
   }
 
