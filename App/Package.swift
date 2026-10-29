@@ -69,15 +69,11 @@ let package = Package(
       swiftSettings: appSettings),
   ])
 
-#if !os(Linux)
-// Dev's screenshot scenes (`.dev/screenshots.json`). Not on Linux: Dev's package depends on Code, Database and Git
-// there, which the Linux app would build too; the app builds without its screenshot scenes
-// (`canImport(DevScreenshots)`).
+// Dev's screenshot scenes (`.dev/screenshots.json`).
 package.dependencies += [v57("Dev")]
 for target in package.targets where target.name == "GitApp" {
   target.dependencies += [.product(name: "DevScreenshots", package: "Dev")]
 }
-#endif
 
 #if os(Windows) || os(Linux)
 // Off Apple platforms SwiftUI, SwiftData and SQLite3 are v57/SwiftUI's, and SwiftUIPortability adds the Foundation

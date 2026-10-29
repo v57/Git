@@ -1,8 +1,6 @@
 #if DEBUG
-  #if canImport(DevScreenshots)
-    // Dev's screenshot capture (not on Linux, where Dev's package depends on this one).
-    import DevScreenshots
-  #endif
+  // Dev's screenshot capture.
+  import DevScreenshots
   import SwiftData
   import SwiftUI
 
@@ -39,11 +37,9 @@
 
     /// Joins a screenshot capture, if this launch is one. Called by whichever window comes first.
     func prepare(library: RepositoryLibrary, context: ModelContext) {
-      #if canImport(DevScreenshots)
-        Screenshots.prepare(waitsForReady: true) { scene in
-          await self.open(scene.arguments, library: library, context: context)
-        }
-      #endif
+      Screenshots.prepare(waitsForReady: true) { scene in
+        await self.open(scene.arguments, library: library, context: context)
+      }
     }
 
     /// A later scene: back to an empty list as at launch, then the windows open the scene from its arguments.
@@ -64,9 +60,7 @@
         self.opening = nil
         opening.resume()
       } else {
-        #if canImport(DevScreenshots)
-          Screenshots.ready()
-        #endif
+        Screenshots.ready()
       }
     }
   }
