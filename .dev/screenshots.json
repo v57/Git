@@ -2,7 +2,7 @@
   "build": { "scheme": "Git", "project": "Git.xcodeproj" },
   "appearances": ["light", "dark"],
   "variables": { "DEMO": "$ROOT/.build/screenshots-demo" },
-  "watch": ["Git", "Sources", "Tools/screenshots"],
+  "watch": ["App", "Sources", "Tools/screenshots"],
   "mac": { "window": [1440, 900] },
   "scenes": [
     {

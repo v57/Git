@@ -62,8 +62,13 @@ other repository that needs attention.
                                   and its granted scopes in the app's own keychain item (KeychainTokenStore),
                                   the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
                                   no dependency on GitKit
-    Git.xcodeproj                 the app; local package ../Git (GitKit), and Code (CodeHighlighting) and Component (ComponentKit) from GitHub
-    Git/                          app sources
+    App/                          the apps' package (App/Package.swift): GitApp, GitMobileApp, GitUI, depending on
+                                  the libraries above (..) and Code (CodeHighlighting), Component (ComponentKit),
+                                  Vault, UpdateKit and SSH from GitHub
+    Git.xcodeproj                 builds the bundles: App/Sources/Git (the Mac app's entry point) or
+                                  App/Sources/GitMobile (iPhone and iPad) with App/Resources (icon, assets,
+                                  entitlements), linking GitApp or GitMobileApp
+    App/Sources/GitApp/           the Mac app
       Library/    SavedRepository (SwiftData), VaultProjects (the vault's projects and groups),
                   RepositoryLibrary (sessions, summaries, import, grouping and ordering, fetch/pull/push
                   across repositories)
@@ -71,14 +76,17 @@ other repository that needs attention.
       Changes/    file list, commit composer, the diff as hunk cards, Resolve Conflicts
       History/    To pull / To push / history cards with the branch graph, commit inspector
       Stashes/    stashes with Apply, Pop and Drop
-      Shared/     change-kind tiles, dates and other small helpers
-      Diff/       HunkCards (the kit's hunk cards), DiffView (long diffs: selection, copy), DiffHighlighter
-                  (the only file importing CodeHighlighting), LoadedDiff
+      Shared/     the launch scene and other small helpers
       Toolbar/    Fetch/Pull/Push, Branch/Merge/Stash, branch popover, sheets
       Welcome/    the Welcome window: clone, open, new repository, recent repositories
-      GitHub/     the app's GitHubAccount (client ID, hands its token to GitCredentials), the
-                  sign-in sheet and its animated connection header, Settings › GitHub, Publish sheet
-    Git-iOS/                      the iPhone and iPad app (target Git iOS); a few of Git/'s files are shared into it
+      GitHub/     Publish sheet
+    App/Sources/GitUI/            what both apps show
+      Diff/       HunkCards (the kit's hunk cards), DiffHighlighter (the only file importing
+                  CodeHighlighting), LoadedDiff
+      Shared/     change-kind tiles, dates, MessageSheet
+      GitHub/     the apps' GitHubAccount (client ID, hands its token to GitCredentials), the
+                  sign-in sheet and its animated connection header, Settings › GitHub
+    App/Sources/GitMobileApp/     the iPhone and iPad app (target Git iOS)
       Local/      LocalRepositories (the app's Documents folder: clone, create, delete), the commit author
       Remote/     RemoteRepositories (the vault's projects and saved folders on SSH hosts), SSHGitTransport
       Repository/ GitBackend (one protocol over GitEngine and GitKit), RepositoryModel, Changes, History, diff
