@@ -1,4 +1,5 @@
 import CodeHighlighting
+import ComponentKit
 import Foundation
 import GitKit
 import SwiftUI
@@ -63,12 +64,12 @@ nonisolated enum DiffHighlighter {
           index += 1
           continue
         }
-        var removed: [DiffLine] = []
+        var removed: [GitKit.DiffLine] = []
         while index < lines.count, lines[index].kind == .removed {
           removed.append(lines[index])
           index += 1
         }
-        var added: [DiffLine] = []
+        var added: [GitKit.DiffLine] = []
         while index < lines.count, lines[index].kind == .added {
           added.append(lines[index])
           index += 1
@@ -110,7 +111,7 @@ nonisolated enum DiffHighlighter {
   /// Tokens for each of `lines` (by line id, ranges relative to the line), from the whole file
   /// when it is available and matches the diff, else from the lines themselves.
   private static func side(
-    _ lines: [DiffLine], number: KeyPath<DiffLine, Int?>, text: String?, spec: LanguageSpec
+    _ lines: [GitKit.DiffLine], number: KeyPath<GitKit.DiffLine, Int?>, text: String?, spec: LanguageSpec
   ) -> [Int: [CodeToken]] {
     if let text, text.utf16.count <= maxFileSize {
       let ns = text as NSString
@@ -187,13 +188,5 @@ nonisolated enum DiffHighlighter {
   static func display(_ text: String) -> String {
     let line = withoutCarriageReturn(text)
     return line.utf8.contains(UInt8(ascii: "\t")) ? line.replacingOccurrences(of: "\t", with: "    ") : line
-  }
-}
-
-extension Color {
-  nonisolated init(rgb: UInt32) {
-    self.init(
-      .sRGB, red: Double((rgb >> 16) & 0xFF) / 255, green: Double((rgb >> 8) & 0xFF) / 255,
-      blue: Double(rgb & 0xFF) / 255)
   }
 }

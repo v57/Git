@@ -304,7 +304,7 @@ struct RepositoriesSidebar: View {
     // iPhone: a row pushes its repository.
     if idiom == .phone {
       Image(systemName: "chevron.right")
-        .font(.system(size: 12, weight: .semibold))
+        .font(KitFont.callout.font.weight(.semibold))
         .foregroundStyle(.kitTertiary)
     }
   }

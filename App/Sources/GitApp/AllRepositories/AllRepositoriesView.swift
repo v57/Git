@@ -67,9 +67,9 @@ struct AllRepositoriesView: View {
         Task { await library.run(.fetch, on: paths) }
       }
       .disabled(isFetching)
-      .help("Fetch every repository shown")
+      .kitHelp("Fetch All", meta: "Fetch every repository shown", systemImage: "arrow.clockwise", hue: .blue)
       Button("Clone", systemImage: "plus") { library.isClonePresented = true }
-        .help("Clone a repository")
+        .kitHelp("Clone", shortcut: "⇧⌘C", meta: "Clone a repository", systemImage: "plus")
     }
     KitSearchField(text: $search, prompt: "Name, folder, branch").frame(width: 220)
   }
@@ -205,7 +205,6 @@ private struct FolderBlock: View {
 private struct RepositoryCard: View {
   let repository: RepositoryCardModel
   let action: () -> Void
-  @State private var isHovered = false
 
   var body: some View {
     Button(action: action) {
@@ -226,13 +225,12 @@ private struct RepositoryCard: View {
       }
       .padding(10)
       .frame(maxWidth: .infinity, alignment: .leading)
-      // Under the pointer the card rises, as a row's selection does.
-      .kitSurface(isHovered ? .raised : .card, cornerRadius: KitMetrics.radiusCard)
+      .kitSurface(.card, cornerRadius: KitMetrics.radiusCard)
+      // Under the pointer the card tilts toward it and lights up, the kit's hover.
+      .kitHoverEffect(in: .rect(cornerRadius: KitMetrics.radiusCard))
       .contentShape(Rectangle())
     }
-    .buttonStyle(.plain)
-    .onHover { isHovered = $0 }
-    .animation(.kitFast, value: isHovered)
+    .buttonStyle(.kitHoverEffect)
     .help(repository.path)
     .accessibilityLabel(repository.name)
   }

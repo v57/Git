@@ -22,11 +22,8 @@ struct RepositoryToolbar {
 
   @ToolbarSlotBuilder var tools: [ToolbarSlot] {
     if screen == .conflicts {
-      ToolGroup {
-        Button {} label: { ShortcutLabel(keys: "⌥⌘←", title: "Use Current") }
-        Button {} label: { ShortcutLabel(keys: "⌥⌘→", title: "Use Incoming") }
-      }
-      .allowsHitTesting(false)
+      KeyHints([("⌥⌘←", "Use Current"), ("⌥⌘→", "Use Incoming")])
+        .fixedSize()
     } else {
       ToolGroup { SyncButtons(session: session, state: state) }
       ToolGroup {
@@ -83,19 +80,6 @@ extension RepositorySession {
   }
 }
 
-/// A shortcut's keys and what it does, for the conflict screen's toolbar.
-private struct ShortcutLabel: View {
-  let keys: String
-  let title: String
-
-  var body: some View {
-    HStack(spacing: 6) {
-      Keycaps(keys)
-      Text(title).kitFont(.caption)
-    }
-  }
-}
-
 /// Which screen the detail area shows; the toolbar and title follow it.
 enum RepositoryScreenKind: Hashable {
   case changes, history, stashes, conflicts
@@ -130,13 +114,18 @@ private struct SyncButtons: View {
       Task { await count(session.fetch(), into: $fetched) }
     }
     .disabled(!hasRemote || session.isBusy)
-    .help(fetchHelp)
+    .kitHelp(
+      "Fetch", shortcut: "⇧⌘F", meta: fetchHelp, systemImage: "arrow.clockwise", hue: .blue,
+      status: session.activity == .fetching ? session.workStatus : .idle)
     .effect(.shimmer, on: fetched)
     Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
       Task { await count(session.pull(), into: $pulled) }
     }
     .disabled(!hasUpstream || session.isBusy)
-    .help(hasUpstream ? "Pull from \(session.status?.upstream ?? "")" : "This branch has no upstream")
+    .kitHelp(
+      "Pull", shortcut: "⇧⌘P", meta: hasUpstream ? "From \(session.status?.upstream ?? "")" : "This branch has no upstream",
+      systemImage: "arrow.down.to.line", hue: .blue,
+      status: session.activity == .pulling ? session.workStatus : .idle)
     .effect(.receive("arrow.down.circle.fill"), on: pulled)
     Button {
       // Without a remote, Publish creates one on GitHub first.
@@ -157,7 +146,10 @@ private struct SyncButtons: View {
       .animation(.kit, value: ahead)
     }
     .disabled(!canPush || session.isBusy)
-    .help(pushHelp)
+    .kitHelp(
+      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: pushHelp,
+      systemImage: "arrow.up.to.line", hue: .blue,
+      status: session.activity == .pushing ? session.workStatus : .idle)
     .effect(.send("arrow.up.circle.fill"), on: pushed)
     .kitContextMenu {
       Button("Force Push…", systemImage: "exclamationmark.arrow.triangle.2.circlepath") { confirmForcePush = true }
@@ -202,7 +194,9 @@ private struct BranchToolbarButton: View {
 
   var body: some View {
     Button("Branch", systemImage: "arrow.triangle.branch") { state.isBranchPopoverPresented.toggle() }
-    .help("Switch or create a branch")
+    .kitHelp("Branch", meta: "Switch or create a branch", systemImage: "arrow.triangle.branch", hue: .orange)
+    // The system's popover: a kitPopover here opens once per form the kit toolbar measures (hidden copies of its
+    // slots), so two or three cards stack up.
     .popover(isPresented: $state.isBranchPopoverPresented, arrowEdge: .bottom) {
       BranchPopover(session: session, isPresented: $state.isBranchPopoverPresented)
     }
@@ -218,7 +212,7 @@ private struct MergeMenu: View {
     let current = session.currentBranch?.name ?? "HEAD"
     Button("Merge", systemImage: "arrow.triangle.merge") { isPresented.toggle() }
       .disabled(session.isBusy || session.status?.branch == nil)
-      .help("Merge a branch into \(current)")
+      .kitHelp("Merge", meta: "Merge a branch into \(current)", systemImage: "arrow.triangle.merge", hue: .orange)
       .kitMenu(isPresented: $isPresented) {
         KitMenuSection("Merge into \(current)") {
           ForEach(session.localBranches.filter { !$0.isCurrent }) { branch in
@@ -329,7 +323,33 @@ struct BranchPopover: View {
     let divergence = divergenceText(
       ahead: branch.aheadOfHead, behind: branch.behindHead, base: current)
     let isDeleting = session.deletingBranches.contains(branch.id)
-    return BranchRow {
+    return SidebarRow(branch.name) {
+      RowTile(
+        systemImage: branch.isCurrent ? "checkmark" : worktree != nil ? "folder" : "arrow.triangle.branch",
+        hue: branch.isCurrent ? .accent : nil, status: isDeleting ? .working : .idle)
+    } trailing: {
+      UpstreamBadge(branch: branch)
+      if let date = branch.date {
+        Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
+          .foregroundStyle(.kitTertiary)
+      }
+    }
+    .subtitle {
+      HStack(spacing: 4) {
+        if isDeleting {
+          Text("Deleting…")
+        } else if branch.isCurrent {
+          Text("Current")
+        } else if let divergence {
+          Text(divergence)
+            .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
+        } else if branch.aheadOfHead == 0 {
+          Text("Merged into \(current)")
+        }
+        if let worktree { Text("· in \(worktree.name)") }
+      }
+    }
+    .action {
       if let worktree {
         // A branch checked out in another worktree can't be checked out here; open that one.
         library.open(worktree.url, into: context)
@@ -337,37 +357,6 @@ struct BranchPopover: View {
         Task { await session.switchTo(branch) }
       }
       isPresented = false
-    } content: {
-      HStack(spacing: 8) {
-        Image(systemName: branch.isCurrent ? "checkmark" : worktree != nil ? "folder" : "arrow.triangle.branch")
-          .foregroundStyle(branch.isCurrent ? AnyShapeStyle(.kitAccent) : AnyShapeStyle(.kitSecondary))
-          .frame(width: 16)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(branch.name).lineLimit(1).truncationMode(.middle)
-          HStack(spacing: 4) {
-            if isDeleting {
-              LiveIcon(systemImage: "trash", hue: .gray, status: .working, size: 12)
-              Text("Deleting…")
-            } else if branch.isCurrent {
-              Text("Current")
-            } else if let divergence {
-              Text(divergence)
-                .foregroundStyle((branch.aheadOfHead ?? 0) > 0 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
-            } else if branch.aheadOfHead == 0 {
-              Text("Merged into \(current)")
-            }
-            if let worktree { Text("· in \(worktree.name)") }
-          }
-          .kitFont(.caption)
-        }
-        Spacer(minLength: 4)
-        UpstreamBadge(branch: branch)
-        if let date = branch.date {
-          Text(date, format: .relative(presentation: .numeric, unitsStyle: .narrow))
-            .kitFont(.caption)
-            .foregroundStyle(.kitTertiary)
-        }
-      }
     }
     .disabled(isDeleting)
     .kitContextMenu {
@@ -413,7 +402,7 @@ struct StashMenu: View {
 
   var body: some View {
     Button("Stash", systemImage: "archivebox") { isPresented.toggle() }
-      .help("Stash changes")
+      .kitHelp("Stash", meta: "Stash changes", systemImage: "archivebox", hue: .indigo)
       .disabled(session.isBusy)
       .kitMenu(isPresented: $isPresented) {
         Button("Stash Changes…", systemImage: "archivebox") { isStashing = true }
@@ -689,27 +678,5 @@ private struct DeleteEverywhereSheet: View {
       .keyboardShortcut(.defaultAction)
       .disabled(!isConfirmed)
     }
-  }
-}
-
-/// A row of the Branch popover: hover fills it, a click acts on it.
-private struct BranchRow<Content: View>: View {
-  let action: () -> Void
-  @ViewBuilder let content: () -> Content
-  @State private var isHovered = false
-
-  var body: some View {
-    HStack(spacing: 8) { content() }
-      .padding(.horizontal, 8)
-      .frame(minHeight: 44)
-      .background {
-        if isHovered { RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover) }
-      }
-      .contentShape(Rectangle())
-      .onTapGesture(perform: action)
-      .onHover { isHovered = $0 }
-      .animation(.kitFast, value: isHovered)
-      .accessibilityElement(children: .combine)
-      .accessibilityAddTraits(.isButton)
   }
 }

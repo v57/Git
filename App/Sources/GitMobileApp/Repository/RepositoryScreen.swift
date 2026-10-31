@@ -56,7 +56,7 @@ struct RepositoryScreen: View {
     .navigationDestination(for: DiffRoute.self) { route in DiffScreen(model: model, route: route) }
     .navigationDestination(for: Commit.self) { commit in CommitScreen(model: model, commit: commit) }
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
-    .kitSheet(item: $model.failure) { failure in MessageSheet(failure.title, message: failure.message) }
+    .kitNotice(item: $model.failure, title: \.title, message: \.message)
     .task {
       await model.open()
       #if DEBUG

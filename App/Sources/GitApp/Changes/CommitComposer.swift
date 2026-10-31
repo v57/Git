@@ -44,12 +44,12 @@ struct CommitComposer: View {
           if !state.summary.isEmpty {
             // Logs and tools cut summaries longer than about 50 characters.
             Text("\(state.summary.count)/50")
-              .font(.system(size: 11).monospacedDigit())
+              .font(KitFont.caption.font.monospacedDigit())
               .foregroundStyle(state.summary.count > 50 ? AnyShapeStyle(Hue.orange.text) : AnyShapeStyle(.kitSecondary))
               .contentTransition(.numericText(value: Double(state.summary.count)))
               .animation(.kit, value: state.summary.count)
               .transition(.opacity)
-              .help("Keep the summary to 50 characters so it isn't cut off in logs")
+              .kitHelp("\(state.summary.count) of 50", meta: "Keep the summary to 50 characters so it isn't cut off in logs")
           }
         }
         .padding(.horizontal, 12)
@@ -57,7 +57,7 @@ struct CommitComposer: View {
         .animation(.kit, value: state.summary.isEmpty)
         Rectangle().fill(.kitSeparator).frame(height: 1).padding(.horizontal, 12)
         TextEditor(text: $state.details)
-          .font(.body)
+          .font(KitFont.body.font)
           .focused($focusedField, equals: .details)
           .scrollContentBackground(.hidden)
           .padding(.horizontal, 7)
@@ -77,7 +77,7 @@ struct CommitComposer: View {
       Toggle("Amend last commit", isOn: $state.amend)
         .toggleStyle(.kitCheckbox)
         .disabled(session.status?.isUnborn ?? true)
-        .help("Replace the last commit with the staged changes and this message")
+        .kitHelp("Amend Last Commit", meta: "Replace the last commit with the staged changes and this message")
         .onChange(of: state.amend) { _, amend in
           if amend { Task { await prefillAmendMessage() } }
         }
@@ -86,6 +86,7 @@ struct CommitComposer: View {
           .buttonStyle(.kit)
           .keyboardShortcut(.return, modifiers: [.command, .shift])
           .disabled(!canCommit || session.remotes.isEmpty)
+          .kitHelp("Commit & Push", shortcut: "⇧⌘↩", systemImage: "arrow.up.to.line")
         Button {
           Task { await commit(push: false) }
         } label: {
@@ -96,7 +97,7 @@ struct CommitComposer: View {
               .contentTransition(.numericText(value: Double(stagedCount)))
               .animation(.kit, value: commitTitle)
             Text(Keycaps.label("⌘↩"))
-              .font(.system(size: 11))
+              .font(KitFont.caption.font)
               .opacity(0.75)
           }
           .frame(maxWidth: .infinity)
@@ -104,6 +105,7 @@ struct CommitComposer: View {
         .buttonStyle(.kitPrimary)
         .keyboardShortcut(.return, modifiers: .command)
         .disabled(!canCommit)
+        .kitHelp(commitTitle, shortcut: "⌘↩", systemImage: "checkmark")
       }
       .controlSize(.large)
     }

@@ -30,8 +30,8 @@ struct RepositoryList: View {
   @Binding var selected: Set<String>
   let filter: String
   @State private var anchor: String?
-  @State private var renaming: VaultProjectGroup?
-  @State private var newName = ""
+  /// The group whose name is a field in its row.
+  @State private var renaming: VaultProjectGroup.ID?
   @AppStorage("RepositoriesCollapsed") private var storedCollapsed = false
   /// The section's own state, saved to `storedCollapsed`: a defaults write drops the toggle's animation.
   @State private var isCollapsed = UserDefaults.standard.bool(forKey: "RepositoriesCollapsed")
@@ -195,9 +195,10 @@ struct RepositoryList: View {
         }
       }
       if more > 0 || showsMore {
-        ShowMoreRow(count: more, isShowing: showsMore, reason: moreReason) {
-          withKitAnimation { showsMore.toggle() }
-        }
+        SidebarShowMoreRow(
+          count: more, isShowing: $showsMore, reason: moreReason,
+          help: "Show \(more) repositories \(moreReason)",
+          hideHelp: "Hide the repositories the filters leave out")
       }
       if hiddenCount > 0 && filter.isEmpty {
         Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hiddenCount) Hidden") {
@@ -209,10 +210,10 @@ struct RepositoryList: View {
       }
     } accessory: {
       Button("Sort and Filter", systemImage: "line.3.horizontal.decrease") { showsOptions = true }
-        .help("All Repositories, sort and filter")
+        .kitHelp("Sort and Filter", meta: "All Repositories, sort and filter", systemImage: "line.3.horizontal.decrease")
         .kitMenu(isPresented: $showsOptions) { optionsMenu }
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
-        .help("Add the Git repositories in a folder")
+        .kitHelp("Add Repository", shortcut: "⇧⌘O", meta: "Add the Git repositories in a folder", systemImage: "plus")
     }
     .headerMenu {
       Button("Remove All Repositories from List", systemImage: "minus.circle") { confirmsRemoveAll = true }
@@ -245,9 +246,6 @@ struct RepositoryList: View {
         selected = [path]
         anchor = path
       }
-    }
-    .kitSheet(item: $renaming) { group in
-      RenameGroupSheet(group: group, name: $newName)
     }
   }
 
@@ -329,6 +327,9 @@ struct RepositoryList: View {
     ) {
       withAnimation(.kit) { library.toggleCollapsed(group) }
     }
+    .kitRename(isRenaming: .init(get: { renaming == group.id }, set: { if !$0 { renaming = nil } })) {
+      library.rename(group, to: $0)
+    }
     .kitContextMenu { groupMenu(group, members: members, layout: layout) }
     .transition(.row)
   }
@@ -355,8 +356,7 @@ struct RepositoryList: View {
     remoteButtons(paths, suffix: " All", pushOnlyAhead: true)
     Divider()
     Button("Rename…", systemImage: "pencil") {
-      newName = group.name
-      renaming = group
+      renaming = group.id
     }
     Button("Ungroup", systemImage: "folder.badge.minus") { withAnimation(.kit) { library.ungroup(group) } }
     if !destinations.isEmpty {
@@ -460,8 +460,7 @@ struct RepositoryList: View {
       if !groups.isEmpty { Divider() }
       Button("New Group…", systemImage: "folder.badge.plus") {
         if let group = withAnimation(.kit, { library.newGroup(from: paths, context: context) }) {
-          newName = group.name
-          renaming = group
+          renaming = group.id
         }
       }
     }
@@ -564,58 +563,6 @@ struct RepositoryList: View {
   }
 }
 
-/// Renames a group, over the window: its name in a field, Rename on Return.
-private struct RenameGroupSheet: View {
-  let group: VaultProjectGroup
-  @Binding var name: String
-  @Environment(RepositoryLibrary.self) private var library
-  @Environment(\.kitDismiss) private var dismiss
-
-  private var trimmed: String { name.trimmingCharacters(in: .whitespaces) }
-
-  var body: some View {
-    KitSheet(title: "Rename Group", meta: group.name, systemImage: "folder", hue: .indigo, width: 400) {
-      FormCard {
-        FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
-      }
-    } footer: {
-      Button("Cancel") { dismiss() }
-        .keyboardShortcut(.cancelAction)
-      Button("Rename") {
-        library.rename(group, to: trimmed)
-        dismiss()
-      }
-      .buttonStyle(.kitPrimary)
-      .keyboardShortcut(.defaultAction)
-      .disabled(trimmed.isEmpty)
-    }
-  }
-}
-
-/// The row after the list for what its filters hide: "Show 58 More · unused for a week", or Show Fewer.
-private struct ShowMoreRow: View {
-  let count: Int
-  let isShowing: Bool
-  let reason: String
-  let action: () -> Void
-  @Environment(\.kitIdiom) private var idiom
-
-  var body: some View {
-    let title = isShowing ? "Show Fewer" : "Show \(count) More"
-    SidebarRow(title) {
-      Image(systemName: isShowing ? "chevron.up" : "chevron.down")
-        .font(.system(size: 11, weight: .semibold))
-        .foregroundStyle(.kitAccent)
-        .frame(width: KitMetrics.rowTile(idiom))
-    } trailing: {
-      if !isShowing { Text(reason).lineLimit(1) }
-    }
-    .title(Text(title).foregroundStyle(.kitAccent))
-    .action(action)
-    .help(isShowing ? "Hide the repositories the filters leave out" : "Show \(count) repositories \(reason)")
-  }
-}
-
 /// A group, laid out like a repository row: the kit's disclosure, a folder tile, the name over its
 /// note, and the summed state of the repositories in it. Click collapses it.
 private struct GroupHeader: View {
@@ -637,7 +584,7 @@ private struct GroupHeader: View {
     .disclosure(isExpanded: .init(get: { !isCollapsed }, set: { if $0 == isCollapsed { toggle() } }))
     .action(toggle)
     .animation(.kit, value: isCollapsed)
-    .help(help)
+    .kitHelp(group.name, meta: help, systemImage: "folder", hue: StableHue.pick(group.name))
     .accessibilityLabel("\(group.name), \(StatusMarks.description(summary))")
     .accessibilityHint(isCollapsed ? "Expands the group" : "Collapses the group")
   }
@@ -687,7 +634,10 @@ struct RepositoryRow: View {
     .animation(.kit, value: isCurrent)
     .animation(.kit, value: isSelected)
     .effect(outcome?.effect ?? .pop, on: outcome?.count)
-    .help("\(repository.path)\n\(summary.map(StatusMarks.description) ?? "")")
+    .kitHelp(
+      repository.name,
+      meta: [repository.path, summary.map(StatusMarks.description)].compactMap { $0 }.filter { !$0.isEmpty }
+        .joined(separator: "\n"))
     .accessibilityAddTraits(isCurrent || isSelected ? .isSelected : [])
   }
 }

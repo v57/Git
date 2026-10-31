@@ -429,7 +429,7 @@ private struct CommitCardHeader<Accessory: View>: View {
       // On the window's ground, so the lanes behind the header don't show through the tile.
       icon: {
         Tile(systemImage: systemImage, hue: hue, size: 24)
-          .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(.kitWindow))
+          .background(RoundedRectangle(cornerRadius: KitMetrics.radiusSmall, style: .continuous).fill(.kitWindow))
       },
       meta: { MetaLine(meta) },
       accessory: {
@@ -515,7 +515,7 @@ private struct CommitRow: View {
             Image(systemName: "arrow.triangle.merge").padding(.trailing, 3)
             Text("Merge · ")
           }
-          Text("\(commit.authorName) · \(commit.authorDate.historyFormatted) · ")
+          Text("\(commit.authorName) · \(commit.authorDate.kitFormatted(.dayAndTime)) · ")
           Text(commit.shortID).monospaced()
         }
         .kitFont(.caption)

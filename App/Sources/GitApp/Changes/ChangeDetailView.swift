@@ -225,12 +225,12 @@ enum DiffOptions {
   static let hideWhitespaceKey = "HideWhitespaceChanges"
 }
 
-/// The diff's loading icon, shown only when a load takes a while: a quick one goes straight to the diff.
+/// The diff's loading state, shown only when a load takes a while: a quick one goes straight to the diff.
 private struct LoadingIcon: View {
   @State private var isShown = false
 
   var body: some View {
-    LiveIcon(systemImage: "doc.text", hue: .gray, status: .working)
+    EmptyState(systemImage: "doc.text", title: "Loading the Diff", status: .working)
       .opacity(isShown ? 1 : 0)
       .task {
         try? await Task.sleep(for: .milliseconds(300))

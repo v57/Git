@@ -160,7 +160,7 @@ struct ChangeFileRow: View {
       Spacer(minLength: 4)
       if let lines { Diffstat(added: lines.added, removed: lines.removed) }
       Image(systemName: "chevron.right")
-        .font(.system(size: 12, weight: .semibold))
+        .font(KitFont.callout.font.weight(.semibold))
         .foregroundStyle(.kitTertiary)
     }
     .padding(.horizontal, 10)

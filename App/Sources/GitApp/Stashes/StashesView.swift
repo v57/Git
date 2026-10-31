@@ -39,7 +39,7 @@ struct StashesScreen: View {
   }
 
   private func row(_ stash: Stash) -> some View {
-    RichHeader(stash.message, meta: [stash.reference, stash.date.historyFormatted], systemImage: "archivebox", hue: .indigo) {
+    RichHeader(stash.message, meta: [stash.reference, stash.date.kitFormatted(.dayAndTime)], systemImage: "archivebox", hue: .indigo) {
       HStack(spacing: 6) {
         Button("Apply") { Task { await session.applyStash(stash) } }
         Button("Pop") { Task { await session.popStash(stash) } }

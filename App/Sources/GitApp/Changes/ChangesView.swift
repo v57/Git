@@ -261,56 +261,40 @@ private struct ChangeCard<Rows: View>: View {
   }
 }
 
-/// A changed file: checkbox, status, name over folder, and line counts.
+/// A changed file: checkbox, status, name over folder, and line counts. The selected one is raised, as the
+/// sidebar's current row.
 private struct ChangeRow: View {
   let change: FileChange
   let lines: GitKit.LineCounts?
   let isSelected: Bool
   let toggle: () -> Void
   let select: () -> Void
-  @State private var isHovered = false
 
   var body: some View {
-    HStack(spacing: 8) {
-      Toggle(
-        (change.area == .staged ? "Unstage " : "Stage ") + change.fileName,
-        isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })
-      )
-      .toggleStyle(.kitCheckbox)
-      .kitLabelsHidden()
-      .fixedSize()
-      ChangeKindBadge(kind: change.kind)
-      VStack(alignment: .leading, spacing: 1) {
-        Text(change.fileName)
-          .fontWeight(isSelected ? .medium : .regular)
-          .lineLimit(1)
-          .truncationMode(.middle)
-        if let folder = change.originalPath.map({ "from \($0)" }) ?? (change.directory.isEmpty ? nil : change.directory) {
-          Text(folder)
-            .kitFont(.caption)
-            .lineLimit(1)
-            .truncationMode(.head)
-        }
+    let folder = change.originalPath.map { "from \($0)" } ?? (change.directory.isEmpty ? nil : change.directory)
+    SidebarRow(change.fileName) {
+      HStack(spacing: 8) {
+        Toggle(
+          (change.area == .staged ? "Unstage " : "Stage ") + change.fileName,
+          isOn: .init(get: { change.area == .staged }, set: { _ in toggle() })
+        )
+        .toggleStyle(.kitCheckbox)
+        .kitLabelsHidden()
+        .fixedSize()
+        ChangeKindBadge(kind: change.kind)
       }
-      Spacer(minLength: 4)
+    } trailing: {
       if let lines {
         Diffstat(added: lines.added, removed: lines.removed)
       }
     }
-    .padding(.horizontal, 6)
-    .frame(height: 40)
-    .background {
-      if isSelected {
-        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
-      } else if isHovered {
-        RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover)
-      }
+    .subtitle {
+      if let folder { Text(folder).truncationMode(.head) }
     }
-    .contentShape(Rectangle())
-    .onTapGesture(perform: select)
-    .onHover { isHovered = $0 }
+    .isCurrent(isSelected)
+    .action(select)
+    .truncationMode(.middle)
     .animation(.kit, value: isSelected)
-    .accessibilityAddTraits(isSelected ? .isSelected : [])
     .help(change.path)
   }
 }

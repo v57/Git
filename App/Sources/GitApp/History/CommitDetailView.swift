@@ -107,7 +107,7 @@ private struct CommitDetail: View {
         Avatar(name: commit.authorName, size: 32)
         VStack(alignment: .leading, spacing: 1) {
           Text(commit.authorName).kitFont(.headline)
-          Text(commit.authorDate.historyFormatted).kitFont(.caption)
+          Text(commit.authorDate.kitFormatted(.dayAndTime)).kitFont(.caption)
         }
         .help("\(commit.authorName) <\(commit.authorEmail)>")
         Spacer()
@@ -143,10 +143,7 @@ private struct CommitDetail: View {
       Text("Files"),
       content: {
         ForEach(files) { file in
-          FileRow(
-            file: file, isSelected: file.id == selectedFile?.id
-          )
-          .onTapGesture { state.selectedCommitFile = file.id }
+          FileRow(file: file, isSelected: file.id == selectedFile?.id) { state.selectedCommitFile = file.id }
         }
       },
       icon: {
@@ -249,39 +246,27 @@ private struct CommitDetail: View {
   }
 }
 
-/// A changed file in the inspector: its change's tile, name and folder, and its line counts.
+/// A changed file in the inspector: its change's tile, name and folder, and its line counts. The selected one is
+/// raised, as the sidebar's current row.
 private struct FileRow: View {
   let file: CommitFile
   let isSelected: Bool
-  @State private var isHovered = false
+  let select: () -> Void
 
   var body: some View {
-    HStack(spacing: 8) {
+    SidebarRow(file.fileName) {
       ChangeKindBadge(kind: file.kind)
-      (Text(file.fileName).fontWeight(isSelected ? .medium : .regular)
-        + Text("  \(file.directory)").foregroundStyle(.kitSecondary).font(.system(size: 11)))
-        .lineLimit(1)
-        .truncationMode(.tail)
-      Spacer(minLength: 4)
+    } trailing: {
       if let lines = file.lines {
         Diffstat(added: lines.added, removed: lines.removed)
       } else {
-        Text("binary").kitFont(.caption)
+        Text("binary")
       }
     }
-    .padding(.horizontal, 6)
-    .frame(height: 32)
-    .background {
-      if isSelected {
-        Color.clear.kitSurface(.raised, cornerRadius: KitMetrics.radius)
-      } else if isHovered {
-        RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(.kitHover)
-      }
-    }
-    .contentShape(Rectangle())
-    .onHover { isHovered = $0 }
+    .title(Text(file.fileName) + Text("  \(file.directory)").foregroundStyle(.kitSecondary).font(KitFont.caption.font))
+    .isCurrent(isSelected)
+    .action(select)
     .animation(.kit, value: isSelected)
     .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
-    .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
   }
 }

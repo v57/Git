@@ -83,7 +83,7 @@ other repository that needs attention.
     App/Sources/GitUI/            what both apps show
       Diff/       HunkCards (the kit's hunk cards), DiffHighlighter (the only file importing
                   CodeHighlighting), LoadedDiff
-      Shared/     change-kind tiles, dates, MessageSheet
+      Shared/     change-kind tiles
       GitHub/     the apps' GitHubAccount (client ID, hands its token to GitCredentials), the
                   sign-in sheet and its animated connection header, Settings › GitHub
     App/Sources/GitMobileApp/     the iPhone and iPad app (target Git iOS)

@@ -55,7 +55,7 @@ struct RepositoryWelcome: View {
         let status = Self.status(repository, summary: library.summaries[repository.path])
         RecentItem(
           repository.name, subtitle: (repository.path as NSString).abbreviatingWithTildeInPath,
-          date: (repository.lastOpenedAt ?? repository.addedAt).dayFormatted, status: status?.text,
+          date: (repository.lastOpenedAt ?? repository.addedAt).kitFormatted(.day), status: status?.text,
           statusHue: status?.hue ?? .gray, id: repository.path
         ) {
           library.requestedSelection = repository.path

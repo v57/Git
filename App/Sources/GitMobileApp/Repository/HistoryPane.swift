@@ -76,10 +76,10 @@ struct CommitRow: View {
         HStack(spacing: 6) {
           Text(commit.authorName).lineLimit(1)
           Text("·").foregroundStyle(.kitTertiary)
-          Text(commit.authorDate.historyFormatted).lineLimit(1)
+          Text(commit.authorDate.kitFormatted(.dayAndTime)).lineLimit(1)
           if isUnpushed {
             Image(systemName: "arrow.up")
-              .font(.system(size: 10, weight: .bold))
+              .font(KitFont.caption.font.weight(.bold))
               .foregroundStyle(Hue.orange.fill)
               .accessibilityLabel("Not pushed")
           }
@@ -120,7 +120,7 @@ struct CommitScreen: View {
       VStack(alignment: .leading, spacing: KitMetrics.gutter) {
         VStack(alignment: .leading, spacing: 8) {
           Text(commit.subject)
-            .font(.system(size: 17, weight: .semibold))
+            .kitFont(.title2)
             .fixedSize(horizontal: false, vertical: true)
           if !commit.body.isEmpty {
             Text(commit.body)
@@ -129,7 +129,7 @@ struct CommitScreen: View {
           }
           HStack(spacing: 8) {
             Avatar(name: commit.authorName, size: 22)
-            Text("\(commit.authorName) · \(commit.authorDate.historyFormatted)")
+            Text("\(commit.authorName) · \(commit.authorDate.kitFormatted(.dayAndTime))")
               .kitFont(.caption)
               .foregroundStyle(.kitSecondary)
           }
@@ -168,7 +168,7 @@ struct CommitScreen: View {
     .background(.kitWindow)
     .kitPane(.content)
     .kitToolbar(commit.shortID, title: {
-      KitTitle(commit.subject, meta: [commit.shortID, commit.authorDate.historyFormatted], systemImage: "smallcircle.filled.circle", hue: .indigo)
+      KitTitle(commit.subject, meta: [commit.shortID, commit.authorDate.kitFormatted(.dayAndTime)], systemImage: "smallcircle.filled.circle", hue: .indigo)
     }) {}
     .navigationBarBackButtonHidden(true)
     .task {
@@ -203,7 +203,7 @@ struct CommitFileRow: View {
       Spacer(minLength: 4)
       if let lines = file.lines { Diffstat(added: lines.added, removed: lines.removed) }
       Image(systemName: "chevron.right")
-        .font(.system(size: 12, weight: .semibold))
+        .font(KitFont.callout.font.weight(.semibold))
         .foregroundStyle(.kitTertiary)
     }
     .padding(.horizontal, 10)

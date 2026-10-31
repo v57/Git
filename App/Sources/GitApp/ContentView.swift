@@ -11,6 +11,9 @@ struct ContentView: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.modelContext) private var context
+  #if DEBUG && os(macOS)
+    @Environment(\.openSettings) private var openSettings
+  #endif
   @SceneStorage("selectedRepository") private var selectedPath: String?
   @State private var columns = NavigationSplitViewVisibility.all
   /// The repository on screen: the selection once its first status has loaded (`showSelection`).
@@ -83,6 +86,10 @@ struct ContentView: View {
         if LaunchScene.shared.flag("--all-repositories") { library.showsAllRepositories = true }
         // --clone opens the Clone sheet over the window.
         if LaunchScene.shared.flag("--clone") { library.isClonePresented = true }
+        #if os(macOS)
+          // --settings opens the Settings window (`-SettingsPane GitHub` picks its pane).
+          if LaunchScene.shared.flag("--settings") { openSettings() }
+        #endif
       }
       // The next screenshot scene: its repositories are added again (SidebarView); with --welcome none is opened, so
       // the welcome shows.
@@ -189,23 +196,17 @@ struct RepositoryScreen: View {
       }
       .onChange(of: session.repository.url) { search = session.logQuery.search ?? "" }
       .kitSheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
-      .kitSheet(item: .init(get: { session.failure }, set: { session.failure = $0 })) { failure in
+      .kitNotice(
+        item: .init(get: { session.failure }, set: { session.failure = $0 }), title: \.title, message: \.message
+      ) { failure in
         // GitHub refuses pushes that change workflows from a token without the workflow scope.
-        if failure.message.contains("workflow"), failure.message.contains("scope") {
-          MessageSheet(title: failure.title, message: failure.message) {
-            Button("Cancel") { session.failure = nil }
-              .keyboardShortcut(.cancelAction)
-            Button("Grant Access…") {
-              session.failure = nil
-              gitHubSignIn = GitHubSignInRequest(
-                permissions: gitHub.permissions.union(GitHubPermission.workflows.permissions))
-            }
-            .buttonStyle(.kitPrimary)
-            .keyboardShortcut(.defaultAction)
+        guard failure.message.contains("workflow"), failure.message.contains("scope") else { return [] }
+        return [
+          KitConfirmationButton("Grant Access…", isDefault: true) {
+            gitHubSignIn = GitHubSignInRequest(
+              permissions: gitHub.permissions.union(GitHubPermission.workflows.permissions))
           }
-        } else {
-          MessageSheet(failure.title, message: failure.message)
-        }
+        ]
       }
       .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(account: gitHub, permissions: $0.permissions) }
   }

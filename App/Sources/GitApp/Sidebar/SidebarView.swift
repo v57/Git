@@ -3,7 +3,6 @@ import GitKit
 import GitUI
 import SwiftData
 import SwiftUI
-import UniformTypeIdentifiers
 import VaultUI
 
 /// The sidebar: every repository with its state at a glance, then the open repository's
@@ -61,7 +60,7 @@ struct SidebarView: View {
       }
     } bottomBar: {
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
-        .help("Add the Git repositories in a folder")
+        .kitHelp("Add Repository", shortcut: "⇧⌘O", meta: "Add the Git repositories in a folder", systemImage: "plus")
     }
     .overlay {
       if repositories.isEmpty {
@@ -76,20 +75,16 @@ struct SidebarView: View {
     .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
     // The kit's: a drop over a repository row the list doesn't take comes here too.
     .kitFileDrop(isTargeted: $isDropTargeted) { drop($0) }
-    .fileImporter(
-      isPresented: $library.isImporterPresented, allowedContentTypes: [.folder],
-      allowsMultipleSelection: true
-    ) { result in
-      if case .success(let urls) = result { importFolders(urls) }
+    .onChange(of: library.isImporterPresented) { _, isPresented in
+      guard isPresented else { return }
+      Task {
+        let urls = await KitDesktop.chooseFolders(prompt: "Open", allowsMultipleSelection: true)
+        library.isImporterPresented = false
+        if !urls.isEmpty { importFolders(urls) }
+      }
     }
-    .kitSheet(
-      isPresented: .init(get: { library.importMessage != nil }, set: { if !$0 { library.importMessage = nil } })
-    ) {
-      MessageSheet("Nothing to Add", message: library.importMessage ?? "", systemImage: "folder", hue: .gray)
-    }
-    .kitSheet(item: $library.remoteFailure) { failure in
-      MessageSheet(failure.title, message: failure.message)
-    }
+    .kitNotice("Nothing to Add", message: $library.importMessage, systemImage: "folder", hue: .gray)
+    .kitNotice(item: $library.remoteFailure, title: \.title, message: \.message)
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
       let shown = repositories.filter { !$0.isHidden }.map(\.path)
       library.watchSummaries(of: shown)
@@ -159,7 +154,7 @@ private struct RepositorySections: View {
         ForEach(branches) { branch in branchRow(branch) }
       } accessory: {
         Button("New Branch", systemImage: "plus") { branchStart = session.status?.branch ?? "HEAD" }
-          .help("Create a branch from \(session.status?.branch ?? "HEAD")")
+          .kitHelp("New Branch", meta: "Create a branch from \(session.status?.branch ?? "HEAD")", systemImage: "plus", hue: .orange)
       }
       .kitSheet(item: .init(get: { branchStart.map(IdentifiedString.init) }, set: { branchStart = $0?.value })) {
         start in
@@ -175,15 +170,15 @@ private struct RepositorySections: View {
       ) {
         ForEach(remotes, id: \.self) { remote in
           SidebarRow(remote, systemImage: "cloud") {
-            if let date = session.lastFetched { Text("fetched \(date.agoFormatted)") }
+            if let date = session.lastFetched { Text("fetched \(date.kitFormatted(.ago))") }
           }
           .action { Task { await session.fetch() } }
-          .help("Fetch \(remote)")
+          .kitHelp(remote, meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
         }
       } accessory: {
         Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
           .disabled(session.isBusy)
-          .help("Fetch \(remotes.joined(separator: ", "))")
+          .kitHelp("Fetch", shortcut: "⇧⌘F", meta: "Fetch \(remotes.joined(separator: ", "))", systemImage: "arrow.clockwise", hue: .blue)
       }
       .kitSticky(top: .titleWhileVisible, bottom: .title)
     }
@@ -207,7 +202,7 @@ private struct RepositorySections: View {
       } accessory: {
         Button("New Tag", systemImage: "plus") { tagTarget = session.headCommit }
           .disabled(session.headCommit == nil)
-          .help("Tag \(session.status?.branch ?? "HEAD")")
+          .kitHelp("New Tag", meta: "Tag \(session.status?.branch ?? "HEAD")", systemImage: "plus", hue: .gray)
       }
       .kitSheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
       .kitSticky(top: .titleWhileVisible, bottom: .none)
@@ -250,7 +245,7 @@ private struct RepositorySections: View {
               EmptyView()
             }
           }
-          .help("\(mode.title) (⌘\(mode.shortcut.character))")
+          .kitHelp(mode.title, shortcut: "⌘\(mode.shortcut.character)", systemImage: mode.systemImage)
         }
       },
       icon: {
@@ -274,7 +269,7 @@ private struct RepositorySections: View {
     if let activity = session.activity, Self.remoteActivities.contains(activity) {
       return [session.progress ?? activity.title]
     }
-    let fetched = session.lastFetched.map { "fetched \($0.agoFormatted)" } ?? "never fetched"
+    let fetched = session.lastFetched.map { "fetched \($0.kitFormatted(.ago))" } ?? "never fetched"
     return [remotes.count == 1 ? remotes[0] : "\(remotes.count) remotes", fetched]
   }
 
@@ -287,7 +282,7 @@ private struct RepositorySections: View {
 
   private var tagsMeta: [String] {
     guard let latest = session.tags.first else { return [] }
-    return ["Latest \(latest.name)", latest.date?.dayFormatted ?? ""]
+    return ["Latest \(latest.name)", latest.date?.kitFormatted(.day) ?? ""]
   }
 
   private var worktreesMeta: [String] {
@@ -310,7 +305,7 @@ private struct RepositorySections: View {
       }
     }
     .disabled(isDeleting)
-    .help(branch.isCurrent ? "Checked out" : "Switch to \(branch.name)")
+    .kitHelp(branch.name, meta: branch.isCurrent ? "Checked out" : "Switch to \(branch.name)", hue: .orange)
     .kitContextMenu {
       if !branch.isCurrent {
         Button("Switch to \(branch.name)", systemImage: "arrow.right.circle") { Task { await session.switchTo(branch) } }
@@ -338,24 +333,18 @@ private struct WorkspaceMeta: View {
 
   var body: some View {
     let branch = status?.branch ?? status?.headOID.map { String($0.prefix(7)) } ?? "No commits"
-    HStack(spacing: 4) {
+    MetaLine {
       Text(branch)
       if let operation = status?.operation {
-        separator
         Text(operation.title).foregroundStyle(Hue.orange.text)
       } else if let count = status?.changeCount, count > 0 {
-        separator
-        StatusDot(hue: .orange, size: 6)
-        Text("\(count) changed")
+        StatusLabel("\(count) changed", hue: .orange)
       }
       if (status?.ahead ?? 0) > 0 || (status?.behind ?? 0) > 0 {
-        separator
         SyncCounts(ahead: status?.ahead ?? 0, behind: status?.behind ?? 0)
       }
     }
   }
-
-  private var separator: some View { Text("·").foregroundStyle(.kitTertiary) }
 }
 
 /// A branch's state in its row: ↑↓ and a check on the checked-out one, the operation in
@@ -382,7 +371,7 @@ private struct BranchMarks: View {
         SyncCounts(ahead: branch.ahead, behind: branch.behind)
         if branch.isCurrent {
           Image(systemName: "checkmark")
-            .font(.system(size: 10, weight: .bold))
+            .font(KitFont.caption.font.weight(.bold))
             .foregroundStyle(.kitAccent)
             .accessibilityLabel("Checked out")
             .transition(.scale.combined(with: .opacity))
