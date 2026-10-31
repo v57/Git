@@ -2,6 +2,7 @@ import ComponentKit
 import GitKit
 import GitUI
 import SwiftUI
+import VaultUI
 
 /// A repository under the kit's bar: its live title says which branch and what's running; Sync (Fetch, Pull or Push,
 /// whichever is useful) and the branch menu lead the bar on iPad and sit in the bottom bar on iPhone. Under it,
@@ -13,6 +14,7 @@ struct RepositoryScreen: View {
   @State private var showsNewBranch = false
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(VaultProfileRequest.self) private var profiles
 
   enum Pane: Hashable {
     case changes, history
@@ -58,6 +60,7 @@ struct RepositoryScreen: View {
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
     .kitNotice(item: $model.failure, title: \.title, message: \.message)
     .task {
+      model.profiles = profiles
       await model.open()
       #if DEBUG
         await DebugLaunch.attach(to: model, pane: $pane)

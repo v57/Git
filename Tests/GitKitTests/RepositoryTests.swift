@@ -840,4 +840,65 @@ struct TempRepo {
     #expect(session.commits.map(\.subject) == ["b and c", "a", "init"])
     #expect(session.commits.first?.id == squashed)
   }
+
+  // MARK: Identity
+
+  /// A repository whose git knows nobody: no global or system config and no author in the environment.
+  private func anonymousRepo() async throws -> (TempRepo, Repository) {
+    let temp = try await TempRepo()
+    let runner = GitRunner(extraEnvironment: ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"])
+    return (temp, Repository(url: temp.root, runner: runner))
+  }
+
+  @Test func readsWhetherGitsSettingsNameWhoCommits() async throws {
+    let (temp, repo) = try await anonymousRepo()
+    #expect(await repo.identityConfiguration() == .init(repository: false, any: false))
+    try await repo.git(["config", "user.name", "Ada"])
+    #expect(await repo.identityConfiguration() == .init(repository: false, any: false))
+    try await repo.git(["config", "user.email", "ada@example.com"])
+    #expect(await repo.identityConfiguration() == .init(repository: true, any: true))
+
+    // A global config names someone, the repository doesn't.
+    let global = temp.root.deletingLastPathComponent().appendingPathComponent("global.gitconfig")
+    try "[user]\n\tname = Grace\n\temail = grace@example.com\n".write(to: global, atomically: true, encoding: .utf8)
+    let other = try await TempRepo()
+    let withGlobal = Repository(
+      url: other.root, runner: GitRunner(extraEnvironment: ["GIT_CONFIG_GLOBAL": global.path, "GIT_CONFIG_NOSYSTEM": "1"]))
+    #expect(await withGlobal.identityConfiguration() == .init(repository: false, any: true))
+  }
+
+  @Test func theSessionAsksWhoCommitsBeforeACommit() async throws {
+    let (temp, repo) = try await anonymousRepo()
+    try temp.write("a.txt", "a\n")
+    try await repo.stageAll()
+    let session = RepositorySession(repository: repo)
+    var asked: [RepositorySession.Activity] = []
+
+    // Cancelled: no commit, no failure.
+    session.identity = { activity in
+      asked.append(activity)
+      return nil
+    }
+    #expect(await session.commit(message: "first") == false)
+    #expect(session.failure == nil)
+    #expect(try await repo.git(["rev-parse", "--verify", "--quiet", "HEAD"], allowedExitCodes: [0, 1]).exitCode == 1)
+
+    // Answered: git commits as the author it was given.
+    session.identity = { activity in
+      asked.append(activity)
+      return ["GIT_AUTHOR_NAME": "Ada", "GIT_AUTHOR_EMAIL": "ada@example.com",
+              "GIT_COMMITTER_NAME": "Ada", "GIT_COMMITTER_EMAIL": "ada@example.com"]
+    }
+    #expect(await session.commit(message: "first"))
+    #expect(try await repo.git(["log", "-1", "--format=%an <%ae> | %cn <%ce>"]).output
+      .trimmingCharacters(in: .whitespacesAndNewlines) == "Ada <ada@example.com> | Ada <ada@example.com>")
+
+    // Actions that make no commit don't ask.
+    try temp.write("b.txt", "b\n")
+    await session.stageAll()
+    #expect(asked == [.committing, .committing])
+    #expect(RepositorySession.Activity.committing.alwaysCommits)
+    #expect(RepositorySession.Activity.merging.canCommit && !RepositorySession.Activity.merging.alwaysCommits)
+    #expect(!RepositorySession.Activity.staging.canCommit)
+  }
 }

@@ -1,8 +1,12 @@
 import Foundation
 import GitEngine
+import GitHubKit
 import GitKit
+import GitUI
 import Observation
 import SSHKit
+import VaultKit
+import VaultUI
 
 /// Where a repository is: on this device, or on another machine.
 enum RepositorySource: Hashable, Identifiable {
@@ -74,7 +78,7 @@ enum RepositorySource: Hashable, Identifiable {
     case .local(let repository):
       phase = .ready
       path = repository.url.path
-      backend = LocalBackend(repository: repository) { CommitAuthor.signature }
+      backend = LocalBackend(repository: repository)
     case .remote(let repository):
       phase = .connecting("Connecting to \(repository.targets.first?.name ?? "the device")")
     }
@@ -261,8 +265,24 @@ enum RepositorySource: Hashable, Identifiable {
     await perform("Discarding…", failure: "Couldn’t Discard the Lines") { try await $0.discardLines(lines, of: diff) }
   }
 
+  /// Asks for the name and email at the first commit that needs them (the window shows the sheet).
+  @ObservationIgnored var profiles: VaultProfileRequest?
+
   func commit(message: String, amend: Bool = false) async -> Bool {
-    await perform("Committing…", failure: "Couldn’t Commit") { _ = try await $0.commit(message: message, amend: amend) }
+    guard let backend, activity == nil else { return false }
+    let vaults = Vaults.shared
+    CommitAuthor.moveToVault(vaults)
+    let configured = await backend.identityConfiguration()
+    let answer = await CommitIdentity.answer(
+      for: .committing, configured: configured, profile: vaults.profile(for: .personal)
+    ) { [profiles] in
+      await profiles?.profile(
+        for: .personal, vaults: vaults, reason: CommitIdentity.reason, gitHub: (GitHubAccount.app.user?.name, nil))
+    }
+    guard let answer else { return false }
+    return await perform("Committing…", failure: "Couldn’t Commit") {
+      _ = try await $0.commit(message: message, amend: amend, as: answer.profile)
+    }
   }
 
   func switchTo(_ branch: Branch) async {

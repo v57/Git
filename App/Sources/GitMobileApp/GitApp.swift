@@ -4,6 +4,7 @@ import GitHubKit
 import GitUI
 import SwiftUI
 import VaultKit
+import VaultUI
 
 /// Git on iPhone and iPad. Repositories on this device (in the app's folder, which the Files app shows) are read and
 /// written by GitEngine, git in Swift: clone, changes, commit, branches, pull and push. Repositories on the user's
@@ -33,6 +34,8 @@ struct RepositoriesView: View {
   @State private var path = NavigationPath()
   /// Bumped when a folder is added on a Mac, so the list reads the saved ones again.
   @State private var savedRevision = 0
+  /// Asks for the name and email at the first commit that needs them.
+  @State private var profiles = VaultProfileRequest()
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
 
@@ -59,6 +62,8 @@ struct RepositoriesView: View {
         case .settings: SettingsSheet()
         }
       }
+      .vaultProfileRequests(profiles)
+      .environment(profiles)
       .onChange(of: scenePhase) { _, phase in
         // Folders added in the Files app meanwhile.
         if phase == .active { local.reload() }

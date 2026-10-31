@@ -5,6 +5,7 @@ import GitUI
 import SwiftData
 import SwiftUI
 import VaultKit
+import VaultUI
 
 /// What the window shows for a repository: the Workspace items in the sidebar.
 enum RepositoryMode: String, CaseIterable, Identifiable {
@@ -97,6 +98,9 @@ struct CompletedOperation: Equatable {
   /// The repositories a sidebar fetch, pull or push failed in.
   var remoteFailure: RemoteFailure?
 
+  /// Asks for the account's name and email at the first commit that needs them (the window shows its sheet).
+  @ObservationIgnored let profileRequest = VaultProfileRequest()
+
   /// Shares the repository list and its groups with the other v57 apps through the vault.
   @ObservationIgnored let vaultProjects: VaultProjects
   /// The store the sidebar's groups live in (`VaultProjectTree`): the window's account.
@@ -147,8 +151,28 @@ struct CompletedOperation: Equatable {
     if let session = sessions[path] { return session }
     let session = RepositorySession(
       repository: Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner(for: path)))
+    let accountID = otherAccounts[path].flatMap { $0 } ?? vault.accountID
+    session.identity = { [weak self, weak session] activity in
+      guard let self, let session else { return [:] }
+      return await self.commitEnvironment(for: activity, in: session.repository, accountID: accountID)
+    }
     sessions[path] = session
     return session
+  }
+
+  /// Who commits in a repository of `accountID` (`CommitIdentity`): asks once, at the first commit that needs it.
+  private func commitEnvironment(
+    for activity: RepositorySession.Activity, in repository: Repository, accountID: String
+  ) async -> [String: String]? {
+    let vaults = Vaults.shared
+    let account = vaults.account(id: accountID) ?? .personal
+    return await CommitIdentity.environment(
+      for: activity, in: repository, profile: vaults.profile(for: account)
+    ) {
+      await profileRequest.profile(
+        for: account, vaults: vaults, reason: CommitIdentity.reason,
+        gitHub: (GitHubAccount.forAccount(accountID).user?.name, nil))
+    }
   }
 
   func viewState(for path: String) -> RepositoryViewState {

@@ -64,8 +64,8 @@ let package = Package(
       dependencies: [
         "GitUI", .product(name: "GitKit", package: kits), .product(name: "GitEngine", package: kits),
         .product(name: "GitHubKit", package: kits), .product(name: "CodeHighlighting", package: "Code"),
-        .product(name: "VaultKit", package: "Vault"), .product(name: "ComponentKit", package: "Component"),
-        .product(name: "SSHKit", package: "SSH"),
+        .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
+        .product(name: "ComponentKit", package: "Component"), .product(name: "SSHKit", package: "SSH"),
       ],
       swiftSettings: appSettings),
   ])

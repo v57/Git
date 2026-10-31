@@ -421,6 +421,52 @@ extension Repository {
   }
 }
 
+// MARK: - Identity
+
+extension Repository {
+  /// Which of git's settings name who commits here (`user.name` and `user.email` both set).
+  public struct IdentityConfiguration: Sendable, Hashable {
+    /// The repository's own config, which should win over an author an app passes.
+    public var repository: Bool
+    /// Any config git reads here: the repository's, the user's global one or the system's.
+    public var any: Bool
+
+    public init(repository: Bool, any: Bool) {
+      self.repository = repository
+      self.any = any
+    }
+  }
+
+  /// Whether git's settings here name who commits, read with one `git config` (on the machine git runs on).
+  public func identityConfiguration() async -> IdentityConfiguration {
+    let output =
+      (try? await git(
+        ["config", "--show-scope", "--get-regexp", #"^user\.(name|email)$"#], allowedExitCodes: [0, 1]
+      ).output) ?? ""
+    var scopes: [String: Set<String>] = [:]  // key → scopes that set it to something
+    for line in output.split(whereSeparator: \.isNewline) {
+      let fields = line.split(separator: "\t", maxSplits: 1)
+      guard fields.count == 2 else { continue }
+      let entry = fields[1].split(separator: " ", maxSplits: 1)
+      guard entry.count == 2, !entry[1].trimmingCharacters(in: .whitespaces).isEmpty else { continue }
+      scopes[String(entry[0]).lowercased(), default: []].insert(String(fields[0]))
+    }
+    let name = scopes["user.name"] ?? [], email = scopes["user.email"] ?? []
+    let ownScopes: Set<String> = ["local", "worktree"]
+    return IdentityConfiguration(
+      repository: !name.isDisjoint(with: ownScopes) && !email.isDisjoint(with: ownScopes),
+      any: !name.isEmpty && !email.isEmpty)
+  }
+
+  /// This repository with `environment` added to every git it runs, e.g. an author for its commits
+  /// (`GIT_AUTHOR_NAME`, …).
+  public func adding(environment: [String: String]) -> Repository {
+    var runner = runner
+    runner.extraEnvironment.merge(environment) { $1 }
+    return Repository(url: url, runner: runner)
+  }
+}
+
 // MARK: - Branches
 
 extension Repository {

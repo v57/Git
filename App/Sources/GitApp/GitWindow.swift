@@ -67,6 +67,7 @@ private struct AccountWindow: View {
       .environment(library)
       .environment(github)
       .focusedSceneValue(\.repositoryLibrary, library)
+      .vaultProfileRequests(library.profileRequest)
       .onChange(of: appearsActive, initial: true) { _, active in
         if active { FrontmostAccount.shared.id = library.vault.accountID }
       }

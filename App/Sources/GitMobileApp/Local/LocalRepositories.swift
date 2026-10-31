@@ -1,6 +1,7 @@
 import Foundation
 import GitEngine
 import GitKit
+import VaultKit
 
 /// The repositories on this device: the folders in the app's Documents (which the Files app shows as "Git"), each a
 /// repository GitEngine reads and writes. Cloned and created here; the Files app can add more.
@@ -103,29 +104,24 @@ import GitKit
 
     var errorDescription: String? {
       switch self {
-      case .noAuthor: "Set your name and email for commits in Settings first."
+      case .noAuthor: "Git needs your name and email for this commit."
       }
     }
   }
 }
 
-/// Who commits in repositories on this device whose config doesn't name anyone: set in Settings.
+/// Who committed in repositories on this device before the vault's Your Name: the name and email Settings kept here.
+/// The first commit that needs them moves them into Personal's profile (`VaultProfile`) and forgets them.
 enum CommitAuthor {
-  static var name: String {
-    get { UserDefaults.standard.string(forKey: "author.name") ?? "" }
-    set { UserDefaults.standard.set(newValue, forKey: "author.name") }
-  }
-
-  static var email: String {
-    get { UserDefaults.standard.string(forKey: "author.email") ?? "" }
-    set { UserDefaults.standard.set(newValue, forKey: "author.email") }
-  }
-
-  nonisolated static var signature: GitSignature? {
+  @MainActor static func moveToVault(_ vaults: Vaults = .shared) {
     let defaults = UserDefaults.standard
-    guard let name = defaults.string(forKey: "author.name"), !name.isEmpty,
-      let email = defaults.string(forKey: "author.email"), !email.isEmpty
-    else { return nil }
-    return GitSignature(name: name, email: email)
+    let name = defaults.string(forKey: "author.name") ?? "", email = defaults.string(forKey: "author.email") ?? ""
+    guard !name.isEmpty || !email.isEmpty else { return }
+    var profile = vaults.profile(for: .personal)
+    if profile.name.isEmpty { profile.name = name }
+    if profile.email.isEmpty { profile.email = email }
+    vaults.save(profile)
+    defaults.removeObject(forKey: "author.name")
+    defaults.removeObject(forKey: "author.email")
   }
 }

@@ -219,37 +219,17 @@ struct NewBranchSheet: View {
   }
 }
 
-/// Settings: who commits in repositories on this device (when theirs don't say), and the GitHub sign-in for cloning
-/// private repositories and pushing.
+/// Settings: the GitHub sign-in for cloning private repositories and pushing. Who commits is the vault's Your Name,
+/// asked at the first commit that needs it.
 struct SettingsSheet: View {
-  @State private var name = CommitAuthor.name
-  @State private var email = CommitAuthor.email
   @Environment(\.kitDismiss) private var dismiss
 
   var body: some View {
     // The sheet's body scrolls itself, fading under the header and over the footer.
     KitSheet(title: "Settings", systemImage: "gearshape", hue: .gray) {
-      FormCard(
-        "Commits on This Device",
-        footer: "Used where a repository’s own config names nobody. Repositories on a Mac use its git config."
-      ) {
-        FormRow(
-          "Name", systemImage: "person", hue: .blue,
-          field: TextField("Your Name", text: $name).textContentType(.name))
-        FormRow(
-          "Email", systemImage: "envelope", hue: .blue,
-          field: TextField("you@example.com", text: $email)
-            .textContentType(.emailAddress)
-            .keyboardType(.emailAddress)
-            .textInputAutocapitalization(.never))
-      }
       GitHubSettingsView()
     } footer: {
-      Button("Done") {
-        CommitAuthor.name = name.trimmingCharacters(in: .whitespaces)
-        CommitAuthor.email = email.trimmingCharacters(in: .whitespaces)
-        dismiss()
-      }
+      Button("Done") { dismiss() }
       .buttonStyle(.kitPrimary)
       .keyboardShortcut(.defaultAction)
     }

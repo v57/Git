@@ -11,6 +11,17 @@ public final class RepositorySession {
       continuing, aborting, reverting, resetting, tagging, merging, resolving, checkingOut,
       cherryPicking, squashing, deletingBranch
 
+    /// Whether it can make a commit, so git needs to know who commits (a merge or pull may only fast-forward).
+    public var canCommit: Bool {
+      switch self {
+      case .committing, .stashing, .reverting, .cherryPicking, .squashing, .continuing, .merging, .pulling: true
+      default: false
+      }
+    }
+
+    /// Whether it always makes a commit when it succeeds.
+    public var alwaysCommits: Bool { canCommit && self != .merging && self != .pulling }
+
     public var title: String {
       switch self {
       case .staging: "Staging…"
@@ -72,6 +83,12 @@ public final class RepositorySession {
   /// The latest `--progress` line of a running fetch, pull or push.
   public private(set) var progress: String?
   public var failure: Failure?
+
+  /// Who commits: asked before each action that can make a commit (`Activity.canCommit`), with that action. It returns
+  /// the environment git runs the action with (an author and committer, `GIT_AUTHOR_NAME`, …; empty for git's own
+  /// settings), or nil to cancel the action without a failure (the user closed the app's Your Name sheet). Unset, git's
+  /// own settings name who commits.
+  @ObservationIgnored public var identity: (@MainActor (Activity) async -> [String: String]?)?
 
   /// Which commits the history shows; changing it reloads the first page.
   public var logQuery = LogQuery() {
@@ -263,6 +280,11 @@ public final class RepositorySession {
     _ activity: Activity, failureTitle: String,
     _ work: @Sendable @escaping (Repository) async throws -> Void
   ) async -> Bool {
+    var repository = repository
+    if activity.canCommit, let identity {
+      guard let environment = await identity(activity) else { return false }
+      if !environment.isEmpty { repository = repository.adding(environment: environment) }
+    }
     self.activity = activity
     progress = nil
     defer {

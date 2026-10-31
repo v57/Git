@@ -1,6 +1,7 @@
 import Foundation
 import GitEngine
 import GitKit
+import VaultKit
 
 /// What the screens do with a repository, wherever it is: GitKit's `Repository` running git on a Mac over SSH, or
 /// GitEngine's `LocalRepository` for one on this device. Both speak GitKit's models.
@@ -23,7 +24,10 @@ nonisolated protocol GitBackend: Sendable {
   func unstageLines(_ lines: Set<Int>, of diff: FileDiff) async throws
   func discardLines(_ lines: Set<Int>, of diff: FileDiff) async throws
   /// The new commit's id.
-  func commit(message: String, amend: Bool) async throws -> String
+  /// Which of git's settings name who commits there.
+  func identityConfiguration() async -> Repository.IdentityConfiguration
+  /// Commits the index; `profile` is who commits when git's settings name nobody or the account says (`CommitIdentity`).
+  func commit(message: String, amend: Bool, as profile: VaultProfile?) async throws -> String
   func lastCommitMessage() async throws -> String
   func branches() async throws -> [Branch]
   func switchTo(_ branch: Branch) async throws
@@ -96,8 +100,10 @@ nonisolated struct RemoteBackend: GitBackend {
   func discardLines(_ lines: Set<Int>, of diff: FileDiff) async throws {
     try await repository.discardLines(lines, of: diff)
   }
-  func commit(message: String, amend: Bool) async throws -> String {
-    try await repository.commit(message: message, amend: amend)
+  func identityConfiguration() async -> Repository.IdentityConfiguration { await repository.identityConfiguration() }
+  func commit(message: String, amend: Bool, as profile: VaultProfile?) async throws -> String {
+    let repository = profile.map { repository.adding(environment: $0.gitEnvironment) } ?? repository
+    return try await repository.commit(message: message, amend: amend)
   }
   func lastCommitMessage() async throws -> String { try await repository.lastCommitMessage() }
   func branches() async throws -> [Branch] { try await repository.branches() }
@@ -118,8 +124,6 @@ nonisolated struct RemoteBackend: GitBackend {
 /// GitEngine's repository: git in Swift, for a repository in the app's folder. No line staging or amend.
 nonisolated struct LocalBackend: GitBackend {
   let repository: LocalRepository
-  /// Who commits, when the repository's config doesn't say.
-  let author: @Sendable () -> GitSignature?
 
   var features: GitFeatures { [] }
 
@@ -170,15 +174,19 @@ nonisolated struct LocalBackend: GitBackend {
     throw BackendError.unsupported("Discarding lines")
   }
 
-  func commit(message: String, amend: Bool) async throws -> String {
+  /// The repository's own config is all there is on this device.
+  func identityConfiguration() async -> Repository.IdentityConfiguration {
+    let named = repository.config("user.name")?.isEmpty == false && repository.config("user.email")?.isEmpty == false
+    return Repository.IdentityConfiguration(repository: named, any: named)
+  }
+
+  func commit(message: String, amend: Bool, as profile: VaultProfile?) async throws -> String {
     guard !amend else { throw BackendError.unsupported("Amending") }
-    let name = repository.config("user.name")
-    let email = repository.config("user.email")
     let signature: GitSignature
-    if let name, let email {
+    if let profile, profile.isComplete {
+      signature = GitSignature(name: profile.name, email: profile.email)
+    } else if let name = repository.config("user.name"), let email = repository.config("user.email") {
       signature = GitSignature(name: name, email: email)
-    } else if let fallback = author() {
-      signature = GitSignature(name: name ?? fallback.name, email: email ?? fallback.email)
     } else {
       throw LocalRepositories.Problem.noAuthor
     }

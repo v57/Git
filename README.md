@@ -102,6 +102,11 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
   human-readable output. It reads porcelain v2, `-z` separated records and `%x1f` separated log fields.
 - **Your git setup applies.** Your config, hooks, commit signing, SSH agent and credential helpers all apply. The
   runner turns off terminal prompts, so a missing credential fails with git's own message instead of hanging.
+- **Who commits.** A repository's own `user.name` and `user.email` win. Otherwise the window's vault account
+  names who commits (its Your Name, `VaultProfile`), handed to git as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` for that
+  command only, so the terminal's git config never changes. Without either, git's own settings apply. Only when nothing
+  names anyone does the first commit ask, in the vault's Your Name sheet, once for every app and device
+  (`CommitIdentity`, `RepositorySession.identity`).
 - **The GitHub account stays in the app.** While you're signed in with access to private
   repositories, fetch, pull, push and clone over
   `https://github.com` use the app's token instead of your credential helpers: `GitCredentials` passes
