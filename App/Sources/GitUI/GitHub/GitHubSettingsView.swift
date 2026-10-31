@@ -33,7 +33,7 @@ public struct GitHubSettingsView: View {
     VStack(spacing: 14) {
       GitHubConnectionView(phase: .idle, tileSize: 52) { BranchGlyph() }
       Text("Connect GitHub")
-        .font(.system(size: 17, weight: .semibold))
+        .kitFont(.title2)
         .padding(.top, 4)
       Text("Create repositories and push to GitHub with an account that stays inside Git. Other apps can’t read its token.")
         .foregroundStyle(.kitSecondary)
@@ -68,13 +68,13 @@ public struct GitHubSettingsView: View {
   private var signedIn: some View {
     VStack(alignment: .leading, spacing: 18) {
       HStack(spacing: 12) {
-        GitHubAvatar(url: account.user?.avatarURL, name: account.user?.login ?? "", size: 40)
+        Avatar(name: account.user?.login ?? "", url: account.user?.avatarURL?.gitHubAvatar(size: 40), size: 40)
         VStack(alignment: .leading, spacing: 1) {
           Text(account.user?.name ?? account.user?.login ?? "")
             .fontWeight(.semibold)
           if let login = account.user?.login, let url = URL(string: "https://github.com/\(login)") {
             Link("github.com/\(login)", destination: url)
-              .font(.system(size: 12))
+              .kitFont(.callout)
           }
         }
         Spacer()
@@ -88,21 +88,15 @@ public struct GitHubSettingsView: View {
       .settingsCard()
 
       VStack(alignment: .leading, spacing: 6) {
-        Text("Permissions")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.kitSecondary)
-          .padding(.horizontal, 4)
-        VStack(spacing: 0) {
+        FormCard("Permissions") {
           ForEach(GitHubPermission.allCases) { permission in
-            if permission != .privateRepositories { Divider().padding(.leading, 16) }
             PermissionRow(permission: permission, isGranted: permission.isGranted(in: account.permissions)) {
               request = GitHubSignInRequest(permissions: account.permissions.union(permission.permissions))
             }
           }
         }
-        .settingsCard()
         Text("While you’re signed in with access to private repositories, Git uses this account for github.com over HTTPS instead of your credential helpers. Revoke it any time on [GitHub › Settings › Applications](https://github.com/settings/applications).")
-          .font(.system(size: 12))
+          .kitFont(.callout)
           .foregroundStyle(.kitSecondary)
           .fixedSize(horizontal: false, vertical: true)
           .padding(.horizontal, 4)
@@ -113,13 +107,14 @@ public struct GitHubSettingsView: View {
   }
 }
 
+/// A permission in the Permissions card: its title, scope and what it allows, then Granted or Grant….
 private struct PermissionRow: View {
   let permission: GitHubPermission
   let isGranted: Bool
   let grant: () -> Void
 
   var body: some View {
-    HStack(spacing: 12) {
+    GroupRow {
       VStack(alignment: .leading, spacing: 2) {
         HStack(spacing: 8) {
           Text(permission.title).fontWeight(.medium)
@@ -129,10 +124,10 @@ private struct PermissionRow: View {
             .background(.kitFillSoft, in: .rect(cornerRadius: KitMetrics.radiusXS))
         }
         Text(permission.detail)
-          .font(.system(size: 12))
+          .kitFont(.callout)
           .foregroundStyle(.kitSecondary)
       }
-      Spacer()
+    } trailing: {
       ZStack {
         if isGranted {
           Chip("Granted", systemImage: "checkmark", hue: .green)
@@ -145,9 +140,6 @@ private struct PermissionRow: View {
       }
       .animation(.spring(response: 0.35, dampingFraction: 0.65), value: isGranted)
     }
-    .padding(.horizontal, 16)
-    .padding(.vertical, 8)
-    .frame(minHeight: 52)
   }
 }
 

@@ -270,8 +270,6 @@ private struct WaitingStep: View {
   @Environment(GitHubAccount.self) private var account
   let appName: String
   let cancel: () -> Void
-  /// Shown while the code was just copied, by the sheet or the Copy button.
-  @State private var copiedAt: Date? = .now
 
   private var code: DeviceCode? {
     if case .waiting(let code) = account.signInStep { return code }
@@ -298,14 +296,8 @@ private struct WaitingStep: View {
       .animation(.kit, value: code)
 
       HStack(spacing: 8) {
-        Button {
-          guard let code else { return }
-          account.copy(code)
-          copiedAt = .now
-        } label: {
-          CopyLabel(copiedAt: copiedAt)
-        }
-        .buttonStyle(.kit)
+        KitCopyButton("Copy Code", value: code?.userCode ?? "")
+          .buttonStyle(.kit)
         Button {
           if let code { account.openVerificationPage(code) }
         } label: {
@@ -345,28 +337,6 @@ private struct WaitingStep: View {
   }
 }
 
-/// "Copy Code", or a tick and "Copied" for 1.8 seconds after copying.
-private struct CopyLabel: View {
-  let copiedAt: Date?
-
-  var body: some View {
-    TimelineView(.periodic(from: .now, by: 0.3)) { context in
-      let copied = copiedAt.map { context.date.timeIntervalSince($0) < 1.8 } ?? false
-      HStack(spacing: 6) {
-        if copied {
-          Image(systemName: "checkmark")
-            .fontWeight(.bold)
-            .transition(.scale(scale: 0.3).combined(with: .opacity))
-        }
-        Text(copied ? "Copied" : "Copy Code")
-          .contentTransition(.interpolate)
-      }
-      .foregroundStyle(copied ? Color.green : Color.primary)
-      .animation(.spring(response: 0.3, dampingFraction: 0.6), value: copied)
-    }
-  }
-}
-
 // MARK: - Done
 
 private struct DoneStep: View {
@@ -394,7 +364,7 @@ private struct DoneStep: View {
   var body: some View {
     VStack(spacing: 14) {
       StepTitle("Connected as \(account.user?.login ?? "GitHub")", "\(appName) can now do this with your account:")
-      FlowLayout(spacing: 6) {
+      KitFlowLayout(spacing: 6, alignment: .center) {
         ForEach(Array(chips.enumerated()), id: \.element) { index, chip in
           Chip(chip, systemImage: "checkmark", hue: .green)
             .scaleEffect(shown ? 1 : 0.9)
@@ -504,45 +474,5 @@ private struct TrailingIconLabelStyle: LabelStyle {
       configuration.title
       configuration.icon.imageScale(.small).fontWeight(.semibold)
     }
-  }
-}
-
-/// Lays children out in rows, wrapping and centering each row.
-private struct FlowLayout: Layout {
-  var spacing: CGFloat
-
-  func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-    let rows = rows(width: proposal.width ?? .infinity, subviews: subviews)
-    let width = rows.map(\.width).max() ?? 0
-    let height = rows.map(\.height).reduce(0, +) + spacing * CGFloat(max(0, rows.count - 1))
-    return CGSize(width: proposal.width ?? width, height: height)
-  }
-
-  func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-    var y = bounds.minY
-    for row in rows(width: bounds.width, subviews: subviews) {
-      var x = bounds.midX - row.width / 2
-      for index in row.indices {
-        let size = subviews[index].sizeThatFits(.unspecified)
-        subviews[index].place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-        x += size.width + spacing
-      }
-      y += row.height + spacing
-    }
-  }
-
-  private func rows(width: CGFloat, subviews: Subviews) -> [(indices: [Int], width: CGFloat, height: CGFloat)] {
-    var rows: [(indices: [Int], width: CGFloat, height: CGFloat)] = []
-    for index in subviews.indices {
-      let size = subviews[index].sizeThatFits(.unspecified)
-      if let last = rows.last, last.width + spacing + size.width <= width {
-        rows[rows.count - 1].indices.append(index)
-        rows[rows.count - 1].width += spacing + size.width
-        rows[rows.count - 1].height = max(last.height, size.height)
-      } else {
-        rows.append(([index], size.width, size.height))
-      }
-    }
-    return rows
   }
 }

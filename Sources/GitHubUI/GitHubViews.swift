@@ -23,7 +23,7 @@ public struct GitHubSignInOfferRow: View {
   public var body: some View {
     GroupRow {
       HStack(spacing: 10) {
-        GitHubAvatar(url: nil, name: offer.credential.login, size: 28)
+        Avatar(name: offer.credential.login, size: 28)
         VStack(alignment: .leading, spacing: 1) {
           Text("@\(offer.credential.login)").kitFont(.headline)
           Text("Signed in on \(offer.accountName)").kitFont(.caption)
@@ -49,35 +49,16 @@ public struct ScopeLabel: View {
   }
 }
 
-/// A GitHub avatar, or the initials avatar while it loads or without a network.
-public struct GitHubAvatar: View {
-  let url: URL?
-  let name: String
-  let size: CGFloat
-
-  public init(url: URL?, name: String, size: CGFloat) {
-    self.url = url
-    self.name = name
-    self.size = size
-  }
-
-  public var body: some View {
-    AsyncImage(url: sizedURL) { image in
-      image.resizable().scaledToFill()
-    } placeholder: {
-      Avatar(name: name, size: size)
-    }
-    .frame(width: size, height: size)
-    .clipShape(.circle)
-  }
-
-  /// Asks for the image at twice the point size (`s=`), for Retina screens.
-  private var sizedURL: URL? {
-    guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-      return url
-    }
+extension URL {
+  /// A GitHub avatar's URL asking for the image at twice `size` (`s=`), for Retina screens.
+  ///
+  /// ```swift
+  /// Avatar(name: user.login, url: user.avatarURL?.gitHubAvatar(size: 40), size: 40)
+  /// ```
+  public func gitHubAvatar(size: CGFloat) -> URL {
+    guard var components = URLComponents(url: self, resolvingAgainstBaseURL: false) else { return self }
     components.queryItems = (components.queryItems ?? []).filter { $0.name != "s" }
       + [URLQueryItem(name: "s", value: String(Int(size * 2)))]
-    return components.url ?? url
+    return components.url ?? self
   }
 }
