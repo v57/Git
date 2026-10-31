@@ -17,7 +17,7 @@ struct SettingsView: View {
   @AppStorage(SettingsKeys.pane) private var pane = "General"
 
   var body: some View {
-    KitSettings(selection: $pane) {
+    KitSettings(selection: $pane, window: .hiddenTitleBar) {
       SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
       SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { AccountGitHubSettings() }
       SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {

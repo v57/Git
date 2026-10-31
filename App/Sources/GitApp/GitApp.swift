@@ -69,5 +69,6 @@ public struct GitApp: App {
       SettingsView()
         .componentKit(accent: .accentColor)
     }
+    .windowStyle(.hiddenTitleBar)
   }
 }
