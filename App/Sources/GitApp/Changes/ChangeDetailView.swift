@@ -90,7 +90,8 @@ struct ChangeDetailView: View {
         EmptyState(systemImage: "doc.text", title: "No File Selected", message: "Pick a file to see its changes.")
           .transition(.page)
       case .loading:
-        LoadingIcon().transition(.opacity)
+        // Shown only when a load takes a while: a quick one goes straight to the diff.
+        EmptyState(systemImage: "doc.text", status: .working).kitAppearDelay().transition(.opacity)
       }
     }
     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -223,18 +224,4 @@ struct ChangeDetailView: View {
 /// Diff display options, set from the View menu.
 enum DiffOptions {
   static let hideWhitespaceKey = "HideWhitespaceChanges"
-}
-
-/// The diff's loading state, shown only when a load takes a while: a quick one goes straight to the diff.
-private struct LoadingIcon: View {
-  @State private var isShown = false
-
-  var body: some View {
-    EmptyState(systemImage: "doc.text", title: "Loading the Diff", status: .working)
-      .opacity(isShown ? 1 : 0)
-      .task {
-        try? await Task.sleep(for: .milliseconds(300))
-        withKitAnimation { isShown = true }
-      }
-  }
 }

@@ -25,7 +25,7 @@ struct HistoryPane: View {
               NavigationLink(value: commit) {
                 CommitRow(commit: commit, isUnpushed: isUnpushed(commit))
               }
-              .buttonStyle(.plain)
+              .buttonStyle(.kitRow)
               .onAppear {
                 if commit.id == model.commits.last?.id { Task { await model.loadMoreCommits() } }
               }
@@ -153,7 +153,7 @@ struct CommitScreen: View {
               ) {
                 CommitFileRow(file: file)
               }
-              .buttonStyle(.plain)
+              .buttonStyle(.kitRow)
             }
           }
         } else if let error {

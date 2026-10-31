@@ -96,7 +96,7 @@ struct ChangesPane: View {
         }
       }
     }
-    .buttonStyle(.plain)
+    .buttonStyle(.kitRow)
     .kitContextMenu {
       if change.area == .staged {
         Button("Unstage", systemImage: "minus.circle") { Task { await model.unstage([change]) } }

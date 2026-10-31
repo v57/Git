@@ -195,9 +195,7 @@ private struct BranchToolbarButton: View {
   var body: some View {
     Button("Branch", systemImage: "arrow.triangle.branch") { state.isBranchPopoverPresented.toggle() }
     .kitHelp("Branch", meta: "Switch or create a branch", systemImage: "arrow.triangle.branch", hue: .orange)
-    // The system's popover: a kitPopover here opens once per form the kit toolbar measures (hidden copies of its
-    // slots), so two or three cards stack up.
-    .popover(isPresented: $state.isBranchPopoverPresented, arrowEdge: .bottom) {
+    .kitPopover(isPresented: $state.isBranchPopoverPresented) {
       BranchPopover(session: session, isPresented: $state.isBranchPopoverPresented)
     }
   }
@@ -303,7 +301,6 @@ struct BranchPopover: View {
       }
     }
     .frame(width: 400, height: 440)
-    .background(.kitPanel)
     .kitSheet(isPresented: $isCreating) {
       NewBranchSheet(session: session, startPoint: nil)
     }
