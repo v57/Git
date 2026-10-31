@@ -213,7 +213,7 @@ private struct ChooseStep: View {
             .keyboardShortcut(.cancelAction)
           Button(action: start) {
             Label("Continue on GitHub", systemImage: "arrow.up.right")
-              .labelStyle(TrailingIconLabelStyle())
+              .labelStyle(.kitTrailingIcon)
           }
           .buttonStyle(.kitPrimary)
           .keyboardShortcut(.defaultAction)
@@ -296,13 +296,13 @@ private struct WaitingStep: View {
       .animation(.kit, value: code)
 
       HStack(spacing: 8) {
-        KitCopyButton("Copy Code", value: code?.userCode ?? "")
+        KitCopyButton("Copy Code", value: code?.userCode ?? "", copiedWhen: code?.userCode)
           .buttonStyle(.kit)
         Button {
           if let code { account.openVerificationPage(code) }
         } label: {
           Label("Open GitHub Again", systemImage: "arrow.up.right")
-            .labelStyle(TrailingIconLabelStyle())
+            .labelStyle(.kitTrailingIcon)
         }
         .buttonStyle(.kit)
       }
@@ -464,15 +464,5 @@ private struct SectionTitle: View {
       .kitFont(.headline)
       .padding(.horizontal, 12)
       .accessibilityAddTraits(.isHeader)
-  }
-}
-
-/// A label with its icon after the title, for buttons that open the browser.
-private struct TrailingIconLabelStyle: LabelStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    HStack(spacing: 6) {
-      configuration.title
-      configuration.icon.imageScale(.small).fontWeight(.semibold)
-    }
   }
 }
