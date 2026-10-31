@@ -458,6 +458,13 @@ extension Repository {
       any: !name.isEmpty && !email.isEmpty)
   }
 
+  /// Writes `user.name` and `user.email` to the user's global git config (`git config --global`: `~/.gitconfig`),
+  /// which git in Terminal, scripts and agents read too. Only when the user asked for it.
+  public static func setGlobalIdentity(name: String, email: String, runner: GitRunner = GitRunner()) async throws {
+    try await runner.run(["config", "--global", "user.name", name], in: nil)
+    try await runner.run(["config", "--global", "user.email", email], in: nil)
+  }
+
   /// This repository with `environment` added to every git it runs, e.g. an author for its commits
   /// (`GIT_AUTHOR_NAME`, …).
   public func adding(environment: [String: String]) -> Repository {

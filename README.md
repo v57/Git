@@ -106,7 +106,10 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
   names who commits (its Your Name, `VaultProfile`), handed to git as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` for that
   command only, so the terminal's git config never changes. Without either, git's own settings apply. Only when nothing
   names anyone does the first commit ask, in the vault's Your Name sheet, once for every app and device
-  (`CommitIdentity`, `RepositorySession.identity`).
+  (`CommitIdentity`, `RepositorySession.identity`). For the Personal account, while `~/.gitconfig` names nobody, Git
+  also asks once per Mac whether Terminal should use the name too (a switch in that sheet, or a confirmation when the
+  name is already saved) and writes it with `git config --global` only on yes (`TerminalIdentity`); Settings ▸ General
+  shows who Terminal commits as and does it later.
 - **The GitHub account stays in the app.** While you're signed in with access to private
   repositories, fetch, pull, push and clone over
   `https://github.com` use the app's token instead of your credential helpers: `GitCredentials` passes

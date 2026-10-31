@@ -160,19 +160,31 @@ struct CompletedOperation: Equatable {
     return session
   }
 
-  /// Who commits in a repository of `accountID` (`CommitIdentity`): asks once, at the first commit that needs it.
+  /// Who commits in a repository of `accountID` (`CommitIdentity`): asks once, at the first commit that needs it,
+  /// and then whether git in Terminal should use the name too (`TerminalIdentity`).
   private func commitEnvironment(
     for activity: RepositorySession.Activity, in repository: Repository, accountID: String
   ) async -> [String: String]? {
     let vaults = Vaults.shared
     let account = vaults.account(id: accountID) ?? .personal
-    return await CommitIdentity.environment(
-      for: activity, in: repository, profile: vaults.profile(for: account)
-    ) {
-      await profileRequest.profile(
+    let configured = await repository.identityConfiguration()
+    let offer = TerminalIdentity.shouldOffer(account: account, configured: configured)
+    var terminal: Bool?  // the Your Name sheet's switch, when it showed
+    let answer = await CommitIdentity.answer(for: activity, configured: configured, profile: vaults.profile(for: account)) {
+      let answer = await profileRequest.answer(
         for: account, vaults: vaults, reason: CommitIdentity.reason,
-        gitHub: (GitHubAccount.forAccount(accountID).user?.name, nil))
+        gitHub: (GitHubAccount.forAccount(accountID).user?.name, nil), option: offer ? TerminalIdentity.option : nil)
+      terminal = answer?.option
+      return answer?.profile
     }
+    guard let answer else { return nil }
+    if offer, let profile = answer.profile, terminal != nil || activity.alwaysCommits {
+      if terminal == nil {
+        terminal = await profileRequest.answer(for: account, vaults: vaults, option: TerminalIdentity.option)?.option
+      }
+      if let terminal { await TerminalIdentity.answered(terminal, profile: profile) }
+    }
+    return answer.profile?.gitEnvironment ?? [:]
   }
 
   func viewState(for path: String) -> RepositoryViewState {

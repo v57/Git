@@ -867,6 +867,16 @@ struct TempRepo {
     #expect(await withGlobal.identityConfiguration() == .init(repository: false, any: true))
   }
 
+  @Test func writesWhoCommitsToTheGlobalConfig() async throws {
+    let temp = try await TempRepo()
+    let global = temp.root.deletingLastPathComponent().appendingPathComponent("written.gitconfig")
+    let runner = GitRunner(extraEnvironment: ["GIT_CONFIG_GLOBAL": global.path, "GIT_CONFIG_NOSYSTEM": "1"])
+    try await Repository.setGlobalIdentity(name: "Ada Lovelace", email: "ada@example.com", runner: runner)
+    let text = try String(contentsOf: global, encoding: .utf8)
+    #expect(text.contains("name = Ada Lovelace") && text.contains("email = ada@example.com"))
+    #expect(await Repository(url: temp.root, runner: runner).identityConfiguration() == .init(repository: false, any: true))
+  }
+
   @Test func theSessionAsksWhoCommitsBeforeACommit() async throws {
     let (temp, repo) = try await anonymousRepo()
     try temp.write("a.txt", "a\n")

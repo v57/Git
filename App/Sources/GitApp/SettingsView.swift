@@ -34,6 +34,13 @@ private struct GeneralSettingsView: View {
   @State private var version: String?
 
   var body: some View {
+    VStack(alignment: .leading, spacing: 18) {
+      gitCard
+      TerminalIdentityCard()
+    }
+  }
+
+  private var gitCard: some View {
     FormCard(
       "Git",
       footer: "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
@@ -54,6 +61,42 @@ private struct GeneralSettingsView: View {
       resolved = GitExecutable.current?.path
       version = await GitExecutable.version()
     }
+  }
+}
+
+/// Who git outside the app commits as (`~/.gitconfig`), and a button to make it the Personal account's name and email
+/// (`TerminalIdentity`).
+private struct TerminalIdentityCard: View {
+  @State private var vaults = Vaults.shared
+  @State private var global = GitGlobalIdentity.read()
+  @State private var failure: String?
+
+  var body: some View {
+    let profile = vaults.profile(for: .personal)
+    let current = [global.name, global.email.map { "<\($0)>" }].compactMap { $0 }.joined(separator: " ")
+    FormCard(
+      "Terminal",
+      footer: "Git in Terminal, scripts and agents read ~/.gitconfig. The app commits with your name either way."
+    ) {
+      FormRow(
+        "Commits as", help: current.isEmpty ? "Nobody yet: git there can't commit" : current,
+        systemImage: "terminal", hue: .gray, error: failure
+      ) {
+        if profile.isComplete, global.name != profile.name || global.email != profile.email {
+          Button("Use \(profile.name)") { Task { await use(profile) } }
+        }
+      }
+    }
+  }
+
+  private func use(_ profile: VaultProfile) async {
+    do {
+      try await Repository.setGlobalIdentity(name: profile.name, email: profile.email)
+      failure = nil
+    } catch {
+      failure = error.localizedDescription
+    }
+    global = GitGlobalIdentity.read()
   }
 }
 
