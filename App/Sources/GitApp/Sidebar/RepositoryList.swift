@@ -4,6 +4,7 @@ import SwiftData
 import SwiftUI
 import UniformTypeIdentifiers
 import VaultKit
+import VaultUI
 
 /// The Repositories section: groups, which nest, and repositories in the order they were dragged
 /// into, each with its state at a glance; a group's header sums up the repositories in it. The
@@ -473,7 +474,7 @@ struct RepositoryList: View {
     Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal(targets.map(\.url)) }
     if let only = targets.first, targets.count == 1 {
       Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
-      OtherPlacesMenu(root: only.url)
+      VaultOtherPlacesMenu(root: only.url)
     }
     Divider()
     if targets.allSatisfy(\.isHidden) {
