@@ -264,6 +264,13 @@ extension RepositoryLibrary {
     collapsedGroups.remove(group.id)
   }
 
+  /// Takes a group's repositories, in the groups inside it too, out of the list; the vault deletes the group
+  /// when no Mac has a project in it any more.
+  func remove(_ group: VaultProjectGroup, members: [SavedRepository], from context: ModelContext) {
+    remove(members, from: context)
+    collapsedGroups.remove(group.id)
+  }
+
   func rename(_ group: VaultProjectGroup, to name: String) {
     var group = group
     group.name = name

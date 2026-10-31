@@ -10,7 +10,8 @@ import VaultKit
 /// groups are the vault's project tree, so the other v57 apps and Macs share them.
 ///
 /// Click opens a repository; ⌘-click and ⇧-click select several for the context menu (Fetch,
-/// Pull, Push, Hide, Move to Group) and for dragging. The kit's outline does the dragging: rows
+/// Pull, Push, Hide, Move to Group, Remove from List) and for dragging; a group's menu removes its repositories, the
+/// section header's all of them. The kit's outline does the dragging: rows
 /// slide aside, a row held over a group's middle goes into it (a closed one opens), and a row
 /// dragged out of the app is its folder. Collapsed, the section keeps the open repository visible
 /// and shows an icon for each other repository that needs attention.
@@ -41,6 +42,7 @@ struct RepositoryList: View {
   /// Show More: the repositories the filters hide, until the list is filtered again.
   @State private var showsMore = false
   @State private var showsOptions = false
+  @State private var confirmsRemoveAll = false
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
 
@@ -211,7 +213,20 @@ struct RepositoryList: View {
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
         .help("Add the Git repositories in a folder")
     }
+    .headerMenu {
+      Button("Remove All Repositories from List", systemImage: "minus.circle") { confirmsRemoveAll = true }
+        .disabled(repositories.isEmpty)
+    }
     .help(attentionHelp(layout))
+    .kitConfirmation(
+      repositories.count == 1 ? "Remove 1 repository from the list?" : "Remove all \(repositories.count) repositories from the list?", isPresented: $confirmsRemoveAll,
+      message: "Their folders stay on disk.", systemImage: "minus.circle",
+      confirm: "Remove All"
+    ) {
+      selection = nil
+      selected = []
+      withAnimation(.kit) { library.remove(repositories, from: context) }
+    }
     // A filter turned on again hides what Show More showed.
     .onChange(of: [hidesUnused, onlyWithChanges]) { showsMore = false }
     #if DEBUG
@@ -368,6 +383,11 @@ struct RepositoryList: View {
       Button("Unhide Group", systemImage: "eye") { library.setHidden(paths, false, context: context) }
     } else {
       Button("Hide Group", systemImage: "eye.slash") { library.setHidden(paths, true, context: context) }
+    }
+    Button("Remove Group from List", systemImage: "minus.circle") {
+      if let selection, paths.contains(selection) { self.selection = nil }
+      selected.subtract(paths)
+      withAnimation(.kit) { library.remove(group, members: members, from: context) }
     }
   }
 
