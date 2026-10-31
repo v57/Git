@@ -1,23 +1,37 @@
 import ComponentKit
 import SwiftUI
 
-/// The Git and GitHub tiles joined by a line that shows how signing in is going: dashes while
-/// idle; marching dashes, a dot travelling to GitHub and a pulsing ring while waiting; a green
-/// line drawing across with a check once connected; an orange "!" that shakes on failure.
-struct GitHubConnectionView: View {
-  enum Phase: Hashable {
-    case idle, waiting, connected, failed
+/// How signing in to GitHub is going, as `GitHubConnectionView` draws it.
+public enum GitHubConnectionPhase: Hashable, Sendable {
+  case idle, waiting, connected, failed
+}
+
+/// The app's and GitHub's tiles joined by a line that shows how signing in is going: dashes while idle; marching
+/// dashes, a dot travelling to GitHub and a pulsing ring while waiting; a green line drawing across with a check once
+/// connected; an orange "!" that shakes on failure.
+///
+/// ```swift
+/// GitHubConnectionView(phase: .idle, tileSize: 52) { BranchGlyph() }
+/// GitHubConnectionView(phase: .waiting, systemImage: "doc.text")
+/// ```
+public struct GitHubConnectionView<Glyph: View>: View {
+  let phase: GitHubConnectionPhase
+  let tileSize: CGFloat
+  @ViewBuilder let glyph: Glyph
+
+  /// - Parameter glyph: the app's glyph on its accent tile, white; it can size itself from `kitGlyphSize`.
+  public init(phase: GitHubConnectionPhase, tileSize: CGFloat = 48, @ViewBuilder glyph: () -> Glyph) {
+    self.phase = phase
+    self.tileSize = tileSize
+    self.glyph = glyph()
   }
 
-  let phase: Phase
-  var tileSize: CGFloat = 48
-
-  var body: some View {
+  public var body: some View {
     HStack(spacing: 12) {
-      GitTile(size: tileSize)
+      AppTile(size: tileSize) { glyph }
       ZStack {
         switch phase {
-        case .idle: DashedLine(color: .secondary.opacity(0.5))
+        case .idle: DashedLine(style: AnyShapeStyle(.kitTertiary))
         case .waiting: WaitingLine()
         case .connected: ConnectedLine()
         case .failed: FailedLine()
@@ -33,21 +47,36 @@ struct GitHubConnectionView: View {
   }
 }
 
-/// The app's tile: the branch glyph on the accent color.
-struct GitTile: View {
+extension GitHubConnectionView where Glyph == Image {
+  /// The app's tile with an SF Symbol.
+  public init(phase: GitHubConnectionPhase, tileSize: CGFloat = 48, systemImage: String) {
+    self.init(phase: phase, tileSize: tileSize) { Image(systemName: systemImage) }
+  }
+}
+
+/// The app's tile: its glyph on the accent.
+private struct AppTile<Glyph: View>: View {
   let size: CGFloat
+  @ViewBuilder let glyph: Glyph
 
   var body: some View {
-    BranchGlyph(size: size * 0.54)
+    let shape = RoundedRectangle(cornerRadius: size * 0.25, style: .continuous)
+    glyph
+      .font(.system(size: size * 0.42, weight: .medium))
+      .environment(\.kitGlyphSize, size * 0.54)
       .foregroundStyle(.white)
       .frame(width: size, height: size)
-      .background(Color.accentColor.gradient, in: .rect(cornerRadius: size * 0.25, style: .continuous))
+      // The accent as a gradient, lighter at the top.
+      .background {
+        shape.fill(.kitAccent)
+          .overlay(shape.fill(LinearGradient(colors: [.white.opacity(0.16), .clear], startPoint: .top, endPoint: .bottom)))
+      }
       .shadow(color: .black.opacity(0.12), radius: 6, y: 4)
   }
 }
 
 /// GitHub's tile: a cloud on near-black, with a ring that pulses outward while waiting.
-struct GitHubTile: View {
+private struct GitHubTile: View {
   let size: CGFloat
   var isPulsing = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -66,7 +95,7 @@ struct GitHubTile: View {
           TimelineView(.animation) { context in
             let progress = context.date.timeIntervalSinceReferenceDate
               .truncatingRemainder(dividingBy: 1.6) / 1.6
-            shape.stroke(Color.accentColor, lineWidth: 2)
+            shape.stroke(.kitAccent, lineWidth: 2)
               .scaleEffect(1 + 0.5 * progress)
               .opacity(0.5 * (1 - progress))
           }
@@ -76,17 +105,17 @@ struct GitHubTile: View {
 }
 
 private struct DashedLine: View {
-  let color: Color
+  let style: AnyShapeStyle
   var phase: CGFloat = 0
 
   var body: some View {
     LineShape()
-      .stroke(color, style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [6, 6], dashPhase: phase))
+      .stroke(style, style: StrokeStyle(lineWidth: 2, lineCap: .butt, dash: [6, 6], dashPhase: phase))
       .frame(height: 2)
   }
 }
 
-/// Marching dashes and a dot easing from Git to GitHub, over and over.
+/// Marching dashes and a dot easing from the app to GitHub, over and over.
 private struct WaitingLine: View {
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -98,11 +127,12 @@ private struct WaitingLine: View {
       let fade = min(1, min(progress, 1 - progress) / 0.12)
       GeometryReader { proxy in
         ZStack(alignment: .leading) {
-          DashedLine(color: .accentColor.opacity(0.45), phase: -(time * 20).truncatingRemainder(dividingBy: 12))
+          DashedLine(
+            style: AnyShapeStyle(Hue.accent.soft(0.45)), phase: -(time * 20).truncatingRemainder(dividingBy: 12))
           Circle()
-            .fill(Color.accentColor)
+            .fill(.kitAccent)
             .frame(width: 8, height: 8)
-            .background(Circle().fill(Color.accentColor.opacity(0.18)).padding(-3))
+            .background(Circle().fill(Hue.accent.soft(0.18)).padding(-3))
             .offset(x: eased * (proxy.size.width - 8))
             .opacity(reduceMotion ? 0 : fade)
         }
@@ -122,14 +152,14 @@ private struct ConnectedLine: View {
     ZStack {
       LineShape()
         .trim(from: 0, to: drawn ? 1 : 0)
-        .stroke(Color.green, style: StrokeStyle(lineWidth: 2, lineCap: .round))
+        .stroke(Hue.green.fill, style: StrokeStyle(lineWidth: 2, lineCap: .round))
         .frame(height: 2)
       CheckShape()
         .trim(from: 0, to: tick ? 1 : 0)
         .stroke(.white, style: StrokeStyle(lineWidth: 2.4, lineCap: .round, lineJoin: .round))
         .frame(width: 12, height: 12)
         .frame(width: 24, height: 24)
-        .background(Circle().fill(Color.green))
+        .background(Circle().fill(Hue.green.fill))
         .background(Circle().fill(.kitWindow).padding(-4))
         .scaleEffect(badge ? 1 : 0.3)
         .opacity(badge ? 1 : 0)
@@ -149,12 +179,13 @@ private struct FailedLine: View {
 
   var body: some View {
     ZStack {
-      DashedLine(color: .secondary.opacity(0.5))
-      Text("!")
-        .font(.system(size: 14, weight: .heavy))
+      DashedLine(style: AnyShapeStyle(.kitTertiary))
+      Image(systemName: "exclamationmark")
+        .kitFont(.headline)
+        .fontWeight(.heavy)
         .foregroundStyle(.white)
         .frame(width: 24, height: 24)
-        .background(Circle().fill(Color.orange))
+        .background(Circle().fill(Hue.orange.fill))
         .background(Circle().fill(.kitWindow).padding(-4))
         .scaleEffect(shown ? 1 : 0.3)
         .opacity(shown ? 1 : 0)
@@ -178,7 +209,7 @@ private struct FailedLine: View {
   }
 }
 
-private struct LineShape: Shape {
+nonisolated private struct LineShape: Shape {
   func path(in rect: CGRect) -> Path {
     Path { path in
       path.move(to: CGPoint(x: rect.minX, y: rect.midY))
@@ -188,7 +219,7 @@ private struct LineShape: Shape {
 }
 
 /// A tick, drawn left to right so trimming animates it like a pen stroke.
-struct CheckShape: Shape {
+nonisolated private struct CheckShape: Shape {
   func path(in rect: CGRect) -> Path {
     Path { path in
       path.move(to: CGPoint(x: rect.minX, y: rect.minY + rect.height * 0.55))

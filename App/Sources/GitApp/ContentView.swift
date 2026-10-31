@@ -1,5 +1,6 @@
 import ComponentKit
 import GitHubKit
+import GitHubUI
 import GitKit
 import GitUI
 import SwiftData
@@ -206,7 +207,7 @@ struct RepositoryScreen: View {
           MessageSheet(failure.title, message: failure.message)
         }
       }
-      .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(permissions: $0.permissions) }
+      .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(account: gitHub, permissions: $0.permissions) }
   }
 
   private struct ModeChange: Equatable {

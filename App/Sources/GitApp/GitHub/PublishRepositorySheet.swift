@@ -1,5 +1,6 @@
 import ComponentKit
 import GitHubKit
+import GitHubUI
 import GitKit
 import GitUI
 import SwiftUI
@@ -99,7 +100,7 @@ struct PublishRepositorySheet: View {
     }
     .animation(.kit, value: account.isSignedIn)
     .animation(.kit, value: needsPrivateAccess)
-    .kitSheet(item: $signInRequest) { GitHubSignInSheet(permissions: $0.permissions) }
+    .kitSheet(item: $signInRequest) { GitHubSignInSheet(account: account, permissions: $0.permissions) }
     // Picks up organizations joined since sign-in.
     .task(id: account.isSignedIn) { await account.refresh() }
     .onAppear {

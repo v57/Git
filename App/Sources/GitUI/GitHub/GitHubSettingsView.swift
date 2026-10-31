@@ -1,5 +1,6 @@
 import ComponentKit
 import GitHubKit
+import GitHubUI
 import SwiftUI
 
 /// Settings › GitHub: Connect GitHub while signed out; the account, Change Permissions… and the
@@ -24,13 +25,13 @@ public struct GitHubSettingsView: View {
       .animation(.kit, value: account.isSignedIn)
     }
     .frame(maxWidth: .infinity, alignment: .top)
-    .kitSheet(item: $request) { GitHubSignInSheet(permissions: $0.permissions) }
+    .kitSheet(item: $request) { GitHubSignInSheet(account: account, permissions: $0.permissions) }
     .task(id: account.isSignedIn) { offers = account.signInOffers }
   }
 
   private var signedOut: some View {
     VStack(spacing: 14) {
-      GitHubConnectionView(phase: .idle, tileSize: 52)
+      GitHubConnectionView(phase: .idle, tileSize: 52) { BranchGlyph() }
       Text("Connect GitHub")
         .font(.system(size: 17, weight: .semibold))
         .padding(.top, 4)
@@ -48,13 +49,11 @@ public struct GitHubSettingsView: View {
         .buttonStyle(.kitPrimary)
         .padding(.top, 4)
       if !offers.isEmpty {
-        VStack(spacing: 0) {
+        FormCard {
           ForEach(offers) { offer in
-            if offer.id != offers.first?.id { Divider().padding(.horizontal, 12) }
             GitHubSignInOfferRow(offer: offer) { account.use(offer) }
           }
         }
-        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
         .frame(maxWidth: 400)
         .padding(.top, 10)
       }
@@ -156,32 +155,5 @@ extension View {
   /// A white rounded card on the Settings background.
   fileprivate func settingsCard() -> some View {
     kitSurface(.card)
-  }
-}
-
-/// A GitHub avatar, or the initials avatar while it loads or without a network.
-struct GitHubAvatar: View {
-  let url: URL?
-  let name: String
-  let size: CGFloat
-
-  var body: some View {
-    AsyncImage(url: sizedURL) { image in
-      image.resizable().scaledToFill()
-    } placeholder: {
-      Avatar(name: name, size: size)
-    }
-    .frame(width: size, height: size)
-    .clipShape(.circle)
-  }
-
-  /// Asks for the image at twice the point size (`s=`), for Retina screens.
-  private var sizedURL: URL? {
-    guard let url, var components = URLComponents(url: url, resolvingAgainstBaseURL: false) else {
-      return url
-    }
-    components.queryItems = (components.queryItems ?? []).filter { $0.name != "s" }
-      + [URLQueryItem(name: "s", value: String(Int(size * 2)))]
-    return components.url ?? url
   }
 }

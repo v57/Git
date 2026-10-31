@@ -1,7 +1,9 @@
 import Foundation
 import ComponentKit
 import GitHubKit
+import GitHubUI
 import GitKit
+import SwiftUI
 import VaultKit
 
 extension GitHubAccount {
@@ -72,79 +74,15 @@ extension GitHubAccount {
       notice = (error as? GitHubError)?.errorDescription ?? error.localizedDescription
     }
   }
-
-  /// Starts the device flow, then copies the code and opens github.com's page to enter it.
-  func signInInBrowser(requesting permissions: GitHubPermissions) {
-    signIn(requesting: permissions) { [weak self] code in self?.openVerificationPage(code) }
-  }
-
-  func openVerificationPage(_ code: DeviceCode) {
-    copy(code)
-    KitDesktop.open(code.verificationURL)
-  }
-
-  func copy(_ code: DeviceCode) {
-    KitPasteboard.copy(code.userCode)
-  }
 }
 
-/// A GitHub sign-in another vault account has, which one without a sign-in can use too.
-struct GitHubSignInOffer: Identifiable {
-  var accountName: String
-  var credential: GitHubCredential
-  var id: String { credential.login }
-}
-
-/// A sign-in sheet to show, starting from `permissions`.
-public struct GitHubSignInRequest: Identifiable {
-  public let id = UUID()
-  public var permissions: GitHubPermissions
-
-  public init(permissions: GitHubPermissions) {
-    self.permissions = permissions
-  }
-}
-
-/// One permission the app can ask for, as Settings and the sign-in sheet name it.
-public enum GitHubPermission: CaseIterable, Identifiable {
-  case privateRepositories, organizations, workflows
-
-  public var id: Self { self }
-
-  public var title: String {
-    switch self {
-    case .privateRepositories: "Private repositories"
-    case .organizations: "Organizations"
-    case .workflows: "Workflows"
-    }
-  }
-
-  public var scope: String {
-    switch self {
-    case .privateRepositories: "repo"
-    case .organizations: "read:org"
-    case .workflows: "workflow"
-    }
-  }
-
-  public var detail: String {
-    switch self {
-    case .privateRepositories: "Read and write every repository you can access."
-    case .organizations: "List your organizations and publish repositories to them."
-    case .workflows: "Push changes to GitHub Actions files in .github/workflows."
-    }
-  }
-
-  /// The permissions with just this one turned on.
-  public var permissions: GitHubPermissions {
-    switch self {
-    case .privateRepositories: GitHubPermissions(repositories: .all, organizations: false, workflows: false)
-    case .organizations: GitHubPermissions(repositories: .none, organizations: true, workflows: false)
-    case .workflows: GitHubPermissions(repositories: .none, organizations: false, workflows: true)
-    }
-  }
-
-  public func isGranted(in permissions: GitHubPermissions) -> Bool {
-    permissions.includes(self.permissions)
+extension GitHubSignInSheet where Glyph == BranchGlyph {
+  /// Git's sign-in sheet for `account`: the branch glyph on Git's tile, the other vault accounts' sign-ins to use
+  /// instead.
+  public init(account: GitHubAccount, permissions: GitHubPermissions) {
+    self.init(
+      account: account, appName: "Git", permissions: permissions, offers: { account.signInOffers },
+      use: { account.use($0) }
+    ) { BranchGlyph() }
   }
 }

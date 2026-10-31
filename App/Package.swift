@@ -21,7 +21,7 @@ let kits = String(Context.packageDirectory.split(whereSeparator: { $0 == "/" || 
 /// - GitMobileApp: the iPhone and iPad app, all of it but its entry point (Sources/GitMobile/GitMobileMain.swift, the
 ///   Xcode project's Git iOS target).
 /// - GitUI: what both apps show: the diff's hunk cards and highlighting, the change kind badge, the message sheet and
-///   the GitHub sign-in and settings.
+///   the GitHub settings (the sign-in sheet is the libraries' GitHubUI, which Markdown shows too).
 let appSettings: [SwiftSetting] = [
   .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
   .enableUpcomingFeature("MemberImportVisibility"),
@@ -45,15 +45,16 @@ let package = Package(
       name: "GitUI",
       dependencies: [
         .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
-        .product(name: "CodeHighlighting", package: "Code"), .product(name: "ComponentKit", package: "Component"),
-        .product(name: "VaultKit", package: "Vault"),
+        .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
+        .product(name: "ComponentKit", package: "Component"), .product(name: "VaultKit", package: "Vault"),
       ],
       swiftSettings: appSettings),
     .target(
       name: "GitApp",
       dependencies: [
         "GitUI", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
-        .product(name: "CodeHighlighting", package: "Code"), .product(name: "UpdateKit", package: "UpdateKit"),
+        .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
+        .product(name: "UpdateKit", package: "UpdateKit"),
         .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
         .product(name: "ComponentKit", package: "Component"),
       ],

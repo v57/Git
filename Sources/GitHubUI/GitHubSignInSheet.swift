@@ -1,12 +1,31 @@
 import ComponentKit
+import Foundation
 import GitHubKit
 import SwiftUI
 
-/// Signing in to GitHub, or changing what Git may do: choose permissions, enter the code on
-/// github.com, then see what GitHub granted. The account stays as it was until the new token
-/// arrives, so cancelling a change of permissions keeps the old ones.
-public struct GitHubSignInSheet: View {
-  @Environment(GitHubAccount.self) private var account
+/// Signing in to GitHub, or changing what the app may do: choose permissions, enter the code on github.com, then see
+/// what GitHub granted. The account stays as it was until the new token arrives, so cancelling a change of
+/// permissions keeps the old ones. Present it with `.kitSheet`; it closes itself.
+///
+/// ```swift
+/// .kitSheet(item: $request) { request in
+///   GitHubSignInSheet(
+///     account: account, appName: "Git", permissions: request.permissions,
+///     offers: { account.signInOffers }, use: { account.use($0) }
+///   ) { BranchGlyph() }
+/// }
+/// GitHubSignInSheet(
+///   account: account, appName: "Markdown",
+///   permissions: GitHubPermissions(repositories: .all, organizations: false, workflows: false), choices: [],
+///   systemImage: "doc.text")
+/// ```
+public struct GitHubSignInSheet<Glyph: View>: View {
+  let account: GitHubAccount
+  let appName: String
+  let choices: [GitHubPermission]
+  let offers: () -> [GitHubSignInOffer]
+  let use: (GitHubSignInOffer) -> Void
+  let glyph: Glyph
   @Environment(\.kitDismiss) private var dismiss
   @Environment(\.kitIdiom) private var idiom
   @State private var requested: GitHubPermissions
@@ -15,7 +34,25 @@ public struct GitHubSignInSheet: View {
   /// What another account's sign-in that was used instead has (`GitHubSignInOffer`).
   @State private var used: GitHubPermissions?
 
-  public init(permissions: GitHubPermissions) {
+  /// - Parameters:
+  ///   - account: the sign-in to start or change.
+  ///   - appName: the app, as the sheet's text names it ("Choose what Git can do with your account").
+  ///   - permissions: what the chooser starts with.
+  ///   - choices: the permissions the chooser has a switch for, under the repositories' choice.
+  ///   - offers: other vault accounts' sign-ins, read when the chooser appears; one the user picks goes to `use`,
+  ///     which signs `account` in with it.
+  ///   - glyph: the app's glyph on its accent tile, opposite GitHub's.
+  public init(
+    account: GitHubAccount, appName: String, permissions: GitHubPermissions,
+    choices: [GitHubPermission] = [.organizations, .workflows], offers: @escaping () -> [GitHubSignInOffer] = { [] },
+    use: @escaping (GitHubSignInOffer) -> Void = { _ in }, @ViewBuilder glyph: () -> Glyph
+  ) {
+    self.account = account
+    self.appName = appName
+    self.choices = choices
+    self.offers = offers
+    self.use = use
+    self.glyph = glyph()
     _requested = State(initialValue: permissions)
   }
 
@@ -34,7 +71,7 @@ public struct GitHubSignInSheet: View {
     }
   }
 
-  private var phase: GitHubConnectionView.Phase {
+  private var phase: GitHubConnectionPhase {
     switch step {
     case .choose: .idle
     case .waiting: .waiting
@@ -45,14 +82,17 @@ public struct GitHubSignInSheet: View {
 
   public var body: some View {
     VStack(spacing: 0) {
-      GitHubConnectionView(phase: phase)
+      GitHubConnectionView(phase: phase) { glyph }
         .padding(.top, 26)
         .padding(.bottom, 14)
       ZStack {
         switch step {
-        case .choose: ChooseStep(requested: $requested, start: start, use: use, cancel: close)
-        case .waiting: WaitingStep(cancel: close)
-        case .done: DoneStep(requested: used ?? requested, finish: close)
+        case .choose:
+          ChooseStep(
+            appName: appName, choices: choices, requested: $requested, offers: offers, start: start, use: useOffer,
+            cancel: close)
+        case .waiting: WaitingStep(appName: appName, cancel: close)
+        case .done: DoneStep(appName: appName, requested: used ?? requested, finish: close)
         case .failed: FailedStep(retry: start, cancel: close)
         }
       }
@@ -62,6 +102,7 @@ public struct GitHubSignInSheet: View {
     }
     // A phone's sheet is as wide as the screen.
     .frame(width: idiom == .phone ? nil : 540)
+    .environment(account)
     .animation(.kit, value: step)
     .onDisappear {
       if step == .waiting { account.cancelSignIn() } else { account.endSignIn() }
@@ -73,8 +114,8 @@ public struct GitHubSignInSheet: View {
     account.signInInBrowser(requesting: requested)
   }
 
-  private func use(_ offer: GitHubSignInOffer) {
-    account.use(offer)
+  private func useOffer(_ offer: GitHubSignInOffer) {
+    use(offer)
     if account.isSignedIn { used = offer.credential.permissions }
   }
 
@@ -84,51 +125,53 @@ public struct GitHubSignInSheet: View {
   }
 }
 
+extension GitHubSignInSheet where Glyph == Image {
+  /// The sheet with an SF Symbol on the app's tile.
+  public init(
+    account: GitHubAccount, appName: String, permissions: GitHubPermissions,
+    choices: [GitHubPermission] = [.organizations, .workflows], offers: @escaping () -> [GitHubSignInOffer] = { [] },
+    use: @escaping (GitHubSignInOffer) -> Void = { _ in }, systemImage: String
+  ) {
+    self.init(
+      account: account, appName: appName, permissions: permissions, choices: choices, offers: offers, use: use
+    ) { Image(systemName: systemImage) }
+  }
+}
+
 // MARK: - Choose
 
 private struct ChooseStep: View {
   @Environment(GitHubAccount.self) private var account
   @Environment(\.kitIdiom) private var idiom
+  let appName: String
+  let choices: [GitHubPermission]
   @Binding var requested: GitHubPermissions
+  let offers: () -> [GitHubSignInOffer]
   let start: () -> Void
   let use: (GitHubSignInOffer) -> Void
   let cancel: () -> Void
   /// Other vault accounts' sign-ins, while this one has none.
-  @State private var offers: [GitHubSignInOffer] = []
+  @State private var shownOffers: [GitHubSignInOffer] = []
 
   var body: some View {
     VStack(alignment: .leading, spacing: 16) {
       StepTitle(
         account.isSignedIn ? "Change GitHub permissions" : "Sign in to GitHub",
-        "Choose what Git can do with your account. GitHub lists the same permissions before you approve.")
+        "Choose what \(appName) can do with your account. GitHub lists the same permissions before you approve.")
 
-      if !offers.isEmpty {
-        VStack(alignment: .leading, spacing: 6) {
-          Text("Signed in on another account")
-            .font(.system(size: 12, weight: .semibold))
-            .foregroundStyle(.kitSecondary)
-            .padding(.horizontal, 2)
-          VStack(spacing: 0) {
-            ForEach(offers) { offer in
-              if offer.id != offers.first?.id { Divider().padding(.horizontal, 12) }
-              GitHubSignInOfferRow(offer: offer) { use(offer) }
-            }
+      if !shownOffers.isEmpty {
+        FormCard("Signed in on another account") {
+          ForEach(shownOffers) { offer in
+            GitHubSignInOfferRow(offer: offer) { use(offer) }
           }
-          .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
         }
-        Text("Or sign in to GitHub with these permissions:")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.kitSecondary)
-          .padding(.horizontal, 2)
+        SectionTitle("Or sign in to GitHub with these permissions:")
       }
 
-      VStack(alignment: .leading, spacing: 6) {
-        Text("Repositories")
-          .font(.system(size: 12, weight: .semibold))
-          .foregroundStyle(.kitSecondary)
-          .padding(.horizontal, 2)
+      VStack(alignment: .leading, spacing: 8) {
+        SectionTitle("Repositories")
         // Side by side, or one above the other on a phone.
-        (idiom == .phone ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: 8))) {
+        (idiom == .phone ? AnyLayout(VStackLayout(spacing: 8)) : AnyLayout(HStackLayout(spacing: KitMetrics.gutter))) {
           RepositoryOption(
             title: "Public and private", scope: "repo",
             detail: "Read and write every repository you can access.",
@@ -136,27 +179,31 @@ private struct ChooseStep: View {
           ) { requested.repositories = .all }
           RepositoryOption(
             title: "Public only", scope: "public_repo",
-            detail: "Pushing keeps using your own git credentials.",
+            detail: "Read and write public repositories only.",
             isSelected: requested.repositories == .publicOnly
           ) { requested.repositories = .publicOnly }
         }
         .fixedSize(horizontal: false, vertical: idiom == .phone)
       }
 
-      VStack(spacing: 0) {
-        PermissionToggle(permission: .organizations, isOn: $requested.organizations)
-        Divider().padding(.horizontal, 12)
-        PermissionToggle(permission: .workflows, isOn: $requested.workflows)
+      if !choices.isEmpty {
+        FormCard {
+          ForEach(choices) { permission in
+            FormRow(permission.title, help: permission.detail, systemImage: permission.systemImage, hue: permission.hue) {
+              Toggle(permission.title, isOn: $requested.binding(for: permission).animation(.kit))
+                .toggleStyle(.kitSwitch)
+                .kitLabelsHidden()
+            }
+          }
+        }
       }
-      .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(.separator))
 
       // The buttons go under the scopes on a phone.
       (idiom == .phone
         ? AnyLayout(VStackLayout(alignment: .trailing, spacing: 12)) : AnyLayout(HStackLayout(spacing: 8)))
       {
-        (Text("Requests ") + Text(requested.scopes.joined(separator: " · ")).font(.system(size: 11).monospaced()))
-          .font(.system(size: 11))
-          .foregroundStyle(.kitSecondary)
+        (Text("Requests ") + Text(requested.scopes.joined(separator: " · ")).font(KitFont.monoSmall.font))
+          .kitFont(.caption)
           .contentTransition(.interpolate)
           .animation(.kit, value: requested)
           .frame(maxWidth: .infinity, alignment: .leading)
@@ -174,35 +221,26 @@ private struct ChooseStep: View {
       }
       .padding(.top, 2)
     }
-    .onAppear { offers = account.signInOffers }
+    .onAppear { shownOffers = offers() }
   }
 }
 
-/// Another vault account's GitHub sign-in, with Use: the account without one keeps a copy of its own.
-struct GitHubSignInOfferRow: View {
-  let offer: GitHubSignInOffer
-  let use: () -> Void
-
-  var body: some View {
-    HStack(spacing: 10) {
-      GitHubAvatar(url: nil, name: offer.credential.login, size: 28)
-      VStack(alignment: .leading, spacing: 1) {
-        Text("@\(offer.credential.login)").fontWeight(.semibold)
-        Text("Signed in on \(offer.accountName)")
-          .font(.system(size: 12))
-          .foregroundStyle(.kitSecondary)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-      Button("Use", action: use)
-        .buttonStyle(.kit)
+extension Binding where Value == GitHubPermissions {
+  /// Whether `permission` is asked for: organizations or workflows on their own, private repositories as the
+  /// repositories' choice.
+  fileprivate func binding(for permission: GitHubPermission) -> Binding<Bool> {
+    switch permission {
+    case .organizations: self.organizations
+    case .workflows: self.workflows
+    case .privateRepositories:
+      Binding<Bool>(
+        get: { wrappedValue.repositories == .all },
+        set: { wrappedValue.repositories = $0 ? .all : .publicOnly })
     }
-    .padding(.horizontal, 12)
-    .padding(.vertical, 9)
   }
 }
 
-/// One of the two repository choices: a card with a radio mark that takes the accent ring when
-/// selected.
+/// One of the two repository choices: a card with a radio mark that takes the accent ring when selected.
 private struct RepositoryOption: View {
   let title: String
   let scope: String
@@ -226,33 +264,11 @@ private struct RepositoryOption: View {
   }
 }
 
-private struct PermissionToggle: View {
-  let permission: GitHubPermission
-  @Binding var isOn: Bool
-
-  var body: some View {
-    Toggle(isOn: $isOn.animation(.kit)) {
-      VStack(alignment: .leading, spacing: 3) {
-        HStack(spacing: 6) {
-          Text(permission.title).fontWeight(.semibold)
-          ScopeLabel(scope: permission.scope)
-        }
-        Text(permission.detail)
-          .font(.system(size: 12))
-          .foregroundStyle(.kitSecondary)
-      }
-      .frame(maxWidth: .infinity, alignment: .leading)
-    }
-    .toggleStyle(.kitSwitch)
-    .padding(.horizontal, 12)
-    .padding(.vertical, 11)
-  }
-}
-
 // MARK: - Waiting
 
 private struct WaitingStep: View {
   @Environment(GitHubAccount.self) private var account
+  let appName: String
   let cancel: () -> Void
   /// Shown while the code was just copied, by the sheet or the Copy button.
   @State private var copiedAt: Date? = .now
@@ -270,12 +286,16 @@ private struct WaitingStep: View {
 
       ZStack {
         if let code {
-          DeviceCodeView(code: code.userCode)
+          let groups = code.userCode.split(separator: "-").map(String.init)
+          KitSafetyCode(groups: groups, columns: groups.count)
+            .fixedSize()
+            .transition(.scale(scale: 0.9).combined(with: .opacity))
         } else {
           LiveIcon(systemImage: "ellipsis", hue: .gray, status: .working, size: 18)
         }
       }
-      .frame(height: 62)
+      .frame(minHeight: 44)
+      .animation(.kit, value: code)
 
       HStack(spacing: 8) {
         Button {
@@ -298,14 +318,14 @@ private struct WaitingStep: View {
 
       HStack(spacing: 8) {
         LiveIcon(systemImage: "ellipsis", hue: .gray, status: .working, size: 18)
-        Text("Waiting for you to approve Git on GitHub…")
+        Text("Waiting for you to approve \(appName) on GitHub…")
         Spacer()
         if let code {
           TimelineView(.periodic(from: .now, by: 1)) { context in
             let left = max(0, Int(code.expiresAt.timeIntervalSince(context.date)))
             Text("Expires in \(left / 60):\(String(format: "%02d", left % 60))")
-              .font(.system(size: 12).monospacedDigit())
-              .foregroundStyle(.kitSecondary)
+              .kitFont(.caption)
+              .monospacedDigit()
               .contentTransition(.numericText(countsDown: true))
               .animation(.kit, value: left)
           }
@@ -313,7 +333,7 @@ private struct WaitingStep: View {
       }
       .padding(.horizontal, 12)
       .padding(.vertical, 10)
-      .background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 10, style: .continuous))
+      .background(.kitFillSoft, in: .rect(cornerRadius: KitMetrics.radiusLarge, style: .continuous))
 
       HStack {
         Spacer()
@@ -347,43 +367,11 @@ private struct CopyLabel: View {
   }
 }
 
-/// The code in tiles that pop in one after another.
-private struct DeviceCodeView: View {
-  let code: String
-  @State private var shown = false
-  @Environment(\.kitIdiom) private var idiom
-
-  var body: some View {
-    HStack(spacing: 6) {
-      ForEach(Array(code.enumerated()), id: \.offset) { index, character in
-        Group {
-          if character == "-" {
-            Text("–").foregroundStyle(.kitTertiary).frame(width: 14)
-          } else {
-            Text(String(character))
-              .frame(width: idiom == .phone ? 32 : 40, height: 54)
-              .background(Color.primary.opacity(0.04), in: .rect(cornerRadius: 9, style: .continuous))
-              .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).strokeBorder(.separator))
-          }
-        }
-        .font(.system(size: 26, weight: .semibold, design: .monospaced))
-        .scaleEffect(shown ? 1 : 0.8)
-        .offset(y: shown ? 0 : 10)
-        .opacity(shown ? 1 : 0)
-        .animation(.spring(response: 0.42, dampingFraction: 0.62).delay(0.12 + Double(index) * 0.055), value: shown)
-      }
-    }
-    .textSelection(.enabled)
-    .onAppear { shown = true }
-    .accessibilityElement(children: .ignore)
-    .accessibilityLabel("Code \(code)")
-  }
-}
-
 // MARK: - Done
 
 private struct DoneStep: View {
   @Environment(GitHubAccount.self) private var account
+  let appName: String
   let requested: GitHubPermissions
   let finish: () -> Void
   @State private var shown = false
@@ -405,15 +393,10 @@ private struct DoneStep: View {
 
   var body: some View {
     VStack(spacing: 14) {
-      StepTitle("Connected as \(account.user?.login ?? "GitHub")", "Git can now do this with your account:")
+      StepTitle("Connected as \(account.user?.login ?? "GitHub")", "\(appName) can now do this with your account:")
       FlowLayout(spacing: 6) {
         ForEach(Array(chips.enumerated()), id: \.element) { index, chip in
-          Label(chip, systemImage: "checkmark")
-            .font(.system(size: 12, weight: .medium))
-            .foregroundStyle(.green)
-            .padding(.horizontal, 10)
-            .frame(height: 26)
-            .background(Color.green.opacity(0.12), in: .capsule)
+          Chip(chip, systemImage: "checkmark", hue: .green)
             .scaleEffect(shown ? 1 : 0.9)
             .offset(y: shown ? 0 : 6)
             .opacity(shown ? 1 : 0)
@@ -421,19 +404,12 @@ private struct DoneStep: View {
         }
       }
       if !missing.isEmpty {
-        Label {
-          Text("GitHub granted less than Git asked for: **\(missing.formatted())**. Git asks again when something needs it.")
-            .fixedSize(horizontal: false, vertical: true)
-        } icon: {
-          Image(systemName: "exclamationmark.triangle")
-        }
-        .foregroundStyle(.orange)
-        .padding(.horizontal, 12)
-        .padding(.vertical, 10)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.1), in: .rect(cornerRadius: 10, style: .continuous))
-        .opacity(shown ? 1 : 0)
-        .animation(.kit.delay(0.9), value: shown)
+        Banner(
+          "GitHub granted less than \(appName) asked for",
+          message: "Not granted: \(missing.formatted()). \(appName) asks again when something needs it.",
+          systemImage: "exclamationmark.triangle", hue: .orange)
+          .opacity(shown ? 1 : 0)
+          .animation(.kit.delay(0.9), value: shown)
       }
       HStack {
         Spacer()
@@ -484,6 +460,7 @@ private struct FailedStep: View {
 
 // MARK: - Pieces
 
+/// A step's title and what to do, centred under the tiles.
 private struct StepTitle: View {
   let title: String
   let message: String
@@ -495,8 +472,9 @@ private struct StepTitle: View {
 
   var body: some View {
     VStack(spacing: 4) {
-      Text(title).font(.system(size: 17, weight: .semibold))
+      Text(title).kitFont(.title2)
       Text(message)
+        .kitFont(.body)
         .foregroundStyle(.kitSecondary)
         .fixedSize(horizontal: false, vertical: true)
     }
@@ -505,19 +483,22 @@ private struct StepTitle: View {
   }
 }
 
-/// An OAuth scope name, as GitHub shows it.
-struct ScopeLabel: View {
-  let scope: String
+/// A heading over a group, lined up with `FormCard`'s title.
+private struct SectionTitle: View {
+  let title: String
+
+  init(_ title: String) { self.title = title }
 
   var body: some View {
-    Text(scope)
-      .font(.system(size: 11).monospaced())
-      .foregroundStyle(.kitSecondary)
+    Text(title)
+      .kitFont(.headline)
+      .padding(.horizontal, 12)
+      .accessibilityAddTraits(.isHeader)
   }
 }
 
 /// A label with its icon after the title, for buttons that open the browser.
-struct TrailingIconLabelStyle: LabelStyle {
+private struct TrailingIconLabelStyle: LabelStyle {
   func makeBody(configuration: Configuration) -> some View {
     HStack(spacing: 6) {
       configuration.title
