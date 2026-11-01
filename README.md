@@ -48,7 +48,6 @@ other repository that needs attention.
                   ConflictedFile (conflict markers → blocks), CommitGraph (lanes for the history graph)
       Parsing/    status --porcelain=v2, log, name-status, for-each-ref, stash list, unified diff
       Staging/    PatchBuilder: patches for a subset of a diff's lines
-      Discovery/  RepoDiscovery: finds repositories inside a folder; RepoGrouping: groups them by folder
       Session/    RepositorySession (@Observable state + actions), RepositoryWatcher (FSEvents)
       Repository.swift   every git operation, as async methods on a Sendable struct
     Sources/GitEngine/            git in Swift, for repositories on iPhone and iPad: LocalRepository

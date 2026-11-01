@@ -755,49 +755,6 @@ struct TempRepo {
   }
 }
 
-@Suite struct DiscoveryTests {
-  @Test func findsNestedRepositoriesAndSkipsIgnoredFolders() async throws {
-    let root = FileManager.default.temporaryDirectory.appendingPathComponent(
-      "GitKitDiscovery-\(UUID().uuidString)")
-    let fm = FileManager.default
-    for path in [
-      "a/.git", "group/b/.git", "group/b/nested/.git", "node_modules/c/.git", ".hidden/d/.git",
-      "plain/folder", "deep/1/2/3/4/5/6/7/.git", "wt/.git",
-    ] {
-      try fm.createDirectory(
-        at: root.appendingPathComponent(path), withIntermediateDirectories: true)
-    }
-    // A worktree has a .git file.
-    try fm.removeItem(at: root.appendingPathComponent("wt/.git"))
-    try "gitdir: /elsewhere".write(
-      to: root.appendingPathComponent("wt/.git"), atomically: true, encoding: .utf8)
-
-    let found = RepoDiscovery.scan(root).map { $0.path.replacingOccurrences(of: root.standardizedFileURL.path + "/", with: "") }
-    #expect(found == ["a", "group/b", "wt"])
-    #expect(RepoDiscovery.scan(root.appendingPathComponent("a")).count == 1)
-    #expect(RepoDiscovery.scan(root.appendingPathComponent("plain")).isEmpty)
-  }
-}
-
-@Suite struct GroupingTests {
-  @Test func groupsSiblingsByTheirOwnFolder() {
-    let urls = [
-      "/Users/me/Developer/Hub/Apps/hub-app", "/Users/me/Developer/Hub/Apps/hub-web",
-      "/Users/me/Developer/playgra/Vijo/a", "/Users/me/Developer/playgra/Vijo/b",
-      "/Users/me/Developer/playgra/Vijo/c",
-      // Nested deeper: its own folder's group, not Vijo's.
-      "/Users/me/Developer/playgra/Vijo/tools/x", "/Users/me/Developer/playgra/Vijo/tools/y",
-      // Alone in its folder.
-      "/Users/me/Developer/Hub/Server",
-    ].map { URL(fileURLWithPath: $0) }
-    let (groups, ungrouped) = RepoGrouping.groups(for: urls)
-    #expect(groups.map(\.name) == ["Apps", "tools", "Vijo"])
-    #expect(groups.map(\.note) == ["Hub", "Vijo", "playgra"])
-    #expect(groups[2].repositories.map(\.lastPathComponent) == ["a", "b", "c"])
-    #expect(ungrouped.map(\.lastPathComponent) == ["Server"])
-  }
-}
-
 @MainActor @Suite struct SessionTests {
   @Test func refreshesAndStagesThroughSession() async throws {
     let temp = try await TempRepo()

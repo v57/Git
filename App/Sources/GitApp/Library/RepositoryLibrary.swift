@@ -89,6 +89,8 @@ struct CompletedOperation: Equatable {
   var isCreateRequested = false
   /// A repository to select in the window (set by `open`).
   var requestedSelection: String?
+  /// The folders the last import skipped (no repository in them), offered as projects.
+  var folderSuggestions: FolderSuggestions?
   /// Shown after an import that found nothing.
   var importMessage: String?
   /// Repositories with a fetch, pull or push started from the sidebar.
@@ -309,14 +311,15 @@ struct CompletedOperation: Equatable {
     isImporting = true
     defer { isImporting = false }
 
-    let found = await RepoDiscovery.scan(folders)
+    let results = await VaultProjectDiscovery.scan(folders)
+    let found = Dictionary(results.map { ($0.root, $0.repositories) }) { first, _ in first }
     let all = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
     let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
     var added: [SavedRepository] = []
     // Found repositories that are already in the list but in no group are grouped again.
     var regrouped: [String] = []
     for folder in folders {
-      let repos = found[folder] ?? []
+      let repos = found[folder.standardizedFileURL] ?? []
       for repo in repos {
         if let saved = existing[repo.path] {
           // One in another account's list stays there.
@@ -329,11 +332,15 @@ struct CompletedOperation: Equatable {
     try? context.save()
     await vaultProjects.publish(added, context: context)
     arrange(
-      added.map(\.path) + regrouped, new: Set(added.map(\.path)), into: group,
+      added.map(\.path) + regrouped, roots: results.map(\.root.path), into: group,
       before: before.flatMap(layout(context).vaultID(of:)))
 
-    let foundCount = found.values.reduce(0) { $0 + $1.count }
-    if foundCount == 0 {
+    // Folders without a repository are offered as projects for the other apps.
+    let projects = Set(vault.localProjects.compactMap(\.localPath))
+    let skipped = results.flatMap(\.skipped).filter { !projects.contains($0.url.path) }
+    if !skipped.isEmpty {
+      folderSuggestions = FolderSuggestions(skipped: skipped, roots: results.map(\.root))
+    } else if results.allSatisfy(\.repositories.isEmpty) {
       let names = folders.map(\.lastPathComponent).formatted()
       importMessage = "No Git repositories were found in \(names)."
     }
@@ -364,7 +371,7 @@ struct CompletedOperation: Equatable {
       if let owner {
         move([path], into: owner, before: nil, context: context)
       } else {
-        arrange([path], new: [path])
+        arrange([path])
       }
       await refreshSummaries([path])
     }
@@ -377,7 +384,7 @@ struct CompletedOperation: Equatable {
     }
     try? context.save()
     // Projects another app or Mac already put in a group stay there.
-    arrange(paths, new: Set(paths))
+    arrange(paths)
     Task { await refreshSummaries(paths) }
   }
 
@@ -415,4 +422,11 @@ struct CompletedOperation: Equatable {
   static func openInTerminal(_ url: URL) {
     KitDesktop.openTerminal(at: url)
   }
+}
+
+/// Folders an import skipped, and the folders the user dropped (their groups take the ones added).
+struct FolderSuggestions: Identifiable {
+  let id = UUID()
+  let skipped: [VaultProjectDiscovery.Skipped]
+  let roots: [URL]
 }

@@ -151,59 +151,11 @@ extension RepositoryLibrary {
 
   // MARK: Arranging
 
-  /// Puts repositories in no group into groups by folder (see `RepoGrouping`): siblings join the
-  /// group made from their folder, created if needed (inside the group of the nearest folder above
-  /// that has one), and a repository whose folder already has a group joins it. New repositories
-  /// left over go, in name order with the new groups, into `group` (a vault id; `nil`: the top level)
-  /// before the item `before` (a vault id; `nil`: at its end).
-  func arrange(_ paths: [String], new: Set<String>, into group: String? = nil, before: String? = nil) {
-    vault.perform { store in
-      let device = store.deviceID
-      let tree = try store.projectTree()
-      var projects: [String: VaultProject] = [:]
-      for project in tree.projects() {
-        if let path = project.paths[device] { projects[path] = project }
-      }
-      let candidates = paths.compactMap { projects[$0] }.filter { tree.parent(of: $0.id) == nil }
-      guard !candidates.isEmpty else { return }
-      var folders = [String: String](
-        tree.groups.compactMap { group in group.paths[device].map { ($0, group.id) } }
-      ) { first, _ in first }
-      var newItems: [(name: String, id: String)] = []
-
-      let plan = RepoGrouping.groups(
-        for: candidates.compactMap { $0.paths[device] }.map { URL(fileURLWithPath: $0, isDirectory: true) })
-      var placed = Set<String>()
-      // Outer folders first, so a folder's group exists before the groups inside it.
-      for planned in plan.groups.sorted(by: { $0.directory.path.count < $1.directory.path.count }) {
-        let directory = planned.directory.path
-        let groupID: String
-        if let existing = folders[directory] {
-          groupID = existing
-        } else {
-          let parent = folders.filter { directory.hasPrefix($0.key + "/") }.max { $0.key.count < $1.key.count }?.value
-          let group = try store.addProjectGroup(
-            name: planned.name, note: planned.note.isEmpty ? nil : planned.note, path: directory, in: parent)
-          folders[directory] = group.id
-          groupID = group.id
-          if parent == nil { newItems.append((group.name, group.id)) }
-        }
-        let ids = planned.repositories.compactMap { projects[$0.path]?.id }
-        try store.moveProjects(ids, into: groupID)
-        placed.formUnion(ids)
-      }
-      for project in candidates where !placed.contains(project.id) {
-        guard let path = project.paths[device] else { continue }
-        let folder = URL(fileURLWithPath: path).deletingLastPathComponent().standardizedFileURL.path
-        if let groupID = folders[folder] {
-          try store.moveProjects([project.id], into: groupID)
-        } else if new.contains(path) {
-          newItems.append((project.name, project.id))
-        }
-      }
-      let order = newItems.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
-      try store.moveProjects(order.map(\.id), into: group, before: before)
-    }
+  /// Lays the repositories out in the vault's tree as their folders are (`VaultStore.arrangeProjects`): a dropped
+  /// folder in `roots` becomes a group, with groups for the folders in it that hold two or more. New groups and
+  /// ungrouped repositories go into `group` before `before`.
+  func arrange(_ paths: [String], roots: [String] = [], into group: String? = nil, before: String? = nil) {
+    vault.perform { try $0.arrangeProjects(paths, roots: roots, into: group, before: before) }
   }
 
   // MARK: Moving
