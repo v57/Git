@@ -115,6 +115,21 @@ struct CompletedOperation: Equatable {
 
   init(vault: Vault) {
     vaultProjects = VaultProjects(vault: vault)
+    // The last launch's values, until the first refresh looks again: most are the same.
+    if let lastState {
+      summaries = lastState.contents.summaries
+      activities = lastState.contents.activities
+    }
+  }
+
+  /// What Git showed when it last ran (`LastState`); nil for `--in-memory` launches, which leave it alone.
+  private var lastState: LastState? {
+    vaultProjects.isShared || LastState.debugFile != nil ? LastState.shared : nil
+  }
+
+  /// Saves the sidebar's values and the loaded repositories' changes for the next launch.
+  private func rememberState() {
+    lastState?.remember(summaries: summaries, activities: activities, sessions: sessions)
   }
 
   /// Repositories of another account that `open` showed in this window, by path, with their account (nil for
@@ -161,6 +176,8 @@ struct CompletedOperation: Equatable {
     let session = RepositorySession(
       repository: Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner(for: path)))
     identify(session, accountID: otherAccounts[path].flatMap { $0 } ?? vault.accountID)
+    // Its changes as the last launch left them, shown while its first refresh looks again.
+    if let snapshot = lastState?.contents.sessions[path] { session.restore(snapshot) }
     sessions[path] = session
     return session
   }
@@ -220,6 +237,7 @@ struct CompletedOperation: Equatable {
       }
       let session = RepositorySession(repository: opened.repository)
       identify(session, accountID: vault.accountID)
+      if let snapshot = lastState?.contents.sessions[key] { session.restore(snapshot) }
       remoteTransports[key] = opened.transport
       remoteTargets[key] = opened.target
       sessions[key] = session
@@ -308,6 +326,7 @@ struct CompletedOperation: Equatable {
   func updateSummary(_ path: String, from session: RepositorySession) {
     guard let status = session.status else { return }
     summaries[path] = RepositorySummary(status)
+    rememberState()
     // The dates are read here, from git on this Mac.
     if !Self.isRemote(path) { Task { await refreshActivity(path) } }
   }
@@ -375,12 +394,16 @@ struct CompletedOperation: Equatable {
         addNext()
       }
     }
+    rememberState()
   }
 
   /// Reloads one repository's dates (the open one, whose summary comes from its session).
   func refreshActivity(_ path: String) async {
     let activity = try? await Repository(url: URL(fileURLWithPath: path)).activity()
-    if activities[path] != activity { activities[path] = activity }
+    if activities[path] != activity {
+      activities[path] = activity
+      rememberState()
+    }
   }
 
   /// Adds every repository found in the dropped or picked folders, the new items (repositories, groups for folders
@@ -545,6 +568,7 @@ struct CompletedOperation: Equatable {
       activities[repository.path] = nil
       context.delete(repository)
     }
+    lastState?.forget(repositories.map(\.path))
     try? context.save()
   }
 

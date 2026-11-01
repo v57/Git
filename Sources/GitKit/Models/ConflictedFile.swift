@@ -1,7 +1,7 @@
 import Foundation
 
 /// How the two sides of a conflicted path disagree (the `XY` of a `u` status record).
-public enum ConflictType: String, Sendable, Hashable {
+public enum ConflictType: String, Sendable, Hashable, Codable {
   case bothModified, bothAdded, bothDeleted, addedByUs, addedByThem, deletedByUs, deletedByThem
 
   init?(xy: Substring) {

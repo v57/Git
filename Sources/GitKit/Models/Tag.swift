@@ -17,7 +17,7 @@ public struct Tag: Sendable, Hashable, Identifiable {
 }
 
 /// Lines added and removed in one file. `nil` counts mean a binary file.
-public struct LineCounts: Sendable, Hashable {
+public struct LineCounts: Sendable, Hashable, Codable {
   public var added: Int?
   public var removed: Int?
 

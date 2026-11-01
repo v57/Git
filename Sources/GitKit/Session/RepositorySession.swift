@@ -59,6 +59,29 @@ public final class RepositorySession {
     }
   }
 
+  /// What the session showed last, for an app to save and show again at its next launch while the first refresh looks
+  /// again (`restore`): the changes, their line counts, the branches and the remotes, which rarely change in between.
+  public struct Snapshot: Codable, Sendable, Hashable {
+    public var status: WorkingTreeStatus
+    public var lineCounts: [FileChange.ID: LineCounts]
+    public var branches: [Branch]
+    public var remotes: [String]
+  }
+
+  /// The loaded state to save; nil before the first load.
+  public var snapshot: Snapshot? {
+    status.map { Snapshot(status: $0, lineCounts: lineCounts, branches: branches, remotes: remotes) }
+  }
+
+  /// Shows a saved snapshot until the first refresh replaces it. Nothing once the session has loaded.
+  public func restore(_ snapshot: Snapshot) {
+    guard status == nil else { return }
+    status = snapshot.status
+    lineCounts = snapshot.lineCounts
+    branches = snapshot.branches
+    remotes = snapshot.remotes
+  }
+
   public let repository: Repository
   public private(set) var status: WorkingTreeStatus?
   public private(set) var branches: [Branch] = []

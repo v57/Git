@@ -756,6 +756,34 @@ struct TempRepo {
 }
 
 @MainActor @Suite struct SessionTests {
+  @Test func restoresASavedSnapshotUntilTheFirstRefresh() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try temp.write("a.txt", "a\nb\n")
+    try temp.write("new.txt", "new\n")
+
+    let first = RepositorySession(repository: temp.repo)
+    await first.refresh()
+    let saved = try JSONEncoder().encode(try #require(first.snapshot))
+    let snapshot = try JSONDecoder().decode(RepositorySession.Snapshot.self, from: saved)
+    #expect(snapshot == first.snapshot)
+
+    // The next launch shows it before loading anything, and the refresh then replaces what changed meanwhile.
+    let next = RepositorySession(repository: temp.repo)
+    next.restore(snapshot)
+    #expect(next.status == first.status)
+    #expect(next.lineCounts == first.lineCounts)
+    #expect(next.currentBranch?.name == "main")
+    #expect(next.revision == 0)
+    try FileManager.default.removeItem(at: temp.root.appendingPathComponent("new.txt"))
+    await next.refresh()
+    #expect(next.status?.unstaged.map(\.path) == ["a.txt"])
+    // A loaded session keeps what it loaded.
+    next.restore(snapshot)
+    #expect(next.status?.unstaged.count == 1)
+  }
+
   @Test func refreshesAndStagesThroughSession() async throws {
     let temp = try await TempRepo()
     try temp.write("a.txt", "a\n")

@@ -1,7 +1,7 @@
 import Foundation
 
 /// How a file differs on one side (index or working tree).
-public enum ChangeKind: String, Sendable, Hashable {
+public enum ChangeKind: String, Sendable, Hashable, Codable {
   case added, modified, deleted, renamed, copied, typeChanged, untracked, conflicted
 
   /// The one-letter code git uses (`?` for untracked, `U` for conflicts).
@@ -34,12 +34,12 @@ public enum ChangeKind: String, Sendable, Hashable {
 }
 
 /// Where a change lives.
-public enum ChangeArea: String, Sendable, Hashable {
+public enum ChangeArea: String, Sendable, Hashable, Codable {
   case staged, unstaged, conflicted
 }
 
 /// One changed path in `git status`.
-public struct FileChange: Sendable, Hashable, Identifiable {
+public struct FileChange: Sendable, Hashable, Identifiable, Codable {
   public var path: String
   /// The source path of a rename or copy.
   public var originalPath: String?
@@ -67,7 +67,7 @@ public struct FileChange: Sendable, Hashable, Identifiable {
 }
 
 /// An operation git is in the middle of, which needs a continue or abort.
-public enum RepositoryOperation: String, Sendable, Hashable {
+public enum RepositoryOperation: String, Sendable, Hashable, Codable {
   case merge, rebase, cherryPick, revert
 
   public var title: String {
@@ -81,7 +81,7 @@ public enum RepositoryOperation: String, Sendable, Hashable {
 }
 
 /// The parsed result of `git status --porcelain=v2 --branch`.
-public struct WorkingTreeStatus: Sendable, Hashable {
+public struct WorkingTreeStatus: Sendable, Hashable, Codable {
   /// The current branch, or `nil` when HEAD is detached.
   public var branch: String?
   /// The commit HEAD points to, or `nil` before the first commit.
@@ -106,7 +106,7 @@ public struct WorkingTreeStatus: Sendable, Hashable {
 }
 
 /// A light status for the sidebar.
-public struct RepositorySummary: Sendable, Hashable {
+public struct RepositorySummary: Sendable, Hashable, Codable {
   public var branch: String?
   public var headOID: String?
   public var changeCount: Int

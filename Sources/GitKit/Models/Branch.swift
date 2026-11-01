@@ -1,6 +1,6 @@
 import Foundation
 
-public struct Branch: Sendable, Hashable, Identifiable {
+public struct Branch: Sendable, Hashable, Identifiable, Codable {
   /// The full ref, e.g. `refs/heads/main` or `refs/remotes/origin/main`.
   public var refName: String
   /// The short name, e.g. `main` or `origin/main`.

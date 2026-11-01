@@ -128,9 +128,10 @@ struct ContentView: View {
     }
     // One on another device shows its connection until its session is in.
     if shownPath != nil, let session = library.loadedSession(for: path) {
-      // `activate` (the other task) loads it; the first load ends with the first revision.
+      // `activate` (the other task) loads it; the first load ends with the first revision. One the last launch left
+      // a snapshot of (`LastState`) shows that at once.
       let deadline = ContinuousClock.now + .milliseconds(400)
-      while session.revision == 0, ContinuousClock.now < deadline {
+      while session.revision == 0, session.status == nil, ContinuousClock.now < deadline {
         try? await Task.sleep(for: .milliseconds(10))
       }
       guard !Task.isCancelled else { return }

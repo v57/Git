@@ -2,7 +2,7 @@ import Foundation
 
 /// When a repository was last worked on, for sorting and filtering a long list: its last commit, its last push and
 /// the newest of its uncommitted changes.
-public struct RepositoryActivity: Sendable, Hashable {
+public struct RepositoryActivity: Sendable, Hashable, Codable {
   /// HEAD's commit date and subject.
   public var lastCommit: Date?
   public var lastCommitSubject: String?
