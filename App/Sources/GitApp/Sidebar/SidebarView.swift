@@ -92,9 +92,7 @@ struct SidebarView: View {
       }
     }
     .kitNotice("Nothing to Add", message: $library.importMessage, systemImage: "folder", hue: .gray)
-    .kitSheet(item: $library.folderSuggestions) { offer in
-      VaultFolderSuggestionsSheet(offer.skipped, roots: offer.roots, vault: library.vault, app: "Git")
-    }
+    .kitSheet(item: $library.importOffer) { offer in VaultImportSheet(offer, vault: library.vault, app: "Git") }
     .kitNotice(item: $library.remoteFailure, title: \.title, message: \.message)
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
       let shown = repositories.filter { !$0.isHidden }.map(\.path)

@@ -89,8 +89,9 @@ struct CompletedOperation: Equatable {
   var isCreateRequested = false
   /// A repository to select in the window (set by `open`).
   var requestedSelection: String?
-  /// The folders the last import skipped (no repository in them), offered as projects.
-  var folderSuggestions: FolderSuggestions?
+  /// What the last import found that Git doesn't list (folders without a repository, databases), offered to the
+  /// other apps.
+  var importOffer: VaultImportOffer?
   /// Shown after an import that found nothing.
   var importMessage: String?
   /// Repositories with a fetch, pull or push started from the sidebar.
@@ -304,14 +305,14 @@ struct CompletedOperation: Equatable {
   func importFolders(
     _ urls: [URL], into context: ModelContext, group: String? = nil, before: String? = nil
   ) async -> [String] {
-    let folders = urls.filter {
-      $0.isFileURL && (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true
-    }
-    guard !folders.isEmpty else { return [] }
+    let files = urls.filter(\.isFileURL)
+    let folders = files.filter { (try? $0.resourceValues(forKeys: [.isDirectoryKey]).isDirectory) == true }
+    guard !files.isEmpty else { return [] }
     isImporting = true
     defer { isImporting = false }
 
-    let results = await VaultProjectDiscovery.scan(folders)
+    // Files too: a database dropped here is offered as a connection.
+    let results = await VaultProjectDiscovery.scan(files)
     let found = Dictionary(results.map { ($0.root, $0.repositories) }) { first, _ in first }
     let all = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
     let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
@@ -335,11 +336,9 @@ struct CompletedOperation: Equatable {
       added.map(\.path) + regrouped, roots: results.map(\.root.path), into: group,
       before: before.flatMap(layout(context).vaultID(of:)))
 
-    // Folders without a repository are offered as projects for the other apps.
-    let projects = Set(vault.localProjects.compactMap(\.localPath))
-    let skipped = results.flatMap(\.skipped).filter { !projects.contains($0.url.path) }
-    if !skipped.isEmpty {
-      folderSuggestions = FolderSuggestions(skipped: skipped, roots: results.map(\.root))
+    // Folders without a repository and databases are offered for the other apps.
+    if let offer = VaultImportOffer(results, store: vault.store) {
+      importOffer = offer
     } else if results.allSatisfy(\.repositories.isEmpty) {
       let names = folders.map(\.lastPathComponent).formatted()
       importMessage = "No Git repositories were found in \(names)."
@@ -422,11 +421,4 @@ struct CompletedOperation: Equatable {
   static func openInTerminal(_ url: URL) {
     KitDesktop.openTerminal(at: url)
   }
-}
-
-/// Folders an import skipped, and the folders the user dropped (their groups take the ones added).
-struct FolderSuggestions: Identifiable {
-  let id = UUID()
-  let skipped: [VaultProjectDiscovery.Skipped]
-  let roots: [URL]
 }
