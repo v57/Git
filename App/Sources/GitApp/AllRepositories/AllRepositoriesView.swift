@@ -262,11 +262,7 @@ private struct RepositoryIcon: View {
 
   var body: some View {
     let status: WorkStatus = repository.isBusy ? .working : .idle
-    if let image = repository.icon.flatMap(Image.init(data:)) {
-      Avatar(name: repository.name, image: image, kind: .thing, status: status, size: size)
-    } else {
-      Avatar(name: repository.name, kind: .thing, status: status, size: size)
-    }
+    Avatar(name: repository.name, imageData: repository.icon, kind: .thing, status: status, size: size)
   }
 }
 

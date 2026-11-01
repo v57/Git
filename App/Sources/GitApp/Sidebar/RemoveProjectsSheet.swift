@@ -65,11 +65,7 @@ struct RemoveProjectsSheet: View {
       }
     }
     .tile {
-      if let image = item.icon.flatMap(Image.init(data:)) {
-        Avatar(name: item.name, image: image, kind: .thing, size: 24)
-      } else {
-        Avatar(name: item.name, kind: .thing, size: 24)
-      }
+      Avatar(name: item.name, imageData: item.icon, kind: .thing, size: 24)
     }
   }
 

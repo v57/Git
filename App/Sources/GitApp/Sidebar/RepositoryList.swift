@@ -659,11 +659,7 @@ struct RepositoryRow: View {
   var body: some View {
     SidebarRow(repository.name) {
       let status: WorkStatus = activity == nil ? .idle : .working
-      if let image = icon.flatMap(Image.init(data:)) {
-        Avatar(name: repository.name, image: image, kind: .thing, status: status, size: 18)
-      } else {
-        Avatar(name: repository.name, kind: .thing, status: status, size: 18)
-      }
+      Avatar(name: repository.name, imageData: icon, kind: .thing, status: status, size: 18)
     } trailing: {
       if let activity {
         Text("\(activity.title)ing…")

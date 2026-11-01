@@ -192,7 +192,7 @@ struct RepositoriesWelcome: View {
           RecentItem(
             repository.name, subtitle: repository.targets.map(\.name).joined(separator: ", "),
             systemImage: repository.icon == nil ? "desktopcomputer" : nil,
-            image: repository.icon.flatMap(Image.init(data:))
+            imageData: repository.icon
           ) { selection = source.id }
         }
       }
