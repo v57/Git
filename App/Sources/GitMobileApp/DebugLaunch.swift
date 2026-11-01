@@ -4,13 +4,15 @@
   import GitKit
   import SSHKit
   import SwiftUI
+  import VaultKit
 
   /// Debug builds take repositories and steps from the launch environment, for trying the app in the simulator
   /// (which has no Secure Enclave key and no Hub) without tapping:
   ///
   /// - `GIT_DEBUG_REMOTE`: `{"name", "host", "port", "user", "directory", "key"}` (or an array of them): a repository
   ///   on another machine, `key` a private key file the server accepts (or `keyText`, its contents), `device` the
-  ///   device's name in the app.
+  ///   device's name in the app, `group` a vault group to show it in (it becomes a vault project in this device's
+  ///   vault, as the Mac's projects are).
   /// - `GIT_DEBUG_SELECT`: the repository opened at launch (its name), or `none`. Else the first debug remote.
   /// - `GIT_DEBUG_CLONE`: an HTTPS URL cloned to this device at launch (unless a folder of its name is there), then
   ///   opened.
@@ -32,6 +34,7 @@
       var key: String?
       var keyText: String?
       var device: String?
+      var group: String?
     }
 
     static let environment = ProcessInfo.processInfo.environment
@@ -49,6 +52,30 @@
           user: remote.user, directory: remote.directory, detail: remote.device == nil ? "debug" : "via Hub")
         return RemoteRepository(id: "debug-" + remote.name, name: remote.name, targets: [target])
       }
+    }
+
+    /// The debug remotes with a `group`, as vault projects in that group, so the list shows them as it shows the
+    /// Mac's projects.
+    static func addGroupedProjects(to vault: Vault) {
+      let grouped = Dictionary(grouping: remotes.filter { $0.group != nil }, by: { $0.group ?? "" })
+      guard !grouped.isEmpty else { return }
+      guard vault.store != nil else {
+        write("vault: no store (\(vault.error ?? "no error"))\n")
+        return
+      }
+      vault.perform { store in
+        for (name, remotes) in grouped.sorted(by: { $0.key < $1.key }) {
+          let ids = remotes.map { "debug-" + $0.name }
+          for (remote, id) in zip(remotes, ids) where try store.record(VaultProject.self, id: id) == nil {
+            _ = try store.save(VaultProject(id: id, name: remote.name))
+          }
+          let tree = try store.projectTree()
+          if ids.contains(where: { tree.parent(of: $0).flatMap(tree.group(id:))?.name != name }) {
+            _ = try store.groupProjects(ids, name: name)
+          }
+        }
+      }
+      write("vault: \(vault.projects.count) projects, \(vault.projectGroups.count) groups, error \(vault.error ?? "-")\n")
     }
 
     static func login(for target: RemoteTarget) -> SSHServer? {

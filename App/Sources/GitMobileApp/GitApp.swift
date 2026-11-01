@@ -44,6 +44,12 @@ struct RepositoriesView: View {
     return RemoteRepositories.all(vault: vault)
   }
 
+  /// The vault's projects on the user's other devices, in the groups every app shows them in.
+  private var remoteTree: VaultProjectTree {
+    let ids = Set(remote.map(\.id))
+    return vault.projectTree.filter { ids.contains($0.id) }
+  }
+
   private var sources: [RepositorySource] {
     local.repositories.map(RepositorySource.local) + remote.map(RepositorySource.remote)
   }
@@ -76,6 +82,7 @@ struct RepositoriesView: View {
     }
     .task {
       #if DEBUG
+        DebugLaunch.addGroupedProjects(to: vault)
         if let id = await DebugLaunch.selected(in: sources) { selection = id }
         if let sheet = DebugLaunch.sheet { self.sheet = sheet }
       #endif
@@ -84,8 +91,8 @@ struct RepositoriesView: View {
 
   private var sidebar: some View {
     RepositoriesSidebar(
-      local: local.repositories, remote: remote, selection: $selection, columnVisibility: $columnVisibility,
-      sheet: $sheet
+      local: local.repositories, remote: remote, tree: remoteTree, selection: $selection,
+      columnVisibility: $columnVisibility, sheet: $sheet
     ) { source in
       remove(source)
     }
@@ -194,11 +201,14 @@ struct RepositoriesWelcome: View {
   }
 }
 
-/// The repositories as the kit's sidebar: a card for those on this device and one for those on the user's other
-/// devices; search filters both, and the bar says how many devices Git reaches.
+/// The repositories as the kit's sidebar: a card for those on this device, the vault's projects on the user's other
+/// devices in their groups (VaultUI's projects section, as every app lists them), and the folders opened on a Mac
+/// here; search filters them all, and the bar says how many devices Git reaches.
 struct RepositoriesSidebar: View {
   let local: [LocalRepository]
   let remote: [RemoteRepository]
+  /// The vault's projects among `remote`, in their groups.
+  let tree: VaultProjectTree
   @Binding var selection: RepositorySource.ID?
   @Binding var columnVisibility: NavigationSplitViewVisibility
   @Binding var sheet: LibrarySheet?
@@ -206,7 +216,18 @@ struct RepositoriesSidebar: View {
   @State private var search = ""
   @State private var pendingRemoval: RepositorySource?
   @State private var showsAddMenu = false
+  @State private var collapsedGroups: Set<String> = []
   @Environment(\.kitIdiom) private var idiom
+
+  /// The folders opened on a Mac here, which aren't vault projects.
+  private var opened: [RemoteRepository] { remote.filter { tree.node(id: $0.id) == nil } }
+
+  /// The picked vault project's id, for the projects section.
+  private var projectSelection: Binding<String?> {
+    Binding(
+      get: { selection.flatMap { $0.hasPrefix("remote:") ? String($0.dropFirst("remote:".count)) : nil } },
+      set: { id in selection = id.map { "remote:" + $0 } })
+  }
 
   private func matches(_ name: String) -> Bool { search.isEmpty || name.localizedCaseInsensitiveContains(search) }
 
@@ -246,35 +267,39 @@ struct RepositoriesSidebar: View {
             Button("New Repository…", systemImage: "plus.square") { sheet = .create }
           }
       }
-      KitSection(
-        "On Your Devices",
-        meta: [remote.count == 1 ? "1 repository" : "\(remote.count) repositories"], systemImage: "desktopcomputer",
-        hue: .blue
-      ) {
-        ForEach(remote.filter { matches($0.name) }) { repository in
-          let source = RepositorySource.remote(repository)
-          SidebarRow(value: source.id, repository.name, subtitle: subtitle(repository)) {
-            if let icon = repository.icon.flatMap(Image.init(data:)) {
-              Avatar(name: repository.name, image: icon, kind: .thing, size: 32)
-            } else {
+      VaultProjectsSection(
+        tree.filter { matches($0.name) }, selection: projectSelection, key: "remoteProjects",
+        collapsedGroups: $collapsedGroups
+      )
+      .title("On Your Devices")
+      .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
+      .trailing { _ in chevron }
+      .accessory {
+        Button("Open on a Mac", systemImage: "plus") { sheet = .addRemote }
+          .labelStyle(.iconOnly)
+      }
+      .emptyState {
+        Text("Projects on the devices of your Hub appear here, in their groups. Open a folder on any SSH host with Open on a Mac.")
+          .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
+      }
+      if !opened.isEmpty {
+        KitSection(
+          "Opened on a Mac",
+          meta: [opened.count == 1 ? "1 repository" : "\(opened.count) repositories"], systemImage: "desktopcomputer",
+          hue: .blue
+        ) {
+          ForEach(opened.filter { matches($0.name) }) { repository in
+            let source = RepositorySource.remote(repository)
+            SidebarRow(value: source.id, repository.name, subtitle: subtitle(repository)) {
               Avatar(name: repository.name, kind: .thing, size: 32)
+            } trailing: {
+              chevron
             }
-          } trailing: {
-            chevron
-          }
-          .kitContextMenu {
-            if repository.id.hasPrefix("saved:") {
+            .kitContextMenu {
               Button("Remove from List", systemImage: "minus.circle") { remove(source) }
             }
           }
         }
-        if remote.isEmpty {
-          Text("Projects on the devices of your Hub appear here. Open a folder on any SSH host with Open on a Mac.")
-            .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
-        }
-      } accessory: {
-        Button("Open on a Mac", systemImage: "plus") { sheet = .addRemote }
-          .labelStyle(.iconOnly)
       }
     } bottomBar: {
       EmptyView()
