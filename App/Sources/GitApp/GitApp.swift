@@ -18,6 +18,8 @@ public struct GitApp: App {
     updater.start()
     #if DEBUG
       let syncs = !ProcessInfo.processInfo.arguments.contains("--in-memory")
+      // An in-memory run never touches the keychain: no device id, secrets or identity from it.
+      if !syncs { VaultSecrets.useInMemoryStore() }
     #else
       let syncs = true
     #endif
