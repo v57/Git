@@ -183,7 +183,8 @@ private struct ChooseStep: View {
             isSelected: requested.repositories == .publicOnly
           ) { requested.repositories = .publicOnly }
         }
-        .fixedSize(horizontal: false, vertical: idiom == .phone)
+        // As tall as the taller one: given the sheet's height (a tall window), the cards ran down to the switches.
+        .fixedSize(horizontal: false, vertical: true)
       }
 
       if !choices.isEmpty {
