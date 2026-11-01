@@ -44,6 +44,7 @@ struct RepositoryList: View {
   @State private var showsMore = false
   @State private var showsOptions = false
   @State private var confirmsRemoveAll = false
+  @State private var confirmsRemoveProjects = false
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
 
@@ -218,6 +219,8 @@ struct RepositoryList: View {
     .headerMenu {
       Button("Remove All Repositories from List", systemImage: "minus.circle") { confirmsRemoveAll = true }
         .disabled(repositories.isEmpty)
+      Button("Remove All Projects…", systemImage: "trash") { confirmsRemoveProjects = true }
+        .disabled(repositories.isEmpty && library.unlistedProjects(besides: repositories).isEmpty)
     }
     .help(attentionHelp(layout))
     .kitConfirmation(
@@ -228,6 +231,14 @@ struct RepositoryList: View {
       selection = nil
       selected = []
       withAnimation(.kit) { library.remove(repositories, from: context) }
+    }
+    .kitConfirmation(
+      "Remove all projects on this Mac?", isPresented: $confirmsRemoveProjects,
+      message: removeProjectsMessage, systemImage: "trash", confirm: "Remove All"
+    ) {
+      selection = nil
+      selected = []
+      withAnimation(.kit) { library.removeAllProjects(repositories, from: context) }
     }
     // A filter turned on again hides what Show More showed.
     .onChange(of: [hidesUnused, onlyWithChanges]) { showsMore = false }
@@ -290,6 +301,17 @@ struct RepositoryList: View {
       Toggle("Only With Changes", isOn: $onlyWithChanges.animation(.kit))
       Toggle("Group by Folder", isOn: $groupsByFolder.animation(.kit))
     }
+  }
+
+  /// What Remove All Projects removes: the list's repositories and the projects the list doesn't show.
+  private var removeProjectsMessage: String {
+    let unlisted = library.unlistedProjects(besides: repositories)
+    let names = unlisted.map(\.name).sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    let shown = names.count > 3 ? names.prefix(3).joined(separator: ", ") + " and \(names.count - 3) more" : names.formatted()
+    let hidden =
+      unlisted.isEmpty ? "" : " with \(unlisted.count == 1 ? "1 project" : "\(unlisted.count) projects") Git doesn't list (\(shown))"
+    return "The \(repositories.count == 1 ? "repository" : "\(repositories.count) repositories")\(hidden) leave every "
+      + "v57 app on this Mac. Their folders stay on disk."
   }
 
   /// What Show More brings back.

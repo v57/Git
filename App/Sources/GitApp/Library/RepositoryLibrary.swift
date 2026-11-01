@@ -412,6 +412,23 @@ struct CompletedOperation: Equatable {
     try? context.save()
   }
 
+  /// The vault's projects on this Mac that aren't in the list: folders without a repository (notes, a website's
+  /// research) another app or an import added, and checkouts of another account's list.
+  func unlistedProjects(besides repositories: [SavedRepository]) -> [VaultProject] {
+    let listed = Set(repositories.map(\.path))
+    let vault = vaultProjects.vault
+    return vault.localProjects.filter { project in project.paths[vault.deviceID].map { !listed.contains($0) } ?? false }
+  }
+
+  /// Removes the repositories from the list and every project on this Mac from the vault, the unlisted ones too, so
+  /// no v57 app lists them here any more (a project another device has stays there). Their folders stay on disk.
+  func removeAllProjects(_ repositories: [SavedRepository], from context: ModelContext) {
+    let vault = vaultProjects.vault
+    let unlisted = unlistedProjects(besides: repositories).compactMap { $0.paths[vault.deviceID] }
+    remove(repositories, from: context)
+    vaultProjects.unpublish(unlisted)
+  }
+
   // MARK: Finder and Terminal
 
   static func reveal(_ url: URL) {
