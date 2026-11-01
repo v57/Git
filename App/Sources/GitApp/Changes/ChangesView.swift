@@ -26,9 +26,6 @@ struct ChangesScreen: View {
   }
 }
 
-/// The Code app's bundle identifier, for Open in Code.
-private let codeBundleID = "dev.v57.code"
-
 /// "Staged · 2" and "Unstaged · 3", each with its rows, Discard All and Stage All / Unstage All.
 private struct ChangeList: View {
   let session: RepositorySession
@@ -177,16 +174,7 @@ private struct ChangeList: View {
       ignoreMenu(for: change)
     }
     Divider()
-    let url = session.repository.url.appendingPathComponent(change.path)
-    Button("Open", systemImage: "arrow.up.right.square") { KitDesktop.open(url) }
-    if change.kind != .deleted, KitDesktop.isAppInstalled(codeBundleID) {
-      // The repository first, so Code opens it as the project rather than the file's folder.
-      Button("Open in Code", systemImage: "chevron.left.forwardslash.chevron.right") {
-        KitDesktop.open([session.repository.url, url], withApp: codeBundleID)
-      }
-    }
-    Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { RepositoryLibrary.reveal(url) }
-    Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(change.path) }
+    FileOpenItems(repository: session.repository.url, path: change.path)
   }
 
   /// Add to .gitignore: the file itself, or a submenu that also offers its extension and folders.

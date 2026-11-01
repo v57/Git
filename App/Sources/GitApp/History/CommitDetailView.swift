@@ -143,7 +143,9 @@ private struct CommitDetail: View {
       Text("Files"),
       content: {
         ForEach(files) { file in
-          FileRow(file: file, isSelected: file.id == selectedFile?.id) { state.selectedCommitFile = file.id }
+          FileRow(file: file, repository: session.repository.url, isSelected: file.id == selectedFile?.id) {
+            state.selectedCommitFile = file.id
+          }
         }
       },
       icon: {
@@ -247,9 +249,10 @@ private struct CommitDetail: View {
 }
 
 /// A changed file in the inspector: its change's tile, name and folder, and its line counts. The selected one is
-/// raised, as the sidebar's current row.
+/// raised, as the sidebar's current row; its context menu opens the file as it is in the working tree.
 private struct FileRow: View {
   let file: CommitFile
+  let repository: URL
   let isSelected: Bool
   let select: () -> Void
 
@@ -268,5 +271,6 @@ private struct FileRow: View {
     .action(select)
     .animation(.kit, value: isSelected)
     .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
+    .kitContextMenu { FileOpenItems(repository: repository, path: file.path) }
   }
 }
