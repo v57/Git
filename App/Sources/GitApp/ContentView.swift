@@ -209,6 +209,14 @@ struct RepositoryScreen: View {
         ]
       }
       .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(account: gitHub, permissions: $0.permissions) }
+      #if DEBUG
+        // --github-sign-in opens the GitHub sign-in sheet over the repository.
+        .task {
+          if LaunchScene.shared.flag("--github-sign-in") {
+            gitHubSignIn = GitHubSignInRequest(permissions: gitHub.permissions)
+          }
+        }
+      #endif
   }
 
   private struct ModeChange: Equatable {
