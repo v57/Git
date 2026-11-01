@@ -41,8 +41,12 @@
       vault.perform { store in
         for (name, remotes) in grouped.sorted(by: { $0.key < $1.key }) {
           let ids = remotes.map(DebugRemotes.id(of:))
-          for (remote, id) in zip(remotes, ids) where try store.record(VaultProject.self, id: id) == nil {
-            _ = try store.save(VaultProject(id: id, name: remote.name))
+          for (remote, id) in zip(remotes, ids) {
+            var project = try store.record(VaultProject.self, id: id) ?? VaultProject(id: id, name: remote.name)
+            let icon = remote.icon.flatMap { FileManager.default.contents(atPath: $0) }
+            guard try store.record(VaultProject.self, id: id) == nil || project.icon != icon else { continue }
+            project.icon = icon
+            _ = try store.save(project)
           }
           let tree = try store.projectTree()
           if ids.contains(where: { tree.parent(of: $0).flatMap(tree.group(id:))?.name != name }) {

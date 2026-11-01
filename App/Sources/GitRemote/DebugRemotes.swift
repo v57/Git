@@ -11,7 +11,7 @@
   /// name in the app, `group` a vault group to show it in (the iPhone and iPad app makes it a vault project there),
   /// `fallbacks` the machine's other addresses (tried when `host` doesn't answer) and `status` how the device last saw
   /// it (a `VaultProject.Status`: `{"branch", "changeCount", "ahead", "behind", "hasUpstream", "conflictCount", "files":
-  /// [{"path", "kind", "area"}]}`), shown before it connects.
+  /// [{"path", "kind", "area"}]}`), shown before it connects. `icon` is a PNG file the grouped project's icon is read from.
   ///
   ///     SIMCTL_CHILD_GIT_DEBUG_REMOTE='{…}' xcrun simctl launch <udid> dev.v57.git
   ///     GIT_DEBUG_REMOTE='{…}' open -g -n Git.app --args --in-memory
@@ -28,6 +28,7 @@
       public var group: String?
       public var fallbacks: [String]?
       public var status: VaultProject.Status?
+      public var icon: String?
     }
 
     public static let remotes: [Remote] = ProcessInfo.processInfo.environment["GIT_DEBUG_REMOTE"].flatMap { json in
