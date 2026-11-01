@@ -274,7 +274,12 @@ struct RepositoriesSidebar: View {
       )
       .title("On Your Devices")
       .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
-      .trailing { _ in chevron }
+      .trailing { project in
+        HStack(spacing: 8) {
+          if let repository = remote.first(where: { $0.id == project.id }) { lastSeen(repository) }
+          chevron
+        }
+      }
       .accessory {
         Button("Open on a Mac", systemImage: "plus") { sheet = .addRemote }
           .labelStyle(.iconOnly)
@@ -294,7 +299,10 @@ struct RepositoriesSidebar: View {
             SidebarRow(value: source.id, repository.name, subtitle: subtitle(repository)) {
               Avatar(name: repository.name, kind: .thing, size: 32)
             } trailing: {
-              chevron
+              HStack(spacing: 8) {
+                lastSeen(repository)
+                chevron
+              }
             }
             .kitContextMenu {
               Button("Remove from List", systemImage: "minus.circle") { remove(source) }
@@ -326,9 +334,19 @@ struct RepositoriesSidebar: View {
     }
   }
 
-  /// The devices it is on, as Code lists its projects: "via Hub" after each repeated itself on every row.
+  /// Its branch when its device last said (the vault's status), then the devices it is on, as Code lists its
+  /// projects: "via Hub" after each repeated itself on every row.
   private func subtitle(_ repository: RemoteRepository) -> String {
-    repository.targets.map(\.name).joined(separator: ", ")
+    let places = repository.targets.map(\.name).joined(separator: ", ")
+    guard let branch = repository.lastSeen?.status.branch else { return places }
+    return branch + " · " + places
+  }
+
+  /// Its changes and commits to push and pull when its device last said (the vault's status).
+  @ViewBuilder private func lastSeen(_ repository: RemoteRepository) -> some View {
+    if let status = repository.lastSeen?.status {
+      SyncCounts(changes: status.changeCount, ahead: status.ahead, behind: status.behind)
+    }
   }
 
   @ViewBuilder private var chevron: some View {

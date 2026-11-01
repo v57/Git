@@ -18,6 +18,12 @@ public enum ChangeKind: String, Sendable, Hashable, Codable {
     }
   }
 
+  /// The kind `letter` names.
+  public init?(letter: String) {
+    guard letter.count == 1, let code = letter.first else { return nil }
+    self.init(code: code)
+  }
+
   init?(code: Character) {
     switch code {
     case "A": self = .added

@@ -1,0 +1,69 @@
+import ComponentKit
+import GitKit
+import SwiftUI
+import VaultKit
+
+/// How a repository on another device was when Git there last looked (the vault's `VaultProject.Status`), under the
+/// screen that connects to it: "Last seen on Studio Mac: 3 changes on main", then its first few files. Shown while it
+/// connects and when it can't.
+public struct LastSeenChanges: View {
+  let device: String
+  let status: VaultProject.Status
+  /// How many files it lists before "and N more".
+  var limit = 6
+
+  public init(device: String, status: VaultProject.Status, limit: Int = 6) {
+    self.device = device
+    self.status = status
+    self.limit = limit
+  }
+
+  public var body: some View {
+    let files = status.files.prefix(limit)
+    VStack(alignment: .leading, spacing: 6) {
+      Text("Last seen on \(device): \(glance)")
+        .kitFont(.caption)
+        .foregroundStyle(.kitSecondary)
+        .fixedSize(horizontal: false, vertical: true)
+      ForEach(Array(files.enumerated()), id: \.offset) { _, file in
+        HStack(spacing: 6) {
+          ChangeKindBadge(kind: ChangeKind(letter: file.kind) ?? .modified, size: 16)
+          Text((file.path as NSString).lastPathComponent)
+            .kitFont(.callout)
+            .lineLimit(1)
+          let folder = (file.path as NSString).deletingLastPathComponent
+          if !folder.isEmpty {
+            Text(folder)
+              .kitFont(.caption)
+              .foregroundStyle(.kitTertiary)
+              .lineLimit(1)
+              .truncationMode(.head)
+          }
+        }
+      }
+      let more = status.changeCount - files.count
+      if !files.isEmpty, more > 0 {
+        Text(more == 1 ? "and 1 more" : "and \(more) more")
+          .kitFont(.caption)
+          .foregroundStyle(.kitTertiary)
+      }
+    }
+    // A width of its own: the empty state lays its detail out at its ideal width.
+    .frame(width: 300, alignment: .leading)
+    .accessibilityElement(children: .combine)
+  }
+
+  /// "3 changes on main, 1 to push".
+  private var glance: String {
+    var parts = [
+      (status.changeCount == 0 ? "no changes" : status.changeCount == 1 ? "1 change" : "\(status.changeCount) changes")
+        + " on " + (status.branch ?? "a detached HEAD")
+    ]
+    if let operation = status.operation.flatMap(RepositoryOperation.init(rawValue:)) {
+      parts.append(operation.title.lowercased())
+    }
+    if status.ahead > 0 { parts.append("\(status.ahead) to push") }
+    if status.behind > 0 { parts.append("\(status.behind) to pull") }
+    return parts.joined(separator: ", ")
+  }
+}

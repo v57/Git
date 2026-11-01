@@ -82,6 +82,8 @@ enum RepositorySource: Hashable, Identifiable {
       backend = LocalBackend(repository: repository)
     case .remote(let repository):
       phase = .connecting("Connecting to \(repository.targets.first?.name ?? "the device")")
+      // Its changes as its device last saw them (the vault's status), shown until the first refresh reads them.
+      status = repository.lastSeen?.status.workingTreeStatus
     }
   }
 

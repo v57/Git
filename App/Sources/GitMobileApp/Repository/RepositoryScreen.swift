@@ -30,12 +30,16 @@ struct RepositoryScreen: View {
     Group {
       switch model.phase {
       case .connecting(let message):
-        EmptyState(systemImage: "desktopcomputer", title: message, status: .working)
+        EmptyState(systemImage: "desktopcomputer", title: message, status: .working) {
+          lastSeen
+        } actions: {}
       case .failed(let message):
         EmptyState(
           systemImage: "exclamationmark.triangle", title: "Couldn’t Open \(source.name)", message: message,
           status: .failed(nil)
         ) {
+          lastSeen
+        } actions: {
           Button("Try Again", systemImage: "arrow.clockwise") { Task { await model.open() } }
             .buttonStyle(.kit)
         }
@@ -72,6 +76,13 @@ struct RepositoryScreen: View {
       if phase == .active { Task { await model.refresh() } }
     }
     .onDisappear { model.close() }
+  }
+
+  /// How its device last saw it (the vault's status), while it connects and when it can't.
+  @ViewBuilder private var lastSeen: some View {
+    if case .remote(let repository) = source, let lastSeen = repository.lastSeen {
+      LastSeenChanges(device: lastSeen.device, status: lastSeen.status).padding(.top, 8)
+    }
   }
 
   private var content: some View {

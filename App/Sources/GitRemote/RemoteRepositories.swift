@@ -11,6 +11,9 @@ public struct RemoteTarget: Hashable, Sendable, Identifiable, Codable {
   public var id: String
   public var name: String
   public var host: String
+  /// The machine's other addresses, tried in order when `host` doesn't answer (its Bonjour name, its Hub Network
+  /// address, the fallbacks saved with the host): `SSHServer.fallbackHosts`.
+  public var fallbackHosts: [String]
   public var port: Int
   public var user: String
   /// The OpenSSH host key line the device signed (a Hub device), pinned for the login.
@@ -19,14 +22,18 @@ public struct RemoteTarget: Hashable, Sendable, Identifiable, Codable {
   public var directory: String
   /// "via Hub" or "SSH": shown after the name.
   public var detail: String
+  /// The vault device it is (a project's place), whose status the project keeps (`VaultProject.statuses`).
+  public var device: String?
 
   public init(
-    id: String, name: String, host: String, port: Int, user: String, hostKey: String? = nil, directory: String,
-    detail: String
+    id: String, name: String, host: String, fallbackHosts: [String] = [], port: Int, user: String,
+    hostKey: String? = nil, directory: String, detail: String, device: String? = nil
   ) {
     self.id = id
     self.name = name
     self.host = host
+    self.fallbackHosts = fallbackHosts
+    self.device = device
     self.port = port
     self.user = user
     self.hostKey = hostKey
@@ -43,12 +50,18 @@ public struct RemoteRepository: Identifiable, Hashable, Sendable {
   public var name: String
   public var icon: Data?
   public var targets: [RemoteTarget]
+  /// How it was on each device when Git there last looked, by vault device (`VaultProject.statuses`): shown before
+  /// it connects (`lastSeen`).
+  public var statuses: [String: VaultProject.Status]
 
-  public init(id: String, name: String, icon: Data? = nil, targets: [RemoteTarget]) {
+  public init(
+    id: String, name: String, icon: Data? = nil, targets: [RemoteTarget], statuses: [String: VaultProject.Status] = [:]
+  ) {
     self.id = id
     self.name = name
     self.icon = icon
     self.targets = targets
+    self.statuses = statuses
   }
 
   /// The devices it is on, as Code lists its projects.
@@ -82,12 +95,14 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
       guard project.paths[here] == nil else { return nil }
       let targets = targets(for: project, vault: vault)
       guard !targets.isEmpty else { return nil }
-      return RemoteRepository(id: project.id, name: project.name, icon: project.icon, targets: targets)
+      return RemoteRepository(
+        id: project.id, name: project.name, icon: project.icon, targets: targets, statuses: project.statuses)
     }
     for saved in saved {
       guard let host = vault.host(id: saved.hostID) else { continue }
       repositories.append(
-        RemoteRepository(id: "saved:" + saved.id, name: saved.name, targets: [target(host, directory: saved.path)]))
+        RemoteRepository(
+          id: "saved:" + saved.id, name: saved.name, targets: [target(host, directory: saved.path, vault: vault)]))
     }
     #if DEBUG
       repositories += DebugRemotes.repositories
@@ -95,20 +110,26 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
     return repositories.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
   }
 
-  /// The devices on the user's Hubs that have the project, at their Hub Network address, in its folder there.
+  /// The devices on the user's Hubs (or Macs that published themselves) that have the project, in its folder there,
+  /// with the device's other addresses to fall back on.
   public static func targets(for project: VaultProject, vault: Vault) -> [RemoteTarget] {
     vault.otherPlaces(of: project).compactMap { place in
       guard let host = place.host else { return nil }
-      var target = target(host, directory: place.path)
+      var target = target(host, directory: place.path, vault: vault)
       target.name = place.deviceName
+      target.fallbackHosts = place.fallbackAddresses
+      target.device = place.device
       return target
     }
   }
 
-  public static func target(_ host: VaultHost, directory: String) -> RemoteTarget {
+  /// A folder on one of the vault's hosts, reached at its hostname or else its other addresses
+  /// (`Vault.fallbackAddresses(of:)`).
+  public static func target(_ host: VaultHost, directory: String, vault: Vault = .shared) -> RemoteTarget {
     RemoteTarget(
-      id: host.id, name: host.displayName, host: host.hostname, port: host.port, user: host.user,
-      hostKey: host.hub?.hostKey, directory: directory, detail: host.isViaHub ? "via Hub" : "SSH")
+      id: host.id, name: host.displayName, host: host.hostname, fallbackHosts: vault.fallbackAddresses(of: host),
+      port: host.port, user: host.user, hostKey: host.hub?.hostKey, directory: directory,
+      detail: host.isViaHub ? "via Hub" : "SSH", device: host.device?.deviceID)
   }
 
   // MARK: Added here
@@ -202,25 +223,28 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
     switch host.auth {
     case .password:
       server = SSHServer(
-        host: target.host, port: target.port, user: host.user, password: VaultSecrets.password(for: host.id))
+        host: target.host, fallbackHosts: target.fallbackHosts, port: target.port, user: host.user,
+        password: VaultSecrets.password(for: host.id))
     case .deviceKey:
-      server = SSHServer(host: target.host, port: target.port, user: host.user, key: try deviceKey())
+      server = SSHServer(
+        host: target.host, fallbackHosts: target.fallbackHosts, port: target.port, user: host.user,
+        key: try deviceKey())
     case .importedKey:
       throw LoginError.importedKey(host.displayName)
     }
     if let line = target.hostKey, let fingerprint = fingerprint(ofHostKey: line) {
       server.knownFingerprint = fingerprint
     } else {
-      server.knownFingerprint = try? vault.store?.knownFingerprint(host: target.host, port: target.port)
+      server.knownFingerprint = try? vault.trustStore(for: host)?.knownFingerprint(host: target.host, port: target.port)
     }
     return server
   }
 
   /// Remembers a host's key after the first login to it.
   public static func trust(_ fingerprint: String, for target: RemoteTarget, vault: Vault = .shared) {
-    guard target.hostKey == nil, vault.host(id: target.id) ?? vault.personalVault.host(id: target.id) != nil
+    guard target.hostKey == nil, let host = vault.host(id: target.id) ?? vault.personalVault.host(id: target.id)
     else { return }
-    try? vault.store?.trust(fingerprint: fingerprint, host: target.host, port: target.port)
+    try? vault.trustStore(for: host)?.trust(fingerprint: fingerprint, host: target.host, port: target.port)
   }
 
   /// This device's SSH key (Secure Enclave, shared by the v57 apps).

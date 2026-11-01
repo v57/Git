@@ -784,6 +784,36 @@ struct TempRepo {
     #expect(next.status?.unstaged.count == 1)
   }
 
+  @Test func restoresAStatusAnotherDeviceSaw() async throws {
+    // What another device kept of the repository (the vault's status): its files, no line counts or branches.
+    var status = WorkingTreeStatus()
+    status.branch = "main"
+    status.unstaged = [FileChange(path: "a.txt", kind: try #require(ChangeKind(letter: "M")), area: .unstaged)]
+    let session = RepositorySession(repository: Repository(url: URL(fileURLWithPath: "/nonexistent")))
+    session.restore(RepositorySession.Snapshot(status: status))
+    #expect(session.status?.unstaged.map(\.kind) == [.modified])
+    #expect(session.branches.isEmpty && session.lineCounts.isEmpty)
+    for kind in [ChangeKind.added, .modified, .deleted, .renamed, .copied, .typeChanged, .untracked, .conflicted] {
+      #expect(ChangeKind(letter: kind.letter) == kind)
+    }
+    #expect(ChangeKind(letter: "MM") == nil && ChangeKind(letter: "") == nil)
+  }
+
+  @Test func summaryStatusCountsAnUntrackedFolderOnce() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try temp.write("a.txt", "b\n")
+    try temp.write("new/one.txt", "1\n")
+    try temp.write("new/two.txt", "2\n")
+
+    let light = try await temp.repo.summaryStatus()
+    #expect(light.branch == "main" && light.headOID != nil)
+    #expect(light.unstaged.map(\.path).sorted() == ["a.txt", "new/"])
+    #expect(try await temp.repo.summary() == RepositorySummary(light))
+    #expect(try await temp.repo.status().unstaged.count == 3)
+  }
+
   @Test func refreshesAndStagesThroughSession() async throws {
     let temp = try await TempRepo()
     try temp.write("a.txt", "a\n")

@@ -1,6 +1,7 @@
 import ComponentKit
 import GitKit
 import GitRemote
+import GitUI
 import SwiftUI
 import VaultKit
 import VaultUI
@@ -40,7 +41,7 @@ struct RemoteRepositoriesSection: View {
           collapsedGroups: $collapsedGroups
         )
         .title("On Your Devices")
-        .rowSubtitle { project in remote.first { $0.id == project.id }?.places }
+        .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
         .trailing { project in
           if let repository = remote.first(where: { $0.id == project.id }) { marks(repository) }
         }
@@ -52,7 +53,7 @@ struct RemoteRepositoriesSection: View {
           hue: .blue
         ) {
           ForEach(others.filter { matches($0.name) }) { repository in
-            SidebarRow(repository.name, subtitle: repository.places) {
+            SidebarRow(repository.name, subtitle: subtitle(repository)) {
               Avatar(name: repository.name, kind: .thing, size: 18)
             } trailing: {
               marks(repository)
@@ -74,7 +75,14 @@ struct RemoteRepositoriesSection: View {
     }
   }
 
-  /// Connecting, couldn't connect, or the repository's state at a glance once it has been open.
+  /// Its branch when its device last said (the vault's status), then the devices it is on.
+  private func subtitle(_ repository: RemoteRepository) -> String {
+    guard let branch = library.remoteSummary(repository)?.branch else { return repository.places }
+    return branch + " · " + repository.places
+  }
+
+  /// Connecting, couldn't connect, or the repository's state at a glance: live once it's open, else as its device
+  /// last said.
   @ViewBuilder private func marks(_ repository: RemoteRepository) -> some View {
     let key = RepositoryLibrary.remoteKey(repository)
     switch library.remoteStates[key] {
@@ -83,12 +91,13 @@ struct RemoteRepositoriesSection: View {
     case .failed?:
       StatusDot(hue: .red)
     case nil:
-      if let summary = library.summaries[key] { StatusMarks(summary: summary) }
+      if let summary = library.remoteSummary(repository) { StatusMarks(summary: summary) }
     }
   }
 }
 
-/// A repository on another device until its session is in: connecting, or why it couldn't, with Try Again.
+/// A repository on another device until its session is in: connecting, or why it couldn't, with Try Again; under
+/// either, how its device last saw it (the vault's status: branch, counts, the first files).
 struct RemoteConnectionScreen: View {
   @Environment(RepositoryLibrary.self) private var library
   let key: String
@@ -96,27 +105,38 @@ struct RemoteConnectionScreen: View {
   var body: some View {
     let repository = library.remoteRepository(key)
     let name = repository?.name ?? "Repository"
+    let lastSeen = repository?.lastSeen
     ZStack {
       switch library.remoteStates[key] {
       case .failed(let message)?:
         EmptyState(systemImage: "exclamationmark.triangle", title: "Couldn’t Open \(name)", message: message) {
+          lastSeenDetail(lastSeen)
+        } actions: {
           Button("Try Again") { Task { await library.reconnect(key) } }
             .buttonStyle(.kitPrimary)
         }
         .transition(.page)
       case .connecting(let message)?:
-        EmptyState(systemImage: "desktopcomputer", title: name, message: message, status: .working) {}
-          .transition(.page)
+        EmptyState(systemImage: "desktopcomputer", title: name, message: message, status: .working) {
+          lastSeenDetail(lastSeen)
+        } actions: {}
+        .transition(.page)
       case nil:
         EmptyState(
           systemImage: "desktopcomputer", title: name,
           message: repository.map { "Connecting to \($0.targets.first?.name ?? "the device")…" }, status: .working
-        ) {}
+        ) {
+          lastSeenDetail(lastSeen)
+        } actions: {}
         .transition(.page)
       }
     }
     .animation(.kit, value: library.remoteStates[key])
     .frame(maxWidth: .infinity, maxHeight: .infinity)
     .kitToolbar(name) { EmptyView() } tools: {}
+  }
+
+  @ViewBuilder private func lastSeenDetail(_ lastSeen: (device: String, status: VaultProject.Status)?) -> some View {
+    if let lastSeen { LastSeenChanges(device: lastSeen.device, status: lastSeen.status).padding(.top, 8) }
   }
 }

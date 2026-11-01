@@ -211,6 +211,14 @@ struct CompletedOperation: Equatable {
     remoteRepositories.first { Self.remoteKey($0) == key }
   }
 
+  /// A repository on another device at a glance: its session's summary once it's open, else how its device last saw
+  /// it (the vault's status, which that device keeps current), else how it was when this Mac last had it open.
+  func remoteSummary(_ repository: RemoteRepository) -> RepositorySummary? {
+    let key = Self.remoteKey(repository)
+    if sessions[key] != nil, let summary = summaries[key] { return summary }
+    return repository.lastSeen?.status.summary ?? summaries[key]
+  }
+
   /// A repository on another device while it connects, or why it couldn't; nil once it has a session.
   enum RemoteState: Equatable {
     case connecting(String)
@@ -237,7 +245,11 @@ struct CompletedOperation: Equatable {
       }
       let session = RepositorySession(repository: opened.repository)
       identify(session, accountID: vault.accountID)
-      if let snapshot = lastState?.contents.sessions[key] { session.restore(snapshot) }
+      // Its changes as this Mac last saw them, else as the device itself last did (the vault's status), shown
+      // while the first refresh reads them.
+      if let snapshot = lastState?.contents.sessions[key] ?? repository.lastSeen?.status.snapshot {
+        session.restore(snapshot)
+      }
       remoteTransports[key] = opened.transport
       remoteTargets[key] = opened.target
       sessions[key] = session
@@ -328,7 +340,16 @@ struct CompletedOperation: Equatable {
     summaries[path] = RepositorySummary(status)
     rememberState()
     // The dates are read here, from git on this Mac.
-    if !Self.isRemote(path) { Task { await refreshActivity(path) } }
+    guard !Self.isRemote(path) else { return }
+    Task { await refreshActivity(path) }
+    keepStatus(status, at: path)
+  }
+
+  /// Keeps how a repository here is in its vault project, for the user's other devices (`VaultProject.Status`:
+  /// branch, counts and files, written only when they changed; nothing for one that isn't a project of the window's
+  /// account).
+  private func keepStatus(_ status: WorkingTreeStatus, at path: String) {
+    vault.setStatus(VaultProject.Status(status), ofProjectAt: path)
   }
 
   /// Keeps every repository's sidebar summary current without opening it: one FSEvents stream
@@ -376,21 +397,26 @@ struct CompletedOperation: Equatable {
 
   /// Reloads branch and change counts for the sidebar, a few repositories at a time.
   func refreshSummaries(_ paths: [String]) async {
-    await withTaskGroup(of: (String, RepositorySummary?, RepositoryActivity?).self) { group in
+    await withTaskGroup(of: (String, WorkingTreeStatus?, RepositoryActivity?).self) { group in
       var pending = paths[...]
       func addNext() {
         guard let path = pending.popFirst() else { return }
         group.addTask {
           let repository = Repository(url: URL(fileURLWithPath: path))
-          async let summary = try? repository.summary()
+          async let status = try? repository.summaryStatus()
           async let activity = try? repository.activity()
-          return (path, await summary, await activity)
+          return (path, await status, await activity)
         }
       }
       for _ in 0..<6 { addNext() }
-      for await (path, summary, activity) in group {
+      for await (path, status, activity) in group {
+        let summary = status.map(RepositorySummary.init)
         if let summary { summaries[path] = summary } else { summaries[path] = nil }
         if activities[path] != activity { activities[path] = activity }
+        // The open repository's session keeps its own (its files list an untracked folder's files, these don't).
+        if let status, !(activeSession.map { !$0.repository.isRemote && $0.repository.url.path == path } ?? false) {
+          keepStatus(status, at: path)
+        }
         addNext()
       }
     }

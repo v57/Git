@@ -66,6 +66,16 @@ public final class RepositorySession {
     public var lineCounts: [FileChange.ID: LineCounts]
     public var branches: [Branch]
     public var remotes: [String]
+
+    public init(
+      status: WorkingTreeStatus, lineCounts: [FileChange.ID: LineCounts] = [:], branches: [Branch] = [],
+      remotes: [String] = []
+    ) {
+      self.status = status
+      self.lineCounts = lineCounts
+      self.branches = branches
+      self.remotes = remotes
+    }
   }
 
   /// The loaded state to save; nil before the first load.

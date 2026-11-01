@@ -81,12 +81,18 @@ extension Repository {
 
   /// A cheap status for lists: branch, ahead/behind and number of changed paths.
   @concurrent public func summary() async throws -> RepositorySummary {
+    RepositorySummary(try await summaryStatus())
+  }
+
+  /// The status `summary()` counts: an untracked folder is one change (`--untracked-files=normal`), not every file
+  /// in it as `status()` lists them.
+  @concurrent public func summaryStatus() async throws -> WorkingTreeStatus {
     let result = try await git(
       ["status", "--porcelain=v2", "--branch", "-z", "--untracked-files=normal"],
       environment: ["GIT_OPTIONAL_LOCKS": "0"], timeout: .seconds(30))
     var status = StatusParser.parse(result.output)
     status.operation = try? await operationInProgress()
-    return RepositorySummary(status)
+    return status
   }
 
   /// A merge, rebase, cherry-pick or revert that is waiting to be continued or aborted.
