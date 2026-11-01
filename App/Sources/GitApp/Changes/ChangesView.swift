@@ -174,7 +174,7 @@ private struct ChangeList: View {
       ignoreMenu(for: change)
     }
     Divider()
-    FileOpenItems(repository: session.repository.url, path: change.path)
+    FileOpenItems(repository: session.repository, path: change.path)
   }
 
   /// Add to .gitignore: the file itself, or a submenu that also offers its extension and folders.

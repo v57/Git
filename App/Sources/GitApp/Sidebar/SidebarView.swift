@@ -61,17 +61,17 @@ struct SidebarView: View {
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
       RepositoryList(selection: $selection, selected: $selected, filter: filter)
         .kitSticky(top: .titleWhileVisible, bottom: .none)
-      if let shown {
-        RepositorySections(
-          session: library.session(for: shown), state: library.viewState(for: shown),
-          filter: filter)
+      // The repositories on the user's other devices, when there are any.
+      RemoteRepositoriesSection(selection: $selection, filter: filter)
+      if let shown, let session = library.loadedSession(for: shown) {
+        RepositorySections(session: session, state: library.viewState(for: shown), filter: filter)
       }
     } bottomBar: {
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
         .kitHelp("Add Repository", shortcut: "⇧⌘O", meta: "Add the Git repositories in a folder", systemImage: "plus")
     }
     .overlay {
-      if repositories.isEmpty {
+      if repositories.isEmpty, library.remoteRepositories.isEmpty {
         EmptyState(
           systemImage: "externaldrive.badge.plus", title: "No Repositories",
           message: "Drop a folder here. Every Git repository inside it is added."
@@ -219,7 +219,8 @@ private struct RepositorySections: View {
       .kitSheet(item: $tagTarget) { commit in NewTagSheet(session: session, commit: commit) }
       .kitSticky(top: .titleWhileVisible, bottom: .none)
     }
-    if session.worktrees.count > 1 {
+    // Another device's worktrees open on that device, not here.
+    if session.worktrees.count > 1, !session.repository.isRemote {
       KitSection("Worktrees", meta: worktreesMeta, systemImage: "folder", hue: .teal) {
         ForEach(session.worktrees) { worktree in
           SidebarRow(worktree.name, systemImage: "folder") {
@@ -311,7 +312,7 @@ private struct RepositorySections: View {
     }
     .action {
       if let worktree = session.worktree(for: branch) {
-        library.open(worktree.url, into: context)
+        if !session.repository.isRemote { library.open(worktree.url, into: context) }
       } else if !branch.isCurrent {
         Task { await session.switchTo(branch) }
       }

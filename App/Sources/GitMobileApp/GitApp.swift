@@ -1,6 +1,7 @@
 import ComponentKit
 import GitEngine
 import GitHubKit
+import GitRemote
 import GitUI
 import SwiftUI
 import VaultKit

@@ -2,6 +2,7 @@ import Foundation
 import GitEngine
 import GitHubKit
 import GitKit
+import GitRemote
 import GitUI
 import Observation
 import SSHKit
@@ -97,44 +98,22 @@ enum RepositorySource: Hashable, Identifiable {
   /// Connects (for one on another machine: the first device that answers) and loads everything.
   func open() async {
     if case .remote(let repository) = source, backend == nil {
-      var failures: [String] = []
-      for target in repository.targets {
-        phase = .connecting("Connecting to \(target.name)")
-        do {
-          try await connect(to: target)
-          break
-        } catch {
-          failures.append("\(target.name): \(Self.describe(error))")
+      do {
+        let opened = try await RemoteRepositories.open(repository) { target in
+          self.phase = .connecting("Connecting to \(target.name)")
         }
-      }
-      guard backend != nil else {
-        phase = .failed(failures.joined(separator: "\n"))
+        transport = opened.transport
+        target = opened.target
+        path = opened.repository.url.path
+        backend = RemoteBackend(repository: opened.repository)
+      } catch {
+        phase = .failed(Self.describe(error))
         return
       }
     }
     phase = .ready
     await refresh()
     await reloadHistory()
-  }
-
-  private func connect(to target: RemoteTarget) async throws {
-    let transport = SSHGitTransport(
-      target: target, login: { try await MainActor.run { try RemoteRepositories.login(for: target) } },
-      onNewHostKey: { fingerprint in Task { @MainActor in RemoteRepositories.trust(fingerprint, for: target) } })
-    let output = try await transport.shell(
-      "cd \(SSHGitTransport.path(target.directory)) && exec git rev-parse --show-toplevel")
-    guard output.status == 0 else {
-      transport.close()
-      let message = String(decoding: output.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-      throw SSHGitTransport.RemoteError.failed(
-        message.contains("not a git repository") ? "\(target.directory) isn’t a Git repository." : message)
-    }
-    let top = String(decoding: output.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-    self.transport = transport
-    self.target = target
-    path = top
-    let repository = Repository(url: URL(fileURLWithPath: top, isDirectory: true), runner: GitRunner(transport: transport))
-    backend = RemoteBackend(repository: repository)
   }
 
   func close() {

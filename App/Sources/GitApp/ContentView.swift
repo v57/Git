@@ -2,6 +2,7 @@ import ComponentKit
 import GitHubKit
 import GitHubUI
 import GitKit
+import GitRemote
 import GitUI
 import SwiftData
 import SwiftUI
@@ -37,7 +38,13 @@ struct ContentView: View {
         } else if let path = screenPath {
           // One screen for every repository: as another comes in, each title, count, card and row animates to its
           // values instead of the whole pane fading.
-          RepositoryScreen(session: library.session(for: path), state: library.viewState(for: path))
+          if let session = library.loadedSession(for: path) {
+            RepositoryScreen(session: session, state: library.viewState(for: path))
+          } else {
+            // On another device, while it connects or after it couldn't.
+            RemoteConnectionScreen(key: path)
+              .transition(.page)
+          }
         } else {
           // No repository open: the welcome (clone, open, recents) is the main screen.
           RepositoryWelcome()
@@ -52,7 +59,7 @@ struct ContentView: View {
       selectedPath = path
       library.requestedSelection = nil
     }
-    .focusedSceneValue(\.repositorySession, screenPath.map(library.session(for:)))
+    .focusedSceneValue(\.repositorySession, screenPath.flatMap(library.loadedSession(for:)))
     .focusedSceneValue(\.repositoryViewState, screenPath.map(library.viewState(for:)))
     .kitSheet(isPresented: $library.isClonePresented) { CloneSheet() }
     .onChange(of: library.isCreateRequested) { _, requested in
@@ -73,8 +80,8 @@ struct ContentView: View {
       #if DEBUG
         // A screenshot scene's repository: its screen from the arguments, then the picture.
         let scene = LaunchScene.shared
-        if let path = selectedPath, scene.includes(path) {
-          await applyLaunchArguments(library.viewState(for: path), session: library.session(for: path))
+        if let path = selectedPath, scene.includes(path), let session = library.loadedSession(for: path) {
+          await applyLaunchArguments(library.viewState(for: path), session: session)
           scene.loaded(welcome: false)
         }
       #endif
@@ -86,6 +93,12 @@ struct ContentView: View {
         if LaunchScene.shared.flag("--all-repositories") { library.showsAllRepositories = true }
         // --clone opens the Clone sheet over the window.
         if LaunchScene.shared.flag("--clone") { library.isClonePresented = true }
+        // GIT_DEBUG_SELECT=<name> opens that repository on another device (GIT_DEBUG_REMOTE's, or the vault's).
+        if let name = ProcessInfo.processInfo.environment["GIT_DEBUG_SELECT"],
+          let repository = library.remoteRepositories.first(where: { $0.name == name })
+        {
+          selectedPath = RepositoryLibrary.remoteKey(repository)
+        }
         #if os(macOS)
           // --settings opens the Settings window (`-SettingsPane GitHub` picks its pane).
           if LaunchScene.shared.flag("--settings") { openSettings() }
@@ -100,7 +113,7 @@ struct ContentView: View {
     .onChange(of: scenePhase) { _, phase in
       guard phase == .active else { return }
       Task {
-        if let path = selectedPath { await library.session(for: path).refresh() }
+        if let path = selectedPath { await library.loadedSession(for: path)?.refresh() }
         await library.refreshAllSummaries()
       }
     }
@@ -113,8 +126,8 @@ struct ContentView: View {
       shownPath = nil
       return
     }
-    let session = library.session(for: path)
-    if shownPath != nil {
+    // One on another device shows its connection until its session is in.
+    if shownPath != nil, let session = library.loadedSession(for: path) {
       // `activate` (the other task) loads it; the first load ends with the first revision.
       let deadline = ContinuousClock.now + .milliseconds(400)
       while session.revision == 0, ContinuousClock.now < deadline {
@@ -188,7 +201,7 @@ struct RepositoryScreen: View {
       .kitToolbar(title) { toolbar.titleView } tools: { toolbar.tools }
       .modifier(HistorySearch(isOn: kind == .history, text: $search, session: session))
       .onChange(of: session.revision) {
-        library.updateSummary(session.repository.url.path, from: session)
+        library.updateSummary(library.key(of: session), from: session)
       }
       // Only a change of mode in this repository, not another repository coming in.
       .onChange(of: ModeChange(state: ObjectIdentifier(state), mode: state.mode)) { old, new in
@@ -259,8 +272,14 @@ struct RepositoryScreen: View {
     if kind == .conflicts, let operation = session.status?.operation {
       return [OperationText.title(operation, source: session.operationSource, branch: session.status?.branch)]
     }
+    // A repository on another device says which.
+    let device = library.remoteTargets[library.key(of: session)].map { "on \($0.name)" }
+    return (device.map { [$0] } ?? []) + modeSubtitle
+  }
+
+  private var modeSubtitle: [String] {
     // Until the status is in, the sidebar's summary of the repository.
-    let summary = session.status.map(RepositorySummary.init) ?? library.summaries[session.repository.url.path]
+    let summary = session.status.map(RepositorySummary.init) ?? library.summaries[library.key(of: session)]
     let branch = summary?.branch ?? summary?.headOID.map { String($0.prefix(7)) } ?? "No commits"
     switch state.mode {
     case .changes:

@@ -45,6 +45,12 @@ public protocol GitTransport: Sendable {
   func fileExists(at url: URL) async -> Bool
   /// Throws an untracked file away, to the Trash where that machine has one.
   func discard(_ url: URL) async throws
+  /// When the file last changed (`FETCH_HEAD`, for when the repository was last fetched); nil when unknown.
+  func modificationDate(of url: URL) async -> Date?
+}
+
+extension GitTransport {
+  public func modificationDate(of url: URL) async -> Date? { nil }
 }
 
 /// Runs git with an argument vector (never through a shell).
@@ -125,6 +131,11 @@ public struct GitRunner: Sendable {
   func fileExists(at url: URL) async -> Bool {
     if let transport { return await transport.fileExists(at: url) }
     return FileManager.default.fileExists(atPath: url.path)
+  }
+
+  func modificationDate(of url: URL) async -> Date? {
+    if let transport { return await transport.modificationDate(of: url) }
+    return (try? url.resourceValues(forKeys: [.contentModificationDateKey]))?.contentModificationDate
   }
 
   /// Moves an untracked file to the Trash.

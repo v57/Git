@@ -2,6 +2,7 @@ import ComponentKit
 import GitEngine
 import GitHubKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftUI
 import VaultKit

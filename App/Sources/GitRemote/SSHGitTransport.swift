@@ -10,14 +10,14 @@ import SSHKit
 /// Commands run in the login's `$SHELL -c`, as `ssh host command` runs them, with Homebrew's folders put first on the
 /// PATH (a non-interactive shell doesn't read the profile that adds them): the Mac's own git, config, hooks and
 /// credentials apply.
-nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
-  let target: RemoteTarget
+public nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
+  public let target: RemoteTarget
   private let login: @Sendable () async throws -> SSHServer
   private let onNewHostKey: @Sendable (String) -> Void
   private let lock = NSLock()
   private var connecting: Task<SSHConnection, Error>?
 
-  init(
+  public init(
     target: RemoteTarget, login: @escaping @Sendable () async throws -> SSHServer,
     onNewHostKey: @escaping @Sendable (String) -> Void
   ) {
@@ -27,7 +27,7 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
   }
 
   /// The open connection, or a new one when there's none or it dropped. Callers arriving while one opens share it.
-  func connection() async throws -> SSHConnection {
+  public func connection() async throws -> SSHConnection {
     let task = lock.withLock { () -> Task<SSHConnection, Error> in
       if let connecting { return connecting }
       let task = Task { [login, onNewHostKey] in
@@ -50,7 +50,7 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
     }
   }
 
-  func close() {
+  public func close() {
     let task = lock.withLock {
       defer { connecting = nil }
       return connecting
@@ -59,7 +59,7 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
   }
 
   /// Runs a shell script there.
-  func shell(_ script: String, input: Data? = nil, onError: (@Sendable (Data) -> Void)? = nil) async throws
+  public func shell(_ script: String, input: Data? = nil, onError: (@Sendable (Data) -> Void)? = nil) async throws
     -> SSHConnection.Output
   {
     let script = "PATH=/opt/homebrew/bin:/usr/local/bin:$PATH; export PATH; " + script
@@ -68,7 +68,7 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
 
   // MARK: GitTransport
 
-  func run(
+  public func run(
     _ arguments: [String], in directory: URL?, input: Data?, environment: [String: String],
     progress: (@Sendable (String) -> Void)?
   ) async throws -> GitResult {
@@ -82,7 +82,7 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
     return GitResult(stdout: output.stdout, stderr: output.stderr, exitCode: output.status ?? 255)
   }
 
-  func contents(of url: URL) async throws -> Data? {
+  public func contents(of url: URL) async throws -> Data? {
     let path = Self.path(url.path)
     let output = try await shell("[ -e \(path) ] || exit 3; exec cat -- \(path)")
     if output.status == 3 { return nil }
@@ -90,18 +90,29 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
     return output.stdout
   }
 
-  func write(_ data: Data, to url: URL) async throws {
+  public func write(_ data: Data, to url: URL) async throws {
     // `>` truncates the file in place, so it keeps its permissions.
     let output = try await shell("cat > \(Self.path(url.path))", input: data)
     try Self.check(output, "write \(url.lastPathComponent)")
   }
 
-  func fileExists(at url: URL) async -> Bool {
+  public func fileExists(at url: URL) async -> Bool {
     (try? await shell("[ -e \(Self.path(url.path)) ]"))?.status == 0
   }
 
+  /// When the file last changed: `stat` as macOS spells it, else as GNU's does.
+  public func modificationDate(of url: URL) async -> Date? {
+    let path = Self.path(url.path)
+    guard let output = try? await shell("stat -f %m -- \(path) 2>/dev/null || stat -c %Y -- \(path)"),
+      output.status == 0,
+      let seconds = TimeInterval(
+        String(decoding: output.stdout, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))
+    else { return nil }
+    return Date(timeIntervalSince1970: seconds)
+  }
+
   /// To the Trash on a Mac (named as Finder would, with a time when the name is taken), else removed.
-  func discard(_ url: URL) async throws {
+  public func discard(_ url: URL) async throws {
     let path = Self.path(url.path)
     let name = Self.quote(url.lastPathComponent)
     let script = """
@@ -121,20 +132,20 @@ nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
   }
 
   /// `'text'`, with single quotes inside escaped.
-  static func quote(_ text: String) -> String {
+  public static func quote(_ text: String) -> String {
     "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'"
   }
 
   /// A path for the shell there: quoted, with a leading `~` left to the shell (the login's home folder).
-  static func path(_ path: String) -> String {
+  public static func path(_ path: String) -> String {
     if path == "~" { return "\"$HOME\"" }
     if path.hasPrefix("~/") { return "\"$HOME\"/" + quote(String(path.dropFirst(2))) }
     return quote(path)
   }
 
-  enum RemoteError: LocalizedError {
+  public enum RemoteError: LocalizedError {
     case failed(String)
-    var errorDescription: String? {
+    public var errorDescription: String? {
       switch self {
       case .failed(let message): message
       }

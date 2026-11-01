@@ -62,12 +62,16 @@ struct RepositoryCommands: Commands {
         .keyboardShortcut("a", modifiers: [.command, .shift])
       Button("Unstage All") { run { await $0.unstageAll() } }
       Divider()
-      Button("Show in \(KitDesktop.fileManagerName)") {
-        if let session { RepositoryLibrary.reveal(session.repository.url) }
+      // A repository on another device has no folder here.
+      Group {
+        Button("Show in \(KitDesktop.fileManagerName)") {
+          if let session { RepositoryLibrary.reveal(session.repository.url) }
+        }
+        Button("Open in Terminal") {
+          if let session { RepositoryLibrary.openInTerminal(session.repository.url) }
+        }
       }
-      Button("Open in Terminal") {
-        if let session { RepositoryLibrary.openInTerminal(session.repository.url) }
-      }
+      .disabled(session == nil || session?.repository.isRemote == true)
     }
   }
 

@@ -100,7 +100,7 @@ private struct SyncButtons: View {
   /// Until the repository's first load is in, what the sidebar already knows about it, so the buttons don't start
   /// out disabled.
   private var summary: RepositorySummary? {
-    session.revision == 0 ? library.summaries[session.repository.url.path] : nil
+    session.revision == 0 ? library.summaries[library.key(of: session)] : nil
   }
   private var ahead: Int { session.status?.ahead ?? summary?.ahead ?? 0 }
   private var hasUpstream: Bool { session.status.map { $0.upstream != nil } ?? summary?.hasUpstream ?? false }

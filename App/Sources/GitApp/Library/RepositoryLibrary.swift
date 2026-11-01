@@ -1,6 +1,7 @@
 import ComponentKit
 import GitHubKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftData
 import SwiftUI
@@ -153,17 +154,92 @@ struct CompletedOperation: Equatable {
   private var watchedPaths: [String] = []
   private var pendingSummaries: [String: Task<Void, Never>] = [:]
 
+  /// The session of a repository on this Mac (`path`); see `loadedSession(for:)` for one that may be on another
+  /// device.
   func session(for path: String) -> RepositorySession {
     if let session = sessions[path] { return session }
     let session = RepositorySession(
       repository: Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner(for: path)))
-    let accountID = otherAccounts[path].flatMap { $0 } ?? vault.accountID
+    identify(session, accountID: otherAccounts[path].flatMap { $0 } ?? vault.accountID)
+    sessions[path] = session
+    return session
+  }
+
+  /// The session of the repository `key` selects: one here (a path) always has one; one on another device (a
+  /// `remoteKey`) once it is connected (`connect`).
+  func loadedSession(for key: String) -> RepositorySession? {
+    Self.isRemote(key) ? sessions[key] : session(for: key)
+  }
+
+  /// Who commits in the session's repository: asked at the first commit that needs it.
+  private func identify(_ session: RepositorySession, accountID: String) {
     session.identity = { [weak self, weak session] activity in
       guard let self, let session else { return [:] }
       return await self.commitEnvironment(for: activity, in: session.repository, accountID: accountID)
     }
-    sessions[path] = session
-    return session
+  }
+
+  // MARK: On your devices
+
+  /// What a repository on another device is selected by: the window's selection is a path for one on this Mac.
+  static func remoteKey(_ repository: RemoteRepository) -> String { remotePrefix + repository.id }
+  static func isRemote(_ key: String) -> Bool { key.hasPrefix(remotePrefix) }
+  private static let remotePrefix = "remote:"
+
+  /// The repositories on the user's other devices that aren't on this Mac: the vault's projects with a folder on a
+  /// device Git can sign in to (a Hub's, or a Mac that let this one in through Settings ▸ Remote).
+  var remoteRepositories: [RemoteRepository] { RemoteRepositories.all(vault: vault) }
+
+  func remoteRepository(_ key: String) -> RemoteRepository? {
+    remoteRepositories.first { Self.remoteKey($0) == key }
+  }
+
+  /// A repository on another device while it connects, or why it couldn't; nil once it has a session.
+  enum RemoteState: Equatable {
+    case connecting(String)
+    case failed(String)
+  }
+  private(set) var remoteStates: [String: RemoteState] = [:]
+  /// The device each connected repository on another device is on.
+  private(set) var remoteTargets: [String: RemoteTarget] = [:]
+  @ObservationIgnored private var remoteTransports: [String: SSHGitTransport] = [:]
+
+  /// Signs in to the first of the repository's devices that answers and makes its session, whose git runs there
+  /// (`SSHGitTransport`). Nothing when it has one or is connecting.
+  func connect(_ key: String) async {
+    guard sessions[key] == nil else { return }
+    if case .connecting = remoteStates[key] { return }
+    guard let repository = remoteRepository(key) else {
+      remoteStates[key] = .failed("The repository isn’t on any of your devices any more.")
+      return
+    }
+    remoteStates[key] = .connecting("Connecting to \(repository.targets.first?.name ?? "the device")…")
+    do {
+      let opened = try await RemoteRepositories.open(repository, vault: vault) { [weak self] target in
+        self?.remoteStates[key] = .connecting("Connecting to \(target.name)…")
+      }
+      let session = RepositorySession(repository: opened.repository)
+      identify(session, accountID: vault.accountID)
+      remoteTransports[key] = opened.transport
+      remoteTargets[key] = opened.target
+      sessions[key] = session
+      remoteStates[key] = nil
+    } catch {
+      remoteStates[key] = .failed(RemoteRepositories.describe(error))
+    }
+  }
+
+  /// Tries a repository on another device again after it failed.
+  func reconnect(_ key: String) async {
+    remoteStates[key] = nil
+    await connect(key)
+  }
+
+  /// What the repository's summary is kept under: its path here, or its key for one on another device (whose path
+  /// there may be the path of another repository here).
+  func key(of session: RepositorySession) -> String {
+    guard session.repository.isRemote else { return session.repository.url.path }
+    return sessions.first { $0.value === session }?.key ?? session.repository.url.path
   }
 
   /// Who commits in a repository of `accountID` (`CommitIdentity`): asks once, at the first commit that needs it,
@@ -215,7 +291,12 @@ struct CompletedOperation: Equatable {
     {
       Task { await vaultProjects.publish([saved], context: context) }
     }
-    let session = path.map(session(for:))
+    if let path, Self.isRemote(path) {
+      await connect(path)
+      // Another repository was picked while it connected.
+      if Task.isCancelled { return }
+    }
+    let session = path.flatMap(loadedSession(for:))
     if activeSession !== session {
       activeSession?.deactivate()
       activeSession = session
@@ -227,7 +308,8 @@ struct CompletedOperation: Equatable {
   func updateSummary(_ path: String, from session: RepositorySession) {
     guard let status = session.status else { return }
     summaries[path] = RepositorySummary(status)
-    Task { await refreshActivity(path) }
+    // The dates are read here, from git on this Mac.
+    if !Self.isRemote(path) { Task { await refreshActivity(path) } }
   }
 
   /// Keeps every repository's sidebar summary current without opening it: one FSEvents stream

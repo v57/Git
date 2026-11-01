@@ -22,6 +22,8 @@ let kits = String(Context.packageDirectory.split(whereSeparator: { $0 == "/" || 
 ///   Xcode project's Git iOS target).
 /// - GitUI: what both apps show: the diff's hunk cards and highlighting, the change kind badge, the message sheet and
 ///   the GitHub settings (the sign-in sheet is the libraries' GitHubUI, which Markdown shows too).
+/// - GitRemote: repositories on the user's other devices, for both apps: the vault's projects there, the SSH login
+///   (this device's key or a saved password) and GitKit's transport over one SSH connection (SSHGitTransport).
 let appSettings: [SwiftSetting] = [
   .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
   .enableUpcomingFeature("MemberImportVisibility"),
@@ -50,9 +52,16 @@ let package = Package(
       ],
       swiftSettings: appSettings),
     .target(
+      name: "GitRemote",
+      dependencies: [
+        .product(name: "GitKit", package: kits), .product(name: "VaultKit", package: "Vault"),
+        .product(name: "SSHKit", package: "SSH"),
+      ],
+      swiftSettings: appSettings),
+    .target(
       name: "GitApp",
       dependencies: [
-        "GitUI", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
+        "GitUI", "GitRemote", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
         .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
         .product(name: "CodeWorkspace", package: "Code"), .product(name: "UpdateKit", package: "UpdateKit"),
         .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
@@ -62,7 +71,7 @@ let package = Package(
     .target(
       name: "GitMobileApp",
       dependencies: [
-        "GitUI", .product(name: "GitKit", package: kits), .product(name: "GitEngine", package: kits),
+        "GitUI", "GitRemote", .product(name: "GitKit", package: kits), .product(name: "GitEngine", package: kits),
         .product(name: "GitHubKit", package: kits), .product(name: "CodeHighlighting", package: "Code"),
         .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
         .product(name: "ComponentKit", package: "Component"), .product(name: "SSHKit", package: "SSH"),
@@ -90,7 +99,7 @@ let offAppleSettings =
         ["-Xfrontend", "-import-module", "-Xfrontend", $0]
       })
   ]
-for target in package.targets where ["GitUI", "GitApp"].contains(target.name) {
+for target in package.targets where ["GitUI", "GitRemote", "GitApp"].contains(target.name) {
   target.dependencies += [
     .product(name: "SwiftUI", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
   ]
@@ -99,6 +108,8 @@ for target in package.targets where ["GitUI", "GitApp"].contains(target.name) {
       .product(name: "SwiftData", package: "SwiftUI"), .product(name: "SQLite3", package: "SwiftUI"),
     ]
   }
+  // The host key fingerprints (SHA256).
+  if target.name == "GitRemote" { target.dependencies += [.product(name: "CryptoKit", package: "SwiftUI")] }
   target.swiftSettings = offAppleSettings
 }
 // The entry point, Sources/Git/GitMain.swift, which the Xcode project builds on Apple platforms.

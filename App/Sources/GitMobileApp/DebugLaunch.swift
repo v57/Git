@@ -2,17 +2,15 @@
   import Foundation
   import GitEngine
   import GitKit
-  import SSHKit
+  import GitRemote
   import SwiftUI
   import VaultKit
 
   /// Debug builds take repositories and steps from the launch environment, for trying the app in the simulator
   /// (which has no Secure Enclave key and no Hub) without tapping:
   ///
-  /// - `GIT_DEBUG_REMOTE`: `{"name", "host", "port", "user", "directory", "key"}` (or an array of them): a repository
-  ///   on another machine, `key` a private key file the server accepts (or `keyText`, its contents), `device` the
-  ///   device's name in the app, `group` a vault group to show it in (it becomes a vault project in this device's
-  ///   vault, as the Mac's projects are).
+  /// - `GIT_DEBUG_REMOTE`: repositories on another machine (GitRemote's `DebugRemotes`); one with a `group` becomes a
+  ///   vault project in that group in this device's vault, as the Mac's projects are.
   /// - `GIT_DEBUG_SELECT`: the repository opened at launch (its name), or `none`. Else the first debug remote.
   /// - `GIT_DEBUG_CLONE`: an HTTPS URL cloned to this device at launch (unless a folder of its name is there), then
   ///   opened.
@@ -25,34 +23,11 @@
   ///
   ///     SIMCTL_CHILD_GIT_DEBUG_REMOTE='{…}' xcrun simctl launch <udid> dev.v57.git
   @MainActor enum DebugLaunch {
-    struct Remote: Decodable {
-      var name: String
-      var host: String
-      var port: Int?
-      var user: String
-      var directory: String
-      var key: String?
-      var keyText: String?
-      var device: String?
-      var group: String?
-    }
-
     static let environment = ProcessInfo.processInfo.environment
 
-    static let remotes: [Remote] = environment["GIT_DEBUG_REMOTE"].flatMap { json in
-      let data = Data(json.utf8)
-      return (try? JSONDecoder().decode([Remote].self, from: data))
-        ?? (try? JSONDecoder().decode(Remote.self, from: data)).map { [$0] }
-    } ?? []
-
-    static var repositories: [RemoteRepository] {
-      remotes.enumerated().map { index, remote in
-        let target = RemoteTarget(
-          id: "debug-\(index)", name: remote.device ?? remote.host, host: remote.host, port: remote.port ?? 22,
-          user: remote.user, directory: remote.directory, detail: remote.device == nil ? "debug" : "via Hub")
-        return RemoteRepository(id: "debug-" + remote.name, name: remote.name, targets: [target])
-      }
-    }
+    /// `GIT_DEBUG_REMOTE`'s repositories (GitRemote's `DebugRemotes`, which the Mac app reads too).
+    static var remotes: [DebugRemotes.Remote] { DebugRemotes.remotes }
+    static var repositories: [RemoteRepository] { DebugRemotes.repositories }
 
     /// The debug remotes with a `group`, as vault projects in that group, so the list shows them as it shows the
     /// Mac's projects.
@@ -65,7 +40,7 @@
       }
       vault.perform { store in
         for (name, remotes) in grouped.sorted(by: { $0.key < $1.key }) {
-          let ids = remotes.map { "debug-" + $0.name }
+          let ids = remotes.map(DebugRemotes.id(of:))
           for (remote, id) in zip(remotes, ids) where try store.record(VaultProject.self, id: id) == nil {
             _ = try store.save(VaultProject(id: id, name: remote.name))
           }
@@ -76,14 +51,6 @@
         }
       }
       write("vault: \(vault.projects.count) projects, \(vault.projectGroups.count) groups, error \(vault.error ?? "-")\n")
-    }
-
-    static func login(for target: RemoteTarget) -> SSHServer? {
-      guard target.id.hasPrefix("debug-"), let index = Int(target.id.dropFirst(6)), remotes.indices.contains(index)
-      else { return nil }
-      let remote = remotes[index]
-      let text = remote.keyText ?? remote.key.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
-      return SSHServer(host: target.host, port: target.port, user: remote.user, key: try? SSHKey(importing: text))
     }
 
     static var sheet: LibrarySheet? { environment["GIT_DEBUG_SHEET"].flatMap(LibrarySheet.init(rawValue:)) }

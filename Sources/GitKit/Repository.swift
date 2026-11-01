@@ -741,9 +741,7 @@ extension Repository {
   /// When the repository last fetched (the modification date of FETCH_HEAD).
   public func lastFetchDate() async -> Date? {
     guard let gitDir = try? await gitDirectory() else { return nil }
-    let values = try? gitDir.appendingPathComponent("FETCH_HEAD")
-      .resourceValues(forKeys: [.contentModificationDateKey])
-    return values?.contentModificationDate
+    return await runner.modificationDate(of: gitDir.appendingPathComponent("FETCH_HEAD"))
   }
 }
 

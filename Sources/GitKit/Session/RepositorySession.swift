@@ -52,6 +52,11 @@ public final class RepositorySession {
     public let id = UUID()
     public var title: String
     public var message: String
+
+    public init(title: String, message: String) {
+      self.title = title
+      self.message = message
+    }
   }
 
   public let repository: Repository
@@ -98,6 +103,10 @@ public final class RepositorySession {
   public static let pageSize = 200
 
   private var watcher: RepositoryWatcher?
+  /// Git on another machine: nothing here to watch, so the session looks again every few seconds instead.
+  private var poller: Task<Void, Never>?
+  /// How often a session whose git runs elsewhere looks again.
+  public static let remotePollInterval: Duration = .seconds(5)
   private var refreshAgain = false
   private var refreshTask: Task<Void, Never>?
   private var historyGeneration = 0
@@ -132,16 +141,26 @@ public final class RepositorySession {
 
   /// Loads the state and starts watching the file system.
   public func activate() async {
-    if watcher == nil {
+    if repository.isRemote {
+      // Git on another machine: its files aren't here to watch (a folder of the same path here is another one), so
+      // the session looks again every few seconds while nothing runs.
+      if poller == nil {
+        poller = Task { [weak self] in
+          while !Task.isCancelled {
+            try? await Task.sleep(for: Self.remotePollInterval)
+            guard !Task.isCancelled, let self else { return }
+            if !self.isBusy { await self.refresh() }
+          }
+        }
+      }
+    } else if watcher == nil {
       var paths = [repository.url]
       if let gitDir = try? await repository.gitDirectory(),
         !gitDir.path.hasPrefix(repository.url.path + "/")
       {
         paths.append(gitDir)
       }
-      // Git on another machine: nothing to watch here, so the session looks again every few seconds.
-      let latency: TimeInterval = repository.runner.transport == nil ? 0.4 : 5
-      let watcher = RepositoryWatcher(paths: paths, latency: latency) { [weak self] in
+      let watcher = RepositoryWatcher(paths: paths, latency: 0.4) { [weak self] in
         Task { @MainActor in await self?.refresh() }
       }
       watcher.start()
@@ -154,6 +173,8 @@ public final class RepositorySession {
   public func deactivate() {
     watcher?.stop()
     watcher = nil
+    poller?.cancel()
+    poller = nil
   }
 
   // MARK: Refresh

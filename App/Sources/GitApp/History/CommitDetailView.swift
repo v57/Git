@@ -143,7 +143,7 @@ private struct CommitDetail: View {
       Text("Files"),
       content: {
         ForEach(files) { file in
-          FileRow(file: file, repository: session.repository.url, isSelected: file.id == selectedFile?.id) {
+          FileRow(file: file, repository: session.repository, isSelected: file.id == selectedFile?.id) {
             state.selectedCommitFile = file.id
           }
         }
@@ -252,7 +252,7 @@ private struct CommitDetail: View {
 /// raised, as the sidebar's current row; its context menu opens the file as it is in the working tree.
 private struct FileRow: View {
   let file: CommitFile
-  let repository: URL
+  let repository: Repository
   let isSelected: Bool
   let select: () -> Void
 

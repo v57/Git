@@ -349,6 +349,13 @@ struct ConflictsScreen: View {
   }
 
   private func openFile(_ path: String) {
+    guard !session.repository.isRemote else {
+      // Its file is on the other device.
+      session.failure = RepositorySession.Failure(
+        title: "Edit \((path as NSString).lastPathComponent) There",
+        message: "The repository is on another device: edit the file there, then come back to continue.")
+      return
+    }
     KitDesktop.open(session.repository.url.appendingPathComponent(path))
   }
 

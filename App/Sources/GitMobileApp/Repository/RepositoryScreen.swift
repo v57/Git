@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftUI
 import VaultUI
