@@ -79,7 +79,7 @@ struct SidebarLayout {
   /// The project a repository is in the vault.
   func projectID(of path: String) -> String? { projectIDs[path] }
 
-  /// The app icon the vault keeps for a repository's project (Code and Dev find them).
+  /// The app icon the vault keeps for a repository's project (Git, Code and Dev find them).
   func icon(of path: String) -> Data? { icons[path] }
 
   /// The vault id of a sidebar item's id (a path or `group:<id>`).
