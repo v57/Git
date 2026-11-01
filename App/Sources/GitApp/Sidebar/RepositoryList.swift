@@ -334,15 +334,18 @@ struct RepositoryList: View {
     .transition(.row)
   }
 
-  private func groupHelp(_ group: VaultProjectGroup, members: [SavedRepository], layout: SidebarLayout) -> String {
-    let lines = members.compactMap { repository in
+  private func groupHelp(_ group: VaultProjectGroup, members: [SavedRepository], layout: SidebarLayout) -> GroupHelp {
+    let attention = members.compactMap { repository in
       library.summaries[repository.path].flatMap {
-        $0.needsAttention ? "\(repository.name): \(StatusMarks.description($0))" : nil
+        $0.needsAttention ? GroupHelp.Line(path: repository.path, name: repository.name, summary: $0) : nil
       }
     }
-    let title = group.paths[library.vault.deviceID] ?? layout.title(of: group)
+    // Where it is on this Mac, else its place among the groups (nothing when that is just its name).
+    let place =
+      group.paths[library.vault.deviceID].map { ($0 as NSString).abbreviatingWithTildeInPath }
+      ?? layout.title(of: group)
     let count = members.count == 1 ? "1 repository" : "\(members.count) repositories"
-    return ([title, count] + lines).joined(separator: "\n")
+    return GroupHelp(meta: [place == group.name ? nil : place, count].compactMap { $0 }.joined(separator: " · "), attention: attention)
   }
 
   @ViewBuilder
@@ -570,7 +573,7 @@ private struct GroupHeader: View {
   let isCollapsed: Bool
   let summary: RepositorySummary
   let isBusy: Bool
-  let help: String
+  let help: GroupHelp
   let toggle: () -> Void
 
   var body: some View {
@@ -584,9 +587,49 @@ private struct GroupHeader: View {
     .disclosure(isExpanded: .init(get: { !isCollapsed }, set: { if $0 == isCollapsed { toggle() } }))
     .action(toggle)
     .animation(.kit, value: isCollapsed)
-    .kitHelp(group.name, meta: help, systemImage: "folder", hue: StableHue.pick(group.name))
+    .kitHelp(group.name, meta: help.meta, systemImage: "folder", hue: StableHue.pick(group.name)) {
+      GroupHelpDetail(help: help)
+    }
     .accessibilityLabel("\(group.name), \(StatusMarks.description(summary))")
     .accessibilityHint(isCollapsed ? "Expands the group" : "Collapses the group")
+  }
+}
+
+/// What a group's tooltip says: where it is and how many repositories it holds, then those that need attention.
+struct GroupHelp {
+  struct Line {
+    let path: String
+    let name: String
+    let summary: RepositorySummary
+  }
+
+  let meta: String
+  let attention: [Line]
+}
+
+/// The repositories in a group that need attention, one a row with the sidebar's marks lined up on the right.
+private struct GroupHelpDetail: View {
+  static let limit = 10
+  let help: GroupHelp
+
+  var body: some View {
+    if help.attention.isEmpty {
+      Text("All up to date").foregroundStyle(.kitSecondary)
+    } else {
+      VStack(alignment: .leading, spacing: 5) {
+        Grid(alignment: .leading, horizontalSpacing: 20, verticalSpacing: 4) {
+          ForEach(help.attention.prefix(Self.limit), id: \.path) { line in
+            GridRow {
+              Text(line.name).lineLimit(1)
+              StatusMarks(summary: line.summary).gridColumnAlignment(.trailing)
+            }
+          }
+        }
+        if help.attention.count > Self.limit {
+          Text("and \(help.attention.count - Self.limit) more").kitFont(.caption)
+        }
+      }
+    }
   }
 }
 
