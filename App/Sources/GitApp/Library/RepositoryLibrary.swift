@@ -89,9 +89,12 @@ struct CompletedOperation: Equatable {
   var isCreateRequested = false
   /// A repository to select in the window (set by `open`).
   var requestedSelection: String?
-  /// What the last import found that Git doesn't list (folders without a repository, databases), offered to the
-  /// other apps.
+  /// What the import under way found that Git doesn't list (folders without a repository, databases), offered to
+  /// the other apps before anything is added; `offerClosed()` goes on with what was ticked.
   var importOffer: VaultImportOffer?
+  /// What the offer's Add ticked, taken when it closes (none after Not Now).
+  var offerPicks: [URL] = []
+  private var offerDecision: CheckedContinuation<[URL], Never>?
   /// Shown after an import that found nothing.
   var importMessage: String?
   /// Repositories with a fetch, pull or push started from the sidebar.
@@ -301,6 +304,10 @@ struct CompletedOperation: Equatable {
   /// Adds every repository found in the dropped or picked folders, the new items (repositories, groups for folders
   /// of several) into `group` (a vault group id; `nil`: the top level) before the sidebar item `before` (`nil`: in
   /// name order at the end). Returns the added paths.
+  ///
+  /// Nothing changes until it all can at once: the folders are scanned and the repositories' remotes read first,
+  /// then the offer of what Git doesn't list is asked (when there is any), then the repositories, the folders ticked
+  /// there and the groups they make are saved in one go, so the list updates once.
   @discardableResult
   func importFolders(
     _ urls: [URL], into context: ModelContext, group: String? = nil, before: String? = nil
@@ -316,35 +323,82 @@ struct CompletedOperation: Equatable {
     let found = Dictionary(results.map { ($0.root, $0.repositories) }) { first, _ in first }
     let all = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
     let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
-    var added: [SavedRepository] = []
+    var new: [(path: String, folder: String)] = []
     // Found repositories that are already in the list but in no group are grouped again.
     var regrouped: [String] = []
     for folder in folders {
-      let repos = found[folder.standardizedFileURL] ?? []
-      for repo in repos {
+      for repo in found[folder.standardizedFileURL] ?? [] {
         if let saved = existing[repo.path] {
           // One in another account's list stays there.
           if owns(saved), !regrouped.contains(repo.path) { regrouped.append(repo.path) }
-        } else if !added.contains(where: { $0.path == repo.path }) {
-          added.append(insert(path: repo.path, group: folder.standardizedFileURL.path, into: context))
+        } else if !new.contains(where: { $0.path == repo.path }) {
+          new.append((repo.path, folder.standardizedFileURL.path))
         }
       }
     }
-    try? context.save()
-    await vaultProjects.publish(added, context: context)
-    arrange(
-      added.map(\.path) + regrouped, roots: results.map(\.root.path), into: group,
-      before: before.flatMap(layout(context).vaultID(of:)))
+    let remotes = await Self.remotes(of: new.map(\.path))
+    let beforeID = before.flatMap(layout(context).vaultID(of:))
 
-    // Folders without a repository and databases are offered for the other apps.
-    if let offer = VaultImportOffer(results, store: vault.store) {
-      importOffer = offer
+    // Folders without a repository and databases, for the other apps: asked before anything is added. The
+    // repositories Git takes itself (or another account's list has).
+    let others = results.map { result in
+      var result = result
+      result.repositories = []
+      return result
+    }
+    var picked: [URL] = []
+    var databases: [VaultProjectDiscovery.DatabaseFile] = []
+    if let offer = VaultImportOffer(others, store: vault.store) {
+      isImporting = false
+      picked = await withCheckedContinuation { decision in
+        offerDecision = decision
+        offerPicks = []
+        importOffer = offer
+      }
+      isImporting = true
+      databases = offer.databases.filter { picked.contains($0.url) }
     } else if results.allSatisfy(\.repositories.isEmpty) {
       let names = folders.map(\.lastPathComponent).formatted()
       importMessage = "No Git repositories were found in \(names)."
     }
-    await refreshSummaries(added.map(\.path))
-    return added.map(\.path)
+    let folderPaths = picked.filter { url in !databases.contains { $0.url == url } }.map(\.standardizedFileURL.path)
+
+    // All at once: the vault's projects and groups, then the list's rows.
+    let paths = new.map(\.path)
+    vault.perform { store in
+      for path in paths { try store.addProject(path: path, remoteURL: remotes[path]) }
+      for path in folderPaths { try store.addProject(path: path) }
+      try store.arrangeProjects(
+        paths + regrouped + folderPaths, roots: results.map(\.root.path), into: group, before: beforeID)
+      for database in databases { try store.addDatabaseFile(database) }
+    }
+    for item in new { _ = insert(path: item.path, group: item.folder, into: context) }
+    try? context.save()
+    await refreshSummaries(paths)
+    return paths
+  }
+
+  /// The import's offer closed: it goes on with what Add ticked (nothing after Not Now).
+  func offerClosed() {
+    let decision = offerDecision
+    offerDecision = nil
+    decision?.resume(returning: offerPicks)
+    offerPicks = []
+  }
+
+  /// Each repository's `origin`, read side by side.
+  private static func remotes(of paths: [String]) async -> [String: String] {
+    await withTaskGroup(of: (String, String?).self) { group in
+      for path in paths {
+        group.addTask {
+          let remote = try? await Repository(url: URL(fileURLWithPath: path, isDirectory: true)).remoteURL("origin")
+          return (path, remote?.isEmpty == false ? remote : nil)
+        }
+      }
+      var remotes: [String: String] = [:]
+      for await (path, remote) in group { remotes[path] = remote }
+      return remotes
+    }
   }
 
   /// Shows `url` (a repository or worktree), adding it to the sidebar first if needed.

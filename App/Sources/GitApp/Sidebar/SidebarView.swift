@@ -92,7 +92,10 @@ struct SidebarView: View {
       }
     }
     .kitNotice("Nothing to Add", message: $library.importMessage, systemImage: "folder", hue: .gray)
-    .kitSheet(item: $library.importOffer) { offer in VaultImportSheet(offer, vault: library.vault, app: "Git") }
+    // The import goes on when it closes, adding what Add ticked with its repositories.
+    .kitSheet(item: $library.importOffer, onDismiss: { library.offerClosed() }) { offer in
+      VaultImportSheet(offer, vault: library.vault, app: "Git", decide: { library.offerPicks = $0 })
+    }
     .kitNotice(item: $library.remoteFailure, title: \.title, message: \.message)
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
       let shown = repositories.filter { !$0.isHidden }.map(\.path)
