@@ -26,6 +26,14 @@ struct SidebarView: View {
   /// Repositories selected together with ⌘- or ⇧-click.
   @State private var selected: Set<String> = []
   @State private var isDropTargeted = false
+  /// `--drop-target` draws the sidebar as a drop target (for screenshots).
+  private var showsDropTarget: Bool {
+    #if DEBUG
+      LaunchScene.shared.flag("--drop-target")
+    #else
+      false
+    #endif
+  }
   @State private var filter = ""
 
   /// The sidebar's one selection is the open repository's screen; the open repository is the
@@ -72,7 +80,7 @@ struct SidebarView: View {
         }
       }
     }
-    .kitDropTarget(isDropTargeted, cornerRadius: KitMetrics.radiusCard)
+    .kitDropTarget(isDropTargeted || showsDropTarget, cornerRadius: KitMetrics.radiusCard)
     // The kit's: a drop over a repository row the list doesn't take comes here too.
     .kitFileDrop(isTargeted: $isDropTargeted) { drop($0) }
     .onChange(of: library.isImporterPresented) { _, isPresented in
