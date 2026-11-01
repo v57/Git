@@ -378,9 +378,7 @@ struct RepositoryList: View {
     }
     Divider()
     if let folder = group.paths[library.vault.deviceID] {
-      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") {
-        RepositoryLibrary.reveal(URL(fileURLWithPath: folder, isDirectory: true))
-      }
+      ShowInFileManager([URL(fileURLWithPath: folder, isDirectory: true)])
       Divider()
     }
     if members.allSatisfy(\.isHidden) {
@@ -473,7 +471,7 @@ struct RepositoryList: View {
       }
     }
     Divider()
-    Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { KitDesktop.reveal(targets.map(\.url)) }
+    ShowInFileManager(targets.map(\.url))
     if let only = targets.first, targets.count == 1 {
       Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
       VaultOtherPlacesMenu(root: only.url)

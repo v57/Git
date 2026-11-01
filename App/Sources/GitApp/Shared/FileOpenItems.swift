@@ -25,17 +25,43 @@ struct FileOpenItems: View {
           let urls = app.bundleIdentifier == codeBundleID ? [repository, url] : [url]
           KitDesktop.open(urls, withApp: app.bundleIdentifier)
         } label: {
-          Label {
-            Text("Open in \(app.name)")
-          } icon: {
-            if let icon = KitDesktop.icon(forFile: app.url.path) {
-              icon.resizable().frame(width: 16, height: 16)
-            }
-          }
+          AppLabel(title: "Open in \(app.name)", icon: KitDesktop.icon(forFile: app.url.path))
         }
       }
-      Button("Show in \(KitDesktop.fileManagerName)", systemImage: "folder") { RepositoryLibrary.reveal(url) }
+      ShowInFileManager([url])
     }
     Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(path) }
+  }
+}
+
+/// Show in Finder, with Finder's own icon as the Open in items have their apps'.
+struct ShowInFileManager: View {
+  let urls: [URL]
+  init(_ urls: [URL]) { self.urls = urls }
+
+  var body: some View {
+    Button {
+      KitDesktop.reveal(urls)
+    } label: {
+      AppLabel(title: "Show in \(KitDesktop.fileManagerName)", icon: KitDesktop.fileManagerIcon)
+    }
+  }
+}
+
+/// An item with the app's own icon (a folder where there is none).
+private struct AppLabel: View {
+  let title: String
+  let icon: Image?
+
+  var body: some View {
+    Label {
+      Text(title)
+    } icon: {
+      if let icon {
+        icon.resizable().frame(width: 16, height: 16)
+      } else {
+        Image(systemName: "folder")
+      }
+    }
   }
 }
