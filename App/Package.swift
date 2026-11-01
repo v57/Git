@@ -36,8 +36,8 @@ let package = Package(
   dependencies: [
     // This repository's libraries.
     .package(path: ".."),
-    // CodeHighlighting for the diffs; the shared design, the user's vault (repositories, devices, accounts), in-app
-    // updates and SSH to the user's Macs.
+    // CodeHighlighting for the diffs and CodeWorkspace's ProjectIcon for the projects' icons; the shared design, the
+    // user's vault (repositories, devices, accounts), in-app updates and SSH to the user's Macs.
     v57("Code"), v57("Component"), v57("Vault"), v57("UpdateKit"), v57("SSH"),
   ],
   targets: [
@@ -54,7 +54,7 @@ let package = Package(
       dependencies: [
         "GitUI", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
         .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
-        .product(name: "UpdateKit", package: "UpdateKit"),
+        .product(name: "CodeWorkspace", package: "Code"), .product(name: "UpdateKit", package: "UpdateKit"),
         .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
         .product(name: "ComponentKit", package: "Component"),
       ],

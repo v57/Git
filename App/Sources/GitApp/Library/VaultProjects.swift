@@ -1,3 +1,4 @@
+import CodeWorkspace
 import Foundation
 import GitKit
 import SwiftData
@@ -46,9 +47,11 @@ import VaultKit
     (repository.accountID ?? VaultAccount.personal.id) == vault.accountID
   }
 
-  /// Starts sync and adoption for the window's context.
+  /// Starts sync and adoption for the window's context, and keeps the projects' app icons (the sidebar's tiles) current:
+  /// Code's `ProjectIcon` finds them, as Code and Dev do, so a repository added here gets its icon without them.
   func start(context: ModelContext, library: RepositoryLibrary) {
     guard observer == nil else { return }
+    vault.findProjectIcons(with: { ProjectIcon.find(in: $0) }) { ProjectIcon.thumbnail(of: $0) }
     observer = VaultChangeObserver { [weak self, weak library] in
       Task { @MainActor in
         guard let self, let library else { return }
