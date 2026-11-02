@@ -215,8 +215,28 @@ struct CompletedOperation: Equatable {
   /// it (the vault's status, which that device keeps current), else how it was when this Mac last had it open.
   func remoteSummary(_ repository: RemoteRepository) -> RepositorySummary? {
     let key = Self.remoteKey(repository)
-    if sessions[key] != nil, let summary = summaries[key] { return summary }
+    if sessions[key] != nil || checkedRemotes.contains(key), let summary = summaries[key] { return summary }
     return repository.lastSeen?.status.summary ?? summaries[key]
+  }
+
+  /// The repositories on other devices a fetch, pull or push from here last read, so their summaries win over what
+  /// the devices last said (`remoteSummary`).
+  private var checkedRemotes: Set<String> = []
+
+  func checked(_ key: String, _ summary: RepositorySummary) {
+    summaries[key] = summary
+    checkedRemotes.insert(key)
+  }
+
+  /// Project ids Hide Group and Remove Group from List leave out of On Your Devices, on this Mac.
+  var hiddenRemotes = RepositoryLibrary.savedIDs("HiddenRemoteRepositories") {
+    didSet { UserDefaults.standard.set(Array(hiddenRemotes), forKey: "HiddenRemoteRepositories") }
+  }
+  var removedRemotes = RepositoryLibrary.savedIDs("RemovedRemoteRepositories") {
+    didSet { UserDefaults.standard.set(Array(removedRemotes), forKey: "RemovedRemoteRepositories") }
+  }
+  private static func savedIDs(_ key: String) -> Set<String> {
+    Set(UserDefaults.standard.stringArray(forKey: key) ?? [])
   }
 
   /// A repository on another device while it connects, or why it couldn't; nil once it has a session.

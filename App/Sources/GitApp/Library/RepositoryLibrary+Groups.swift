@@ -1,6 +1,7 @@
 import Foundation
 import ComponentKit
 import GitKit
+import GitRemote
 import SwiftData
 import VaultKit
 
@@ -116,6 +117,14 @@ enum RemoteAction: String {
     case .fetch: "arrow.clockwise"
     case .pull: "arrow.down.to.line"
     case .push: "arrow.up.to.line"
+    }
+  }
+
+  func run(in repository: Repository) async throws {
+    switch self {
+    case .fetch: try await repository.fetch()
+    case .pull: try await repository.pull()
+    case .push: try await repository.push()
     }
   }
 }
@@ -306,25 +315,25 @@ extension RepositoryLibrary {
 
   // MARK: Fetch, pull and push
 
-  /// Runs `action` in each repository, a few at a time, and reports the ones that failed.
+  /// Runs `action` in each repository (a path, or a `remoteKey` for one on another device), a few at a time, and
+  /// reports the ones that failed.
   func run(_ action: RemoteAction, on paths: [String]) async {
     let paths = paths.filter { remoteActivity[$0] == nil }
     guard !paths.isEmpty else { return }
     for path in paths { remoteActivity[path] = action }
     var failures: [(name: String, message: String)] = []
     // Each with the GitHub sign-in of its account.
-    let runners = paths.map { ($0, runner(for: $0)) }
+    let runners = paths.map { ($0, Self.isRemote($0) ? nil : runner(for: $0)) }
     await withTaskGroup(of: (String, String?).self) { group in
       var pending = runners[...]
       func addNext() {
         guard let (path, runner) = pending.popFirst() else { return }
         group.addTask {
-          let repository = Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner)
           do {
-            switch action {
-            case .fetch: try await repository.fetch()
-            case .pull: try await repository.pull()
-            case .push: try await repository.push()
+            if let runner {
+              try await action.run(in: Repository(url: URL(fileURLWithPath: path, isDirectory: true), runner: runner))
+            } else {
+              try await self.runOnDevice(action, key: path)
             }
             return (path, nil)
           } catch {
@@ -338,11 +347,11 @@ extension RepositoryLibrary {
         remoteOutcomes[path] = RemoteOutcome(
           action: action, succeeded: message == nil, count: (remoteOutcomes[path]?.count ?? 0) + 1)
         if let message {
-          failures.append(((path as NSString).lastPathComponent, message))
+          failures.append((remoteRepository(path)?.name ?? (path as NSString).lastPathComponent, message))
         }
-        if let session = sessions[path], session === openSession {
+        if let session = sessions[path], session === openSession || Self.isRemote(path) {
           Task { await session.refresh() }
-        } else {
+        } else if !Self.isRemote(path) {
           Task { await refreshSummaries([path]) }
         }
         addNext()
@@ -356,5 +365,32 @@ extension RepositoryLibrary {
         let message = failure.message.split(separator: "\n").prefix(3).joined(separator: "\n")
         return failures.count == 1 ? message : "\(failure.name): \(message)"
       }.joined(separator: "\n\n"))
+  }
+
+  /// Runs `action` in a repository on another device: in its session when it's open, else over a connection just for
+  /// this, which also reads how it is now (newer than what the device last said).
+  private func runOnDevice(_ action: RemoteAction, key: String) async throws {
+    if let session = sessions[key] { return try await action.run(in: session.repository) }
+    guard let repository = remoteRepository(key) else {
+      throw GitError(message: "The repository isn’t on any of your devices any more.")
+    }
+    let opened = try await RemoteRepositories.open(repository, vault: vault)
+    defer { opened.transport.close() }
+    try await action.run(in: opened.repository)
+    if let status = try? await opened.repository.summaryStatus() { checked(key, RepositorySummary(status)) }
+  }
+
+  // MARK: Left out of On Your Devices
+
+  /// Hides repositories on other devices on this Mac (Show Hidden shows them dimmed).
+  func setRemoteHidden(_ ids: [String], _ hidden: Bool) {
+    if hidden { hiddenRemotes.formUnion(ids) } else { hiddenRemotes.subtract(ids) }
+  }
+
+  /// Takes repositories on other devices out of this Mac's list until Restore; they stay on those devices and in the
+  /// vault.
+  func removeRemotes(_ ids: [String]) {
+    removedRemotes.formUnion(ids)
+    hiddenRemotes.subtract(ids)
   }
 }

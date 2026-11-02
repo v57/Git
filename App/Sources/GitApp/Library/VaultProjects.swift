@@ -1,6 +1,7 @@
 import CodeWorkspace
 import Foundation
 import GitKit
+import GitRemote
 import SwiftData
 import VaultKit
 
@@ -38,7 +39,9 @@ import VaultKit
       guard ProcessInfo.processInfo.arguments.contains("--in-memory") else { return nil }
       let directory = FileManager.default.temporaryDirectory
         .appendingPathComponent("dev.v57.git-vault-\(UUID().uuidString)", isDirectory: true)
-      return Vault(store: try? VaultStore(directory: directory, keys: MemoryKeyProvider(), notifier: nil))
+      let vault = Vault(store: try? VaultStore(directory: directory, keys: MemoryKeyProvider(), notifier: nil))
+      DebugRemotes.addGroupedProjects(to: vault)
+      return vault
     }()
   #endif
 

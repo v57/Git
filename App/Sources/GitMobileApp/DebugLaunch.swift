@@ -29,34 +29,13 @@
     static var remotes: [DebugRemotes.Remote] { DebugRemotes.remotes }
     static var repositories: [RemoteRepository] { DebugRemotes.repositories }
 
-    /// The debug remotes with a `group`, as vault projects in that group, so the list shows them as it shows the
-    /// Mac's projects.
     static func addGroupedProjects(to vault: Vault) {
-      let grouped = Dictionary(grouping: remotes.filter { $0.group != nil }, by: { $0.group ?? "" })
-      guard !grouped.isEmpty else { return }
+      guard remotes.contains(where: { $0.group != nil }) else { return }
       guard vault.store != nil else {
         write("vault: no store (\(vault.error ?? "no error"))\n")
         return
       }
-      vault.perform { store in
-        for (name, remotes) in grouped.sorted(by: { $0.key < $1.key }) {
-          let ids = remotes.map(DebugRemotes.id(of:))
-          for (remote, id) in zip(remotes, ids) {
-            var project = try store.record(VaultProject.self, id: id) ?? VaultProject(id: id, name: remote.name)
-            let icon = remote.icon.flatMap { FileManager.default.contents(atPath: $0) }
-            let statuses = remote.status.map { ["debug": $0] } ?? [:]
-            guard try store.record(VaultProject.self, id: id) == nil || project.icon != icon || project.statuses != statuses
-            else { continue }
-            project.icon = icon
-            project.statuses = statuses
-            _ = try store.save(project)
-          }
-          let tree = try store.projectTree()
-          if ids.contains(where: { tree.parent(of: $0).flatMap(tree.group(id:))?.name != name }) {
-            _ = try store.groupProjects(ids, name: name)
-          }
-        }
-      }
+      DebugRemotes.addGroupedProjects(to: vault)
       write("vault: \(vault.projects.count) projects, \(vault.projectGroups.count) groups, error \(vault.error ?? "-")\n")
     }
 

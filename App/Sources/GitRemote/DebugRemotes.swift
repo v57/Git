@@ -8,7 +8,7 @@
   ///
   /// `GIT_DEBUG_REMOTE`: `{"name", "host", "port", "user", "directory", "key"}` (or an array of them): a repository on
   /// another machine, `key` a private key file the server accepts (or `keyText`, its contents), `device` the device's
-  /// name in the app, `group` a vault group to show it in (the iPhone and iPad app makes it a vault project there),
+  /// name in the app, `group` a vault group to show it in (both apps make it a vault project there),
   /// `fallbacks` the machine's other addresses (tried when `host` doesn't answer) and `status` how the device last saw
   /// it (a `VaultProject.Status`: `{"branch", "changeCount", "ahead", "behind", "hasUpstream", "conflictCount", "files":
   /// [{"path", "kind", "area"}]}`), shown before it connects. `icon` is a PNG file the grouped project's icon is read from.
@@ -49,6 +49,32 @@
           detail: remote.device == nil ? "debug" : "via Hub", device: device)
         return RemoteRepository(
           id: id(of: remote), name: remote.name, targets: [target], statuses: remote.status.map { [device: $0] } ?? [:])
+      }
+    }
+
+    /// The debug remotes with a `group`, as vault projects in that group, so a list shows them as it shows a Mac's
+    /// projects.
+    public static func addGroupedProjects(to vault: Vault) {
+      let grouped = Dictionary(grouping: remotes.filter { $0.group != nil }, by: { $0.group ?? "" })
+      guard !grouped.isEmpty, vault.store != nil else { return }
+      vault.perform { store in
+        for (name, remotes) in grouped.sorted(by: { $0.key < $1.key }) {
+          let ids = remotes.map(id(of:))
+          for (remote, id) in zip(remotes, ids) {
+            var project = try store.record(VaultProject.self, id: id) ?? VaultProject(id: id, name: remote.name)
+            let icon = remote.icon.flatMap { FileManager.default.contents(atPath: $0) }
+            let statuses = remote.status.map { ["debug": $0] } ?? [:]
+            guard try store.record(VaultProject.self, id: id) == nil || project.icon != icon || project.statuses != statuses
+            else { continue }
+            project.icon = icon
+            project.statuses = statuses
+            _ = try store.save(project)
+          }
+          let tree = try store.projectTree()
+          if ids.contains(where: { tree.parent(of: $0).flatMap(tree.group(id:))?.name != name }) {
+            _ = try store.groupProjects(ids, name: name)
+          }
+        }
       }
     }
 

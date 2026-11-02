@@ -2,6 +2,7 @@ import ComponentKit
 import GitKit
 import GitRemote
 import GitUI
+import SwiftData
 import SwiftUI
 import VaultKit
 import VaultUI
@@ -13,6 +14,7 @@ import VaultUI
 /// only when there are any.
 struct RemoteRepositoriesSection: View {
   @Environment(RepositoryLibrary.self) private var library
+  @Environment(\.modelContext) private var context
   @Binding var selection: String?
   /// The repository on screen, whose Workspace goes under its row in `.inline`.
   let shown: String?
@@ -20,8 +22,16 @@ struct RemoteRepositoriesSection: View {
   @State private var collapsedGroups: Set<String> = []
   @State private var isExpanded = true
   @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
+  /// One switch with the Repositories list's Show Hidden.
+  @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
 
   private func matches(_ name: String) -> Bool { filter.isEmpty || name.localizedCaseInsensitiveContains(filter) }
+
+  /// Not hidden (or Show Hidden is on), or the open one.
+  private func isShown(_ project: VaultProject, in remote: [RemoteRepository]) -> Bool {
+    showsHidden || !library.hiddenRemotes.contains(project.id)
+      || remote.contains { $0.id == project.id && RepositoryLibrary.remoteKey($0) == selection }
+  }
 
   /// The picked project's id, for the projects section.
   private var projectSelection: Binding<String?> {
@@ -46,16 +56,34 @@ struct RemoteRepositoriesSection: View {
     let remote = library.remoteRepositories
     if !remote.isEmpty {
       let ids = Set(remote.map(\.id))
-      let tree = library.vault.projectTree.filter { ids.contains($0.id) }
-      let others = remote.filter { tree.node(id: $0.id) == nil }
-      if !tree.projects().isEmpty {
+      let all = library.vault.projectTree.filter { ids.contains($0.id) }
+      // What the groups' menus and sort options act on: all but the removed.
+      let tree = all.filter { !library.removedRemotes.contains($0.id) }
+      let others = remote.filter { all.node(id: $0.id) == nil }
+      if !all.projects().isEmpty {
         VaultProjectsSection(
-          tree.filter { matches($0.name) }, selection: projectSelection, key: "remoteProjects",
+          tree.filter { matches($0.name) && isShown($0, in: remote) }, selection: projectSelection, key: "remoteProjects",
           collapsedGroups: $collapsedGroups
         ) {
           ProjectsLayoutMenu()
+          titleMenu(all: all, tree: tree)
         }
         .title("On Your Devices")
+        .emptyState {
+          Text(filter.isEmpty ? "All hidden or removed." : "No repositories match “\(filter)”.")
+            .kitFont(.callout).foregroundStyle(.kitSecondary)
+        }
+        .renamableGroups { group, name in library.rename(group, to: name) }
+        .groupMenu { group, rename in groupMenu(group, in: tree, rename: rename) }
+        .groupTrailing(whenOpen: true) { _, projects in StatusMarks(summary: groupSummary(projects, remote)) }
+        .groupStatus { _, projects in
+          members(projects, remote).contains { library.remoteActivity[RepositoryLibrary.remoteKey($0)] != nil }
+            ? .working : .idle
+        }
+        .groupHelp { group, projects in groupMeta(group, projects: projects, in: tree) } detail: { _, projects in
+          GroupHelpDetail(help: groupHelp(projects, remote))
+        }
+        .rowDimmed { library.hiddenRemotes.contains($0.id) }
         // Folded with the Repositories list, and a search still shows what it finds.
         .isExpanded(.init(get: { isExpanded || (projectsLayout == .folding && !filter.isEmpty) }, set: { isExpanded = $0 }))
         .rowContent(projectsLayout == .inline) { project in inlineWorkspace(remote.first { $0.id == project.id }) }
@@ -91,6 +119,110 @@ struct RemoteRepositoriesSection: View {
     }
   }
 
+  // MARK: Groups
+
+  private func members(_ projects: [VaultProject], _ remote: [RemoteRepository]) -> [RemoteRepository] {
+    projects.compactMap { project in remote.first { $0.id == project.id } }
+  }
+
+  /// The summed state of a group's repositories, the hidden ones aside, as the Repositories list's groups show.
+  private func groupSummary(_ projects: [VaultProject], _ remote: [RemoteRepository]) -> RepositorySummary {
+    RepositorySummary(
+      combining: members(projects, remote).filter { !library.hiddenRemotes.contains($0.id) }.compactMap(library.remoteSummary))
+  }
+
+  private func groupHelp(_ projects: [VaultProject], _ remote: [RemoteRepository]) -> GroupHelp {
+    let attention = members(projects, remote).filter { !library.hiddenRemotes.contains($0.id) }.compactMap { repository in
+      library.remoteSummary(repository).flatMap {
+        $0.needsAttention
+          ? GroupHelp.Line(path: RepositoryLibrary.remoteKey(repository), name: repository.name, summary: $0) : nil
+      }
+    }
+    return GroupHelp(meta: "", attention: attention)
+  }
+
+  /// Its place among the groups (nothing when that is just its name) and how many repositories it holds.
+  private func groupMeta(_ group: VaultProjectGroup, projects: [VaultProject], in tree: VaultProjectTree) -> String {
+    let place = title(of: group, in: tree)
+    let count = projects.count == 1 ? "1 repository" : "\(projects.count) repositories"
+    return [place == group.name ? nil : place, count].compactMap { $0 }.joined(separator: " · ")
+  }
+
+  private func title(of group: VaultProjectGroup, in tree: VaultProjectTree) -> String {
+    (tree.ancestors(of: group.id).map(\.name) + [group.name]).joined(separator: " › ")
+  }
+
+  /// The Repositories list's group menu, for repositories on other devices (no folder here to show in Finder).
+  @ViewBuilder private func groupMenu(_ group: VaultProjectGroup, in tree: VaultProjectTree, rename: @escaping () -> Void)
+    -> some View
+  {
+    let remote = members(tree.projects(in: group.id), library.remoteRepositories)
+    let ids = remote.map(\.id)
+    let keys = remote.map(RepositoryLibrary.remoteKey)
+    let parent = tree.parent(of: group.id)
+    // Groups it can move into: not itself, not one inside it, not the one it is in.
+    let destinations = tree.groups.filter { !tree.isWithin($0.id, group.id) && $0.id != parent }
+    RemoteActionButtons(
+      paths: keys,
+      pushPaths: remote.filter { repository in
+        library.remoteSummary(repository).map { $0.hasUpstream && $0.ahead > 0 } ?? false
+      }.map(RepositoryLibrary.remoteKey),
+      suffix: " All")
+    Divider()
+    Button("Rename…", systemImage: "pencil", action: rename)
+    Button("Ungroup", systemImage: "folder.badge.minus") { withAnimation(.kit) { library.ungroup(group) } }
+    if !destinations.isEmpty {
+      KitSubmenu("Move to Group", systemImage: "folder") {
+        ForEach(destinations) { destination in
+          Button(destinationTitle(destination, in: tree)) {
+            withAnimation(.kit) { library.moveGroup(group.id, into: destination.id, before: nil, context: context) }
+          }
+        }
+      }
+    }
+    if parent != nil {
+      Button("Move Out of Group", systemImage: "arrow.up.left") {
+        withAnimation(.kit) { library.moveOut([SidebarItem.id(of: group)], context: context) }
+      }
+    }
+    Divider()
+    if ids.allSatisfy(library.hiddenRemotes.contains) {
+      Button("Unhide Group", systemImage: "eye") { withAnimation(.kit) { library.setRemoteHidden(ids, false) } }
+    } else {
+      Button("Hide Group", systemImage: "eye.slash") { withAnimation(.kit) { library.setRemoteHidden(ids, true) } }
+    }
+    Button("Remove Group from List", systemImage: "minus.circle") {
+      if let selection, keys.contains(selection) { self.selection = nil }
+      withAnimation(.kit) { library.removeRemotes(ids) }
+    }
+  }
+
+  /// "v57 › Agentus (Developer)": a group with the groups it is in, and its note.
+  private func destinationTitle(_ group: VaultProjectGroup, in tree: VaultProjectTree) -> String {
+    let title = title(of: group, in: tree)
+    guard let note = group.note, !note.isEmpty else { return title }
+    return "\(title) (\(note))"
+  }
+
+  /// The way back to what the groups' menus left out.
+  @ViewBuilder private func titleMenu(all: VaultProjectTree, tree: VaultProjectTree) -> some View {
+    let hidden = tree.projects().count { library.hiddenRemotes.contains($0.id) }
+    let removed = all.projects().map(\.id).filter(library.removedRemotes.contains)
+    if hidden > 0 || !removed.isEmpty {
+      Divider()
+      if hidden > 0 {
+        Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hidden) Hidden", systemImage: "eye") {
+          withAnimation(.kit) { showsHidden.toggle() }
+        }
+      }
+      if !removed.isEmpty {
+        Button("Restore \(removed.count) Removed", systemImage: "arrow.uturn.backward") {
+          withAnimation(.kit) { library.removedRemotes.subtract(removed) }
+        }
+      }
+    }
+  }
+
   private func select(_ repository: RemoteRepository) {
     withKitAnimation {
       library.showsAllRepositories = false
@@ -108,14 +240,22 @@ struct RemoteRepositoriesSection: View {
   /// last said.
   @ViewBuilder private func marks(_ repository: RemoteRepository) -> some View {
     let key = RepositoryLibrary.remoteKey(repository)
-    switch library.remoteStates[key] {
-    case .connecting?:
-      LiveIcon(systemImage: "network", hue: .blue, status: .working, size: 14)
-    case .failed?:
-      StatusDot(hue: .red)
-    case nil:
-      if let summary = library.remoteSummary(repository) { StatusMarks(summary: summary) }
+    let outcome = library.remoteOutcomes[key]
+    Group {
+      if let activity = library.remoteActivity[key] {
+        Text("\(activity.title)ing…")
+      } else {
+        switch library.remoteStates[key] {
+        case .connecting?:
+          LiveIcon(systemImage: "network", hue: .blue, status: .working, size: 14)
+        case .failed?:
+          StatusDot(hue: .red)
+        case nil:
+          if let summary = library.remoteSummary(repository) { StatusMarks(summary: summary) }
+        }
+      }
     }
+    .effect(outcome?.effect ?? .pop, on: outcome?.count)
   }
 }
 

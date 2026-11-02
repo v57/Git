@@ -510,11 +510,8 @@ struct RepositoryList: View {
   /// with no commits for their upstream (a group's Push All).
   @ViewBuilder
   private func remoteButtons(_ paths: [String], suffix: String, pushOnlyAhead: Bool = false) -> some View {
-    ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
-      let targets = action == .push && pushOnlyAhead ? paths.filter(hasCommitsToPush) : paths
-      Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: targets) } }
-        .disabled(targets.allSatisfy { library.remoteActivity[$0] != nil })
-    }
+    RemoteActionButtons(
+      paths: paths, pushPaths: pushOnlyAhead ? paths.filter(hasCommitsToPush) : paths, suffix: suffix)
   }
 
   private func hasCommitsToPush(_ path: String) -> Bool {
@@ -610,6 +607,23 @@ private struct GroupHeader: View {
   }
 }
 
+/// Fetch, Pull and Push for a menu, on repositories here or on other devices (`RepositoryLibrary.run`).
+struct RemoteActionButtons: View {
+  @Environment(RepositoryLibrary.self) private var library
+  let paths: [String]
+  /// The ones Push goes to.
+  let pushPaths: [String]
+  let suffix: String
+
+  var body: some View {
+    ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
+      let targets = action == .push ? pushPaths : paths
+      Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: targets) } }
+        .disabled(targets.allSatisfy { library.remoteActivity[$0] != nil })
+    }
+  }
+}
+
 /// What a group's tooltip says: where it is and how many repositories it holds, then those that need attention.
 struct GroupHelp {
   struct Line {
@@ -623,7 +637,7 @@ struct GroupHelp {
 }
 
 /// The repositories in a group that need attention, one a row with the sidebar's marks lined up on the right.
-private struct GroupHelpDetail: View {
+struct GroupHelpDetail: View {
   static let limit = 10
   let help: GroupHelp
 
