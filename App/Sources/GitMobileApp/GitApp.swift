@@ -129,7 +129,7 @@ struct RepositoriesView: View {
     NavigationSplitView(columnVisibility: $columnVisibility) {
       sidebar
         .toolbar(removing: .sidebarToggle)
-        .navigationSplitViewColumnWidth(min: 260, ideal: 300, max: 360)
+        .kitSidebarColumn()
     } detail: {
       NavigationStack {
         if let source = sources.first(where: { $0.id == selection }) {

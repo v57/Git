@@ -29,7 +29,7 @@ struct ContentView: View {
       // The sidebar has its own hide button; the kit's toolbar brings a hidden sidebar back.
       SidebarView(selection: $selectedPath, shown: screenPath, columns: $columns)
         .toolbar(removing: .sidebarToggle)
-        .navigationSplitViewColumnWidth(min: 220, ideal: 260, max: 340)
+        .kitSidebarColumn()
     } detail: {
       Group {
         if library.showsAllRepositories {
