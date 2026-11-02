@@ -7,6 +7,7 @@ import SwiftUI
 /// granted permissions (each missing one with Grant…) while signed in.
 public struct GitHubSettingsView: View {
   @Environment(GitHubAccount.self) private var account
+  @Environment(\.kitIdiom) private var idiom
   @State private var request: GitHubSignInRequest?
   /// Other vault accounts' sign-ins, while this one has none.
   @State private var offers: [GitHubSignInOffer] = []
@@ -67,21 +68,24 @@ public struct GitHubSettingsView: View {
 
   private var signedIn: some View {
     VStack(alignment: .leading, spacing: 18) {
-      HStack(spacing: 12) {
-        Avatar(name: account.user?.login ?? "", url: account.user?.avatarURL?.gitHubAvatar(size: 40), size: 40)
-        VStack(alignment: .leading, spacing: 1) {
-          Text(account.user?.name ?? account.user?.login ?? "")
-            .fontWeight(.semibold)
-          if let login = account.user?.login, let url = URL(string: "https://github.com/\(login)") {
-            Link("github.com/\(login)", destination: url)
-              .kitFont(.callout)
+      // The buttons go on a row of their own on a phone, where the name needs the width.
+      VStack(alignment: .leading, spacing: 12) {
+        HStack(spacing: 12) {
+          Avatar(name: account.user?.login ?? "", url: account.user?.avatarURL?.gitHubAvatar(size: 40), size: 40)
+          VStack(alignment: .leading, spacing: 1) {
+            Text(account.user?.name ?? account.user?.login ?? "")
+              .fontWeight(.semibold)
+            if let login = account.user?.login, let url = URL(string: "https://github.com/\(login)") {
+              Link("github.com/\(login)", destination: url)
+                .kitFont(.callout)
+            }
           }
+          Spacer()
+          if idiom != .phone { accountButtons }
         }
-        Spacer()
-        Button("Change Permissions…") { request = GitHubSignInRequest(permissions: account.permissions) }
-          .buttonStyle(.kit)
-        Button("Sign Out") { account.signOut() }
-          .buttonStyle(.kit)
+        if idiom == .phone {
+          HStack(spacing: 8) { accountButtons }
+        }
       }
       .padding(.horizontal, 16)
       .padding(.vertical, 14)
@@ -104,6 +108,13 @@ public struct GitHubSettingsView: View {
       }
     }
     .task { await account.refresh() }
+  }
+
+  @ViewBuilder private var accountButtons: some View {
+    Button("Change Permissions…") { request = GitHubSignInRequest(permissions: account.permissions) }
+      .buttonStyle(.kit)
+    Button("Sign Out") { account.signOut() }
+      .buttonStyle(.kit)
   }
 }
 
