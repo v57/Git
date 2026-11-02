@@ -5,9 +5,10 @@ import VaultKit
 /// A repository's status as the vault keeps it for the user's other devices (`VaultProject.Status`): each Mac writes
 /// its repositories' (`Vault.setStatus`), and the other devices show it before they reach the Mac, and when they can't.
 extension VaultProject.Status {
-  /// How a repository here is: `status`'s branch, counts and files (conflicts, then staged, then unstaged). No line
-  /// counts, dates or commits: it changes only when the repository's state does.
-  public init(_ status: WorkingTreeStatus) {
+  /// How a repository here is: `status`'s branch, counts and files (conflicts, then staged, then unstaged), and
+  /// `activity`'s commit and push dates for other devices' orders. No line counts or dates of uncommitted changes: it
+  /// changes only when the repository's state does.
+  public init(_ status: WorkingTreeStatus, activity: RepositoryActivity? = nil) {
     let summary = RepositorySummary(status)
     let files = (status.conflicted + status.staged + status.unstaged).map { change in
       File(path: change.path, kind: change.kind.letter, area: change.area.rawValue)
@@ -15,7 +16,7 @@ extension VaultProject.Status {
     self.init(
       branch: summary.branch, changeCount: summary.changeCount, ahead: summary.ahead, behind: summary.behind,
       hasUpstream: summary.hasUpstream, conflictCount: summary.conflictCount, operation: summary.operation?.rawValue,
-      files: files)
+      files: files, lastCommit: activity?.lastCommit, lastPush: activity?.lastPush)
   }
 
   /// The status as GitKit's, for the Changes list until the repository is read: the kept files (the first

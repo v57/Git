@@ -341,15 +341,17 @@ struct CompletedOperation: Equatable {
     rememberState()
     // The dates are read here, from git on this Mac.
     guard !Self.isRemote(path) else { return }
-    Task { await refreshActivity(path) }
-    keepStatus(status, at: path)
+    Task {
+      await refreshActivity(path)
+      keepStatus(status, at: path)
+    }
   }
 
   /// Keeps how a repository here is in its vault project, for the user's other devices (`VaultProject.Status`:
-  /// branch, counts and files, written only when they changed; nothing for one that isn't a project of the window's
-  /// account).
+  /// branch, counts, files and the commit and push dates, written only when they changed; nothing for one that isn't
+  /// a project of the window's account).
   private func keepStatus(_ status: WorkingTreeStatus, at path: String) {
-    vault.setStatus(VaultProject.Status(status), ofProjectAt: path)
+    vault.setStatus(VaultProject.Status(status, activity: activities[path]), ofProjectAt: path)
   }
 
   /// Keeps every repository's sidebar summary current without opening it: one FSEvents stream
