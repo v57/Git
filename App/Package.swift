@@ -16,10 +16,11 @@ let kits = String(Context.packageDirectory.split(whereSeparator: { $0 == "/" || 
 /// The apps, a package of their own so the libraries (the package one folder up, which Markdown and Dev depend on)
 /// carry none of the apps' dependencies:
 ///
-/// - GitApp: the Mac app, all of it but its entry point (Sources/Git/GitMain.swift). Git.xcodeproj builds that file
-///   into Git.app with Resources (the icon, assets and entitlements); on Linux and Windows the Git target below does.
-/// - GitMobileApp: the iPhone and iPad app, all of it but its entry point (Sources/GitMobile/GitMobileMain.swift, the
-///   Xcode project's Git iOS target).
+/// - GitEntry: the app for the platform being built, GitApp or GitMobileApp, which is all the entry point
+///   (Sources/Git/GitMain.swift) links. Git.xcodeproj builds that file into Git.app with Resources (the icon, assets
+///   and entitlements); on Linux and Windows the Git target below does.
+/// - GitApp: the Mac app, and the app on Linux and Windows.
+/// - GitMobileApp: the iPhone and iPad app.
 /// - GitUI: what both apps show: the diff's hunk cards and highlighting, the change kind badge, the message sheet and
 ///   the GitHub settings (the sign-in sheet is the libraries' GitHubUI, which Markdown shows too).
 /// - GitRemote: repositories on the user's other devices, for both apps: the vault's projects there, the SSH login
@@ -32,6 +33,7 @@ let appSettings: [SwiftSetting] = [
 let package = Package(
   name: "GitApp", platforms: [.macOS(.v15), .iOS(.v17)],
   products: [
+    .library(name: "GitEntry", targets: ["GitEntry"]),
     .library(name: "GitApp", targets: ["GitApp"]),
     .library(name: "GitMobileApp", targets: ["GitMobileApp"]),
   ],
@@ -43,6 +45,13 @@ let package = Package(
     v57("Code"), v57("Component"), v57("Vault"), v57("UpdateKit"), v57("SSH"),
   ],
   targets: [
+    .target(
+      name: "GitEntry",
+      dependencies: [
+        .target(name: "GitApp", condition: .when(platforms: [.macOS, .linux, .windows])),
+        .target(name: "GitMobileApp", condition: .when(platforms: [.iOS])),
+      ],
+      swiftSettings: appSettings),
     .target(
       name: "GitUI",
       dependencies: [
@@ -63,7 +72,8 @@ let package = Package(
       dependencies: [
         "GitUI", "GitRemote", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
         .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
-        .product(name: "CodeWorkspace", package: "Code"), .product(name: "UpdateKit", package: "UpdateKit"),
+        .product(name: "CodeWorkspace", package: "Code"),
+        .product(name: "UpdateKit", package: "UpdateKit", condition: .when(platforms: [.macOS, .linux, .windows])),
         .product(name: "VaultKit", package: "Vault"), .product(name: "VaultUI", package: "Vault"),
         .product(name: "ComponentKit", package: "Component"),
       ],
@@ -99,7 +109,7 @@ let offAppleSettings =
         ["-Xfrontend", "-import-module", "-Xfrontend", $0]
       })
   ]
-for target in package.targets where ["GitUI", "GitRemote", "GitApp"].contains(target.name) {
+for target in package.targets where ["GitEntry", "GitUI", "GitRemote", "GitApp"].contains(target.name) {
   target.dependencies += [
     .product(name: "SwiftUI", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
   ]
@@ -118,7 +128,7 @@ for target in package.targets where ["GitUI", "GitRemote", "GitApp"].contains(ta
 // -Product GitWinUI).
 package.targets.append(
   .target(
-    name: "Git", dependencies: ["GitApp", .product(name: "SwiftUI", package: "SwiftUI")],
+    name: "Git", dependencies: ["GitEntry", .product(name: "SwiftUI", package: "SwiftUI")],
     swiftSettings: offAppleSettings))
 package.products.append(.library(name: "GitWinUI", type: .dynamic, targets: ["Git"]))
 #elseif os(Linux)
@@ -126,7 +136,7 @@ package.products.append(.library(name: "GitWinUI", type: .dynamic, targets: ["Gi
 // stages it).
 package.targets.append(
   .executableTarget(
-    name: "Git", dependencies: ["GitApp", .product(name: "SwiftUI", package: "SwiftUI")],
+    name: "Git", dependencies: ["GitEntry", .product(name: "SwiftUI", package: "SwiftUI")],
     swiftSettings: offAppleSettings))
 package.products.append(.executable(name: "Git", targets: ["Git"]))
 #endif

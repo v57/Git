@@ -61,12 +61,12 @@ other repository that needs attention.
                                   and its granted scopes in the app's own keychain item (KeychainTokenStore),
                                   the REST calls Publish needs (GitHubAPI) and the observable GitHubAccount;
                                   no dependency on GitKit
-    App/                          the apps' package (App/Package.swift): GitApp, GitMobileApp, GitUI, depending on
+    App/                          the apps' package (App/Package.swift): GitEntry, GitApp, GitMobileApp, GitUI, depending on
                                   the libraries above (..) and Code (CodeHighlighting), Component (ComponentKit),
                                   Vault, UpdateKit and SSH from GitHub
-    Git.xcodeproj                 builds the bundles: App/Sources/Git (the Mac app's entry point) or
-                                  App/Sources/GitMobile (iPhone and iPad) with App/Resources (icon, assets,
-                                  entitlements), linking GitApp or GitMobileApp
+    Git.xcodeproj                 builds the bundle, one target for Mac, iPhone and iPad: App/Sources/Git (the
+                                  entry point) with App/Resources (icon, assets, entitlements), linking GitEntry
+    App/Sources/GitEntry/         the app for the platform being built: GitApp or GitMobileApp
     App/Sources/GitApp/           the Mac app
       Library/    SavedRepository (SwiftData), VaultProjects (the vault's projects and groups),
                   RepositoryLibrary (sessions, summaries, import, grouping and ordering, fetch/pull/push
@@ -85,7 +85,7 @@ other repository that needs attention.
       Shared/     change-kind tiles
       GitHub/     the apps' GitHubAccount (client ID, hands its token to GitCredentials), the
                   sign-in sheet and its animated connection header, Settings › GitHub
-    App/Sources/GitMobileApp/     the iPhone and iPad app (target Git iOS)
+    App/Sources/GitMobileApp/     the iPhone and iPad app
       Local/      LocalRepositories (the app's Documents folder: clone, create, delete), the commit author
       Remote/     RemoteRepositories (the vault's projects and saved folders on SSH hosts), SSHGitTransport
       Repository/ GitBackend (one protocol over GitEngine and GitKit), RepositoryModel, Changes, History, diff
@@ -162,7 +162,7 @@ shallow clones or SHA-256 repositories yet, and push sends the current branch on
 ```bash
 swift build && swift test
 xcodebuild -project Git.xcodeproj -scheme Git -destination 'platform=macOS' build
-xcodebuild -workspace Git-Local.xcworkspace -scheme "Git iOS" -destination 'platform=iOS Simulator,name=<an arm64 simulator>' build
+xcodebuild -workspace Git-Local.xcworkspace -scheme Git -destination 'platform=iOS Simulator,name=<an arm64 simulator>' build
 ```
 
 The app's v57 packages (Code, Vault, UpdateKit) come from GitHub's `main` branch. To work on them together, clone

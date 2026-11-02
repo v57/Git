@@ -7,29 +7,24 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		A10000000000000000000001 /* GitApp in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GitApp */; };
-		6171050000000000000000F1 /* GitMobileApp in Frameworks */ = {isa = PBXBuildFile; productRef = 6171050000000000000000E1 /* GitMobileApp */; };
+		A10000000000000000000001 /* GitEntry in Frameworks */ = {isa = PBXBuildFile; productRef = A10000000000000000000011 /* GitEntry */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		000000000000000000000120 /* Git.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Git.app; sourceTree = BUILT_PRODUCTS_DIR; };
-		617105000000000000000120 /* Git.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Git.app; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
-		617105000000000000000011 /* Exceptions for "Resources" folder in "Git iOS" target */ = {
-			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
-			membershipExceptions = (
-				Assets.xcassets,
-				"Git-iOS-Info.plist",
-			);
-			target = 617105000000000100000000 /* Git iOS */;
-		};
 		000000000000000000000011 /* Exceptions for "Resources" folder in "Git" target */ = {
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				"Git-iOS-Info.plist",
 			);
+			platformFiltersByRelativePath = {
+				Assets.xcassets = (
+					macos,
+				);
+			};
 			target = 000000000000000100000000 /* Git */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -41,17 +36,10 @@
 			path = App/Sources/Git;
 			sourceTree = "<group>";
 		};
-		617105000000000000000010 /* GitMobile */ = {
-			isa = PBXFileSystemSynchronizedRootGroup;
-			name = GitMobile;
-			path = App/Sources/GitMobile;
-			sourceTree = "<group>";
-		};
 		A10000000000000000000030 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
 				000000000000000000000011 /* Exceptions for "Resources" folder in "Git" target */,
-				617105000000000000000011 /* Exceptions for "Resources" folder in "Git iOS" target */,
 			);
 			name = Resources;
 			path = App/Resources;
@@ -63,13 +51,7 @@
 		000000000000000130000000 /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			files = (
-				A10000000000000000000001 /* GitApp in Frameworks */,
-			);
-		};
-		617105000000000130000000 /* Frameworks */ = {
-			isa = PBXFrameworksBuildPhase;
-			files = (
-				6171050000000000000000F1 /* GitMobileApp in Frameworks */,
+				A10000000000000000000001 /* GitEntry in Frameworks */,
 			);
 		};
 /* End PBXFrameworksBuildPhase section */
@@ -79,7 +61,6 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000010 /* Git */,
-				617105000000000000000010 /* GitMobile */,
 				A10000000000000000000030 /* Resources */,
 				000000000000000000000020 /* Products */,
 			);
@@ -89,7 +70,6 @@
 			isa = PBXGroup;
 			children = (
 				000000000000000000000120 /* Git.app */,
-				617105000000000000000120 /* Git.app */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -113,32 +93,10 @@
 			);
 			name = Git;
 			packageProductDependencies = (
-				A10000000000000000000011 /* GitApp */,
+				A10000000000000000000011 /* GitEntry */,
 			);
 			productName = Git;
 			productReference = 000000000000000000000120 /* Git.app */;
-			productType = "com.apple.product-type.application";
-		};
-		617105000000000100000000 /* Git iOS */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = 617105000000000110000000 /* Build configuration list for PBXNativeTarget "Git iOS" */;
-			buildPhases = (
-				617105000000000120000000 /* Sources */,
-				617105000000000130000000 /* Frameworks */,
-				617105000000000140000000 /* Resources */,
-			);
-			buildRules = (
-			);
-			fileSystemSynchronizedGroups = (
-				617105000000000000000010 /* GitMobile */,
-				A10000000000000000000030 /* Resources */,
-			);
-			name = "Git iOS";
-			packageProductDependencies = (
-				6171050000000000000000E1 /* GitMobileApp */,
-			);
-			productName = Git;
-			productReference = 617105000000000000000120 /* Git.app */;
 			productType = "com.apple.product-type.application";
 		};
 /* End PBXNativeTarget section */
@@ -153,9 +111,6 @@
 				TargetAttributes = {
 					000000000000000100000000 = {
 						CreatedOnToolsVersion = 26.3;
-					};
-					617105000000000100000000 = {
-						CreatedOnToolsVersion = 27.0;
 					};
 				};
 			};
@@ -178,7 +133,6 @@
 			projectRoot = "";
 			targets = (
 				000000000000000100000000 /* Git */,
-				617105000000000100000000 /* Git iOS */,
 			);
 		};
 /* End PBXProject section */
@@ -189,20 +143,10 @@
 			files = (
 			);
 		};
-		617105000000000140000000 /* Resources */ = {
-			isa = PBXResourcesBuildPhase;
-			files = (
-			);
-		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		000000000000000120000000 /* Sources */ = {
-			isa = PBXSourcesBuildPhase;
-			files = (
-			);
-		};
-		617105000000000120000000 /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			files = (
 			);
@@ -347,8 +291,9 @@
 			buildSettings = {
 				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = App/Resources/Git.entitlements;
+				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME[sdk=macosx*]" = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Resources/Git-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Resources/Git.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = AUCR797TMH;
@@ -356,91 +301,26 @@
 				ENABLE_PREVIEWS = YES;
 				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_FILE[sdk=iphone*]" = "App/Resources/Git-iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Git;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.git;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Debug;
-		};
-		000000000000000112000000 /* Release configuration for PBXNativeTarget "Git" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				"ARCHS[sdk=macosx*]" = arm64;
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
-				CODE_SIGN_ENTITLEMENTS = App/Resources/Git.entitlements;
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AUCR797TMH;
-				ENABLE_APP_SANDBOX = NO;
-				ENABLE_PREVIEWS = YES;
-				ENABLE_HARDENED_RUNTIME = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Git;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
-				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
-				MACOSX_DEPLOYMENT_TARGET = 15.0;
-				MARKETING_VERSION = 0.1;
-				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.git;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = macosx;
-				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = macosx;
-				SUPPORTS_MACCATALYST = NO;
-				SWIFT_APPROACHABLE_CONCURRENCY = YES;
-				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
-				SWIFT_EMIT_LOC_STRINGS = YES;
-				SWIFT_UPCOMING_FEATURE_MEMBER_IMPORT_VISIBILITY = YES;
-				SWIFT_VERSION = 5.0;
-			};
-			name = Release;
-		};
-		617105000000000111000000 /* Debug configuration for PBXNativeTarget "Git iOS" */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "App/Resources/Git-iOS.entitlements";
-				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = AUCR797TMH;
-				ENABLE_PREVIEWS = YES;
-				GENERATE_INFOPLIST_FILE = YES;
-				INFOPLIST_KEY_CFBundleDisplayName = Git;
-				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
-				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Git signs in to your Macs over SSH to work with the repositories there.";
-				INFOPLIST_FILE = "App/Resources/Git-iOS-Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIFileSharingEnabled = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
+				"INFOPLIST_KEY_UIFileSharingEnabled[sdk=iphone*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.git;
-				PRODUCT_NAME = Git;
-				SDKROOT = iphoneos;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -450,37 +330,41 @@
 			};
 			name = Debug;
 		};
-		617105000000000112000000 /* Release configuration for PBXNativeTarget "Git iOS" */ = {
+		000000000000000112000000 /* Release configuration for PBXNativeTarget "Git" */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				"ARCHS[sdk=macosx*]" = arm64;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
-				CODE_SIGN_ENTITLEMENTS = "App/Resources/Git-iOS.entitlements";
+				"ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME[sdk=macosx*]" = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphone*]" = "App/Resources/Git-iOS.entitlements";
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = App/Resources/Git.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = AUCR797TMH;
+				ENABLE_APP_SANDBOX = NO;
 				ENABLE_PREVIEWS = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				"INFOPLIST_FILE[sdk=iphone*]" = "App/Resources/Git-iOS-Info.plist";
 				INFOPLIST_KEY_CFBundleDisplayName = Git;
 				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.developer-tools";
-				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
-				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Git signs in to your Macs over SSH to work with the repositories there.";
-				INFOPLIST_FILE = "App/Resources/Git-iOS-Info.plist";
-				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
-				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
-				INFOPLIST_KEY_UIFileSharingEnabled = YES;
-				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPad = "UIInterfaceOrientationPortrait UIInterfaceOrientationPortraitUpsideDown UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
-				INFOPLIST_KEY_UISupportedInterfaceOrientations_iPhone = "UIInterfaceOrientationPortrait UIInterfaceOrientationLandscapeLeft UIInterfaceOrientationLandscapeRight";
+				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphone*]" = YES;
+				"INFOPLIST_KEY_UIFileSharingEnabled[sdk=iphone*]" = YES;
+				"INFOPLIST_KEY_UILaunchScreen_Generation[sdk=iphone*]" = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
 				LD_RUNPATH_SEARCH_PATHS = "@executable_path/Frameworks";
+				"LD_RUNPATH_SEARCH_PATHS[sdk=macosx*]" = "@executable_path/../Frameworks";
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
 				MARKETING_VERSION = 0.1;
 				PRODUCT_BUNDLE_IDENTIFIER = dev.v57.git;
-				PRODUCT_NAME = Git;
-				SDKROOT = iphoneos;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = auto;
 				STRING_CATALOG_GENERATE_SYMBOLS = YES;
-				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
 				SUPPORTS_MACCATALYST = NO;
+				SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO;
+				SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO;
 				SWIFT_APPROACHABLE_CONCURRENCY = YES;
 				SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor;
 				SWIFT_EMIT_LOC_STRINGS = YES;
@@ -509,14 +393,6 @@
 			);
 			defaultConfigurationName = Release;
 		};
-		617105000000000110000000 /* Build configuration list for PBXNativeTarget "Git iOS" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				617105000000000111000000 /* Debug configuration for PBXNativeTarget "Git iOS" */,
-				617105000000000112000000 /* Release configuration for PBXNativeTarget "Git iOS" */,
-			);
-			defaultConfigurationName = Release;
-		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -531,15 +407,10 @@
 /* End XCLocalSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
-		A10000000000000000000011 /* GitApp */ = {
+		A10000000000000000000011 /* GitEntry */ = {
 			isa = XCSwiftPackageProductDependency;
 			package = A10000000000000000000023 /* XCLocalSwiftPackageReference "App" */;
-			productName = GitApp;
-		};
-		6171050000000000000000E1 /* GitMobileApp */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = A10000000000000000000023 /* XCLocalSwiftPackageReference "App" */;
-			productName = GitMobileApp;
+			productName = GitEntry;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

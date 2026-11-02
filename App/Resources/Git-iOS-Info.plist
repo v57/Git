@@ -2,9 +2,30 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-	<!-- What Xcode can't generate from a build setting; the rest of the iOS app's Info.plist is generated.
-	     Animations and scrolling at up to 120 fps on an iPhone with ProMotion; without it they stop at 60. -->
+	<!-- What the iPhone and iPad app adds to the Info.plist Xcode generates. These keys can't be build settings: the
+	     target also builds the Mac app, and a setting limited to iOS still leaves an empty key in the Mac's plist.
+	     CADisableMinimumFrameDurationOnPhone: animations and scrolling at up to 120 fps on an iPhone with ProMotion;
+	     without it they stop at 60. -->
 	<key>CADisableMinimumFrameDurationOnPhone</key>
 	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>Git signs in to your Macs over SSH to work with the repositories there.</string>
+	<key>UIApplicationSupportsIndirectInputEvents</key>
+	<true/>
+	<key>UISupportedInterfaceOrientations~ipad</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationPortraitUpsideDown</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
+	<key>UISupportedInterfaceOrientations~iphone</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
+	</array>
 </dict>
 </plist>
