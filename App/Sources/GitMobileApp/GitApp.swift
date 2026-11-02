@@ -277,6 +277,11 @@ struct RepositoriesSidebar: View {
         collapsedGroups: $collapsedGroups
       )
       .title("On Your Devices")
+      .renamableGroups { group, name in
+        var group = group
+        group.name = name
+        Vault.shared.save(group)
+      }
       .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
       .trailing { project in
         HStack(spacing: 8) {
