@@ -43,10 +43,13 @@ public enum GitCredentials {
 
   /// The environment for a network command with `account`'s credentials: config entries in
   /// `GIT_CONFIG_COUNT` form, which git reads after every config file, and the credentials
-  /// themselves. Empty without credentials, so git uses the user's own helpers.
-  static func environment(account: String? = nil) -> [String: String] {
+  /// themselves. Empty without credentials, so git uses the user's own helpers. `hosts` limits it to
+  /// those hosts' credentials.
+  static func environment(account: String? = nil, hosts: Set<String>? = nil) -> [String: String] {
     let credentials = store.withLock { store in
-      store.compactMap { $0.key.account == account ? ($0.key.host, $0.value) : nil }
+      store.compactMap { key, value in
+        key.account == account && hosts?.contains(key.host) != false ? (key.host, value) : nil
+      }
     }.sorted { $0.0 < $1.0 }
     guard !credentials.isEmpty else { return [:] }
     var environment: [String: String] = [:]
@@ -71,6 +74,12 @@ public enum GitCredentials {
     }
     environment["GIT_CONFIG_COUNT"] = String(count)
     return environment
+  }
+
+  /// The host credentials are kept under for a remote's URL; nil unless it's HTTPS, the only way they're used.
+  static func host(ofRemote url: String) -> String? {
+    guard let components = URLComponents(string: url), components.scheme?.lowercased() == "https" else { return nil }
+    return components.host?.lowercased()
   }
 
   /// Whether an entry of `environment(account:)` is a username or password.

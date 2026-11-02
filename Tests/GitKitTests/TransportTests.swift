@@ -8,9 +8,12 @@ import Testing
 final class RecordingTransport: GitTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var calls: [String] = []
+  private var lastNetworkEnvironment: [String: String] = [:]
   let runner = TempRepo.runner
 
   var recorded: [String] { lock.withLock { calls } }
+  /// The environment of the last call that had one.
+  var environment: [String: String] { lock.withLock { lastNetworkEnvironment } }
 
   private func record(_ call: String) { lock.withLock { calls.append(call) } }
 
@@ -19,6 +22,7 @@ final class RecordingTransport: GitTransport, @unchecked Sendable {
     progress: (@Sendable (String) -> Void)?
   ) async throws -> GitResult {
     record("git")
+    if !environment.isEmpty { lock.withLock { lastNetworkEnvironment = environment } }
     // The runner adds the global config again; git takes the repeated -c options.
     return try await runner.run(
       arguments, in: directory, input: input, allowedExitCodes: Set(0...255), environment: environment,
@@ -111,6 +115,53 @@ final class RecordingTransport: GitTransport, @unchecked Sendable {
     #expect(process.terminationStatus == 0)
     #expect(filled.contains("username=aiko\n"))
     #expect(filled.contains("password=token 'with' $pecial\n"))
+  }
+
+  /// Another machine gets a host's credentials only when one of the repository's remotes is on it.
+  @Test func anotherMachineGetsOnlyItsRemotesCredentials() async throws {
+    let account = UUID().uuidString
+    GitCredentials.set(GitCredential(username: "local", password: "for-local"), for: "127.0.0.1", account: account)
+    GitCredentials.set(GitCredential(username: "other", password: "for-other"), for: "other.test", account: account)
+    defer {
+      GitCredentials.set(nil, for: "127.0.0.1", account: account)
+      GitCredentials.set(nil, for: "other.test", account: account)
+    }
+    func passwords(_ transport: RecordingTransport) -> Set<String> {
+      Set(transport.environment.filter { $0.key.hasPrefix("GITKIT_PASSWORD_") }.values)
+    }
+
+    let temp = try await TempRepo()
+    let transport = RecordingTransport()
+    var runner = TempRepo.runner
+    runner.transport = transport
+    runner.credentialAccount = account
+    let repo = Repository(url: temp.root, runner: runner)
+
+    // Nothing listens on port 1: the fetch fails at once, after its environment went through the transport.
+    try await repo.addRemote("origin", url: "https://127.0.0.1:1/repo.git")
+    await #expect(throws: GitError.self) { try await repo.fetch() }
+    #expect(passwords(transport) == ["for-local"])
+
+    // Over SSH, none: git's helper is for HTTPS. A host that merely starts the same isn't that host either.
+    let second = try await TempRepo()
+    let secondTransport = RecordingTransport()
+    var secondRunner = runner
+    secondRunner.transport = secondTransport
+    let ssh = Repository(url: second.root, runner: secondRunner)
+    try await second.repo.git(["config", "core.sshCommand", "false"])
+    try await ssh.addRemote("origin", url: "git@127.0.0.1:repo.git")
+    try await ssh.addRemote("lookalike", url: "https://127.0.0.1.example.invalid:1/repo.git")
+    await #expect(throws: GitError.self) { try await ssh.fetch() }
+    #expect(passwords(secondTransport).isEmpty)
+
+    // The address a switch to HTTPS checks counts, before any remote has it.
+    await #expect(throws: GitError.self) {
+      try await ssh.switchToHTTPS(HTTPSRemote(remote: "origin", host: "other.test", url: "https://other.test:1/repo.git"))
+    }
+    #expect(passwords(secondTransport) == ["for-other"])
+
+    // Git on this machine keeps them all, as before: it's the app's own process that hands them over.
+    #expect(GitCredentials.environment(account: account).filter { $0.key.hasPrefix("GITKIT_PASSWORD_") }.count == 2)
   }
 
   @Test func failsWithGitsMessageAndTimesOut() async throws {

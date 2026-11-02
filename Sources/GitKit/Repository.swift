@@ -60,7 +60,9 @@ public struct Repository: Sendable, Hashable, Identifiable {
     try await runner.run(
       ["clone", "--progress", "--", remote, destination.path],
       in: destination.deletingLastPathComponent(),
-      environment: GitCredentials.environment(account: runner.credentialAccount),
+      environment: GitCredentials.environment(
+        account: runner.credentialAccount,
+        hosts: runner.transport == nil ? nil : Set(GitCredentials.host(ofRemote: remote).map { [$0] } ?? [])),
       progress: progress)
     return Repository(url: destination, runner: runner)
   }
@@ -786,7 +788,7 @@ extension Repository {
 
   /// Moves a remote to its HTTPS address, once git can read from there: a wrong address changes nothing.
   public func switchToHTTPS(_ remote: HTTPSRemote) async throws {
-    try await git(["ls-remote", "--", remote.url, "HEAD"], environment: credentials)
+    try await git(["ls-remote", "--", remote.url, "HEAD"], environment: credentials(forHost: remote.host))
     try await git(["remote", "set-url", "--", remote.remote, remote.url])
     // A push URL of its own stays otherwise.
     let pushURL = try await output(["remote", "get-url", "--push", "--", remote.remote])
@@ -796,18 +798,28 @@ extension Repository {
     }
   }
 
-  /// The environment network commands run with: the runner's account's credentials.
-  private var credentials: [String: String] { GitCredentials.environment(account: runner.credentialAccount) }
+  /// The environment network commands run with: the runner's account's credentials. Git on another machine gets only
+  /// those for a host it's about to talk to (`host`, else its remotes'): that machine can read what it's sent.
+  private func credentials(forHost host: String? = nil) async -> [String: String] {
+    guard runner.transport != nil else { return GitCredentials.environment(account: runner.credentialAccount) }
+    if let host { return GitCredentials.environment(account: runner.credentialAccount, hosts: [host]) }
+    let remotes = (try? await output(["remote", "-v"])) ?? ""
+    let hosts = remotes.split(separator: "\n").compactMap { line -> String? in
+      let url = line.split(whereSeparator: \.isWhitespace).dropFirst().first
+      return url.flatMap { GitCredentials.host(ofRemote: String($0)) }
+    }
+    return GitCredentials.environment(account: runner.credentialAccount, hosts: Set(hosts))
+  }
 
   public func fetch(progress: (@Sendable (String) -> Void)? = nil) async throws {
     try await git(
-      ["fetch", "--all", "--prune", "--progress"], environment: credentials,
+      ["fetch", "--all", "--prune", "--progress"], environment: credentials(),
       progress: progress)
   }
 
   /// `git pull` with the user's pull settings (merge, rebase, ff-only).
   public func pull(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(["pull", "--progress"], environment: credentials, progress: progress)
+    try await git(["pull", "--progress"], environment: credentials(), progress: progress)
   }
 
   /// Pushes the current branch. A branch without an upstream is pushed to its push remote (or
@@ -825,7 +837,7 @@ extension Repository {
       let remote = try await pushRemote(for: branch)
       arguments += ["--set-upstream", remote, "HEAD"]
     }
-    try await git(arguments, environment: credentials, progress: progress)
+    try await git(arguments, environment: credentials(), progress: progress)
   }
 
   public func deleteRemoteBranch(_ branch: Branch, progress: (@Sendable (String) -> Void)? = nil)
@@ -838,7 +850,7 @@ extension Repository {
     do {
       try await git(
         ["push", "--progress", "--force-with-lease=\(ref):\(branch.sha)", remote, "--delete", ref],
-        environment: credentials, progress: progress)
+        environment: credentials(), progress: progress)
     } catch let error as GitError where error.message.contains("(stale info)") {
       throw GitError(
         arguments: error.arguments, exitCode: error.exitCode,
