@@ -14,8 +14,12 @@ import VaultUI
 struct RemoteRepositoriesSection: View {
   @Environment(RepositoryLibrary.self) private var library
   @Binding var selection: String?
+  /// The repository on screen, whose Workspace goes under its row in `.inline`.
+  let shown: String?
   let filter: String
   @State private var collapsedGroups: Set<String> = []
+  @State private var isExpanded = true
+  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
 
   private func matches(_ name: String) -> Bool { filter.isEmpty || name.localizedCaseInsensitiveContains(filter) }
 
@@ -29,6 +33,15 @@ struct RemoteRepositoriesSection: View {
       })
   }
 
+  /// The repository's Workspace rows, when they go under its row and it's open.
+  @ViewBuilder private func inlineWorkspace(_ repository: RemoteRepository?) -> some View {
+    if projectsLayout == .inline, let repository, shown == RepositoryLibrary.remoteKey(repository),
+      let session = library.loadedSession(for: RepositoryLibrary.remoteKey(repository))
+    {
+      InlineWorkspaceRows(session: session)
+    }
+  }
+
   var body: some View {
     let remote = library.remoteRepositories
     if !remote.isEmpty {
@@ -39,12 +52,21 @@ struct RemoteRepositoriesSection: View {
         VaultProjectsSection(
           tree.filter { matches($0.name) }, selection: projectSelection, key: "remoteProjects",
           collapsedGroups: $collapsedGroups
-        )
+        ) {
+          ProjectsLayoutMenu()
+        }
         .title("On Your Devices")
+        // Folded with the Repositories list, and a search still shows what it finds.
+        .isExpanded(.init(get: { isExpanded || (projectsLayout == .folding && !filter.isEmpty) }, set: { isExpanded = $0 }))
+        .rowContent(projectsLayout == .inline) { project in inlineWorkspace(remote.first { $0.id == project.id }) }
         .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
         .trailing { project in
           if let repository = remote.first(where: { $0.id == project.id }) { marks(repository) }
         }
+        .onChange(of: selection, initial: true) { _, new in
+          if projectsLayout == .folding, new != nil { isExpanded = false }
+        }
+        .onChange(of: projectsLayout) { _, new in isExpanded = !(new == .folding && selection != nil) }
       }
       if !others.isEmpty {
         KitSection(
@@ -61,6 +83,7 @@ struct RemoteRepositoriesSection: View {
             .isCurrent(selection == RepositoryLibrary.remoteKey(repository))
             .action { select(repository) }
             .kitHelp(repository.name, meta: repository.targets.first.map { "\($0.directory) on \($0.name)" })
+            inlineWorkspace(repository)
           }
         }
         .kitSticky(top: .titleWhileVisible, bottom: .none)

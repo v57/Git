@@ -11,6 +11,9 @@ import VaultUI
 ///
 /// Dropping a folder (or picking one with +) adds every git repository inside it, grouped by
 /// the folder each is in. Repository states come from a file watcher over the shown ones.
+///
+/// The lists' headers pick where the open repository's Workspace goes (`VaultProjectsLayout`): its own card under the
+/// lists, the same with the lists folded once a repository is picked, or under the repository's row.
 struct SidebarView: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
@@ -35,6 +38,7 @@ struct SidebarView: View {
     #endif
   }
   @State private var filter = ""
+  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
 
   /// The sidebar's one selection is the open repository's screen; the open repository is the
   /// raised row in Repositories.
@@ -59,12 +63,14 @@ struct SidebarView: View {
       // The window's account, while there is more than Personal.
       VaultAccountPicker(meta: repositories.count == 1 ? "1 repository" : "\(repositories.count) repositories")
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
-      RepositoryList(selection: $selection, selected: $selected, filter: filter)
+      RepositoryList(selection: $selection, selected: $selected, shown: shown, filter: filter)
         .kitSticky(top: .titleWhileVisible, bottom: .none)
       // The repositories on the user's other devices, when there are any.
-      RemoteRepositoriesSection(selection: $selection, filter: filter)
+      RemoteRepositoriesSection(selection: $selection, shown: shown, filter: filter)
       if let shown, let session = library.loadedSession(for: shown) {
-        RepositorySections(session: session, state: library.viewState(for: shown), filter: filter)
+        RepositorySections(
+          session: session, state: library.viewState(for: shown), showsWorkspace: projectsLayout != .inline,
+          filter: filter)
       }
     } bottomBar: {
       Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
@@ -145,6 +151,8 @@ struct SidebarView: View {
 private struct RepositorySections: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
+  /// Off when the Workspace's rows are under the repository's row (`.inline`).
+  let showsWorkspace: Bool
   let filter: String
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
@@ -157,7 +165,7 @@ private struct RepositorySections: View {
   }
 
   var body: some View {
-    workspace
+    if showsWorkspace { workspace }
     // The checked-out branch first, as in the Branch popover.
     let branches = session.localBranches.filter { matches($0.name) }
       .sorted { $0.isCurrent && !$1.isCurrent }
@@ -239,28 +247,9 @@ private struct RepositorySections: View {
 
   private var workspace: some View {
     let status = session.status
-    let conflicts = status?.conflicted.count ?? 0
     return KitSection(
       Text(session.repository.url.lastPathComponent),
-      content: {
-        ForEach(RepositoryMode.allCases) { mode in
-          SidebarRow(value: mode, mode.title, systemImage: mode.systemImage) {
-            switch mode {
-            case .changes:
-              if conflicts > 0 {
-                Count(conflicts, .attention)
-              } else if let count = status?.changeCount, count > 0 {
-                Count(count, .attention)
-              }
-            case .stashes:
-              if !session.stashes.isEmpty { Count(session.stashes.count) }
-            case .history:
-              EmptyView()
-            }
-          }
-          .kitHelp(mode.title, shortcut: "⌘\(mode.shortcut.character)", systemImage: mode.systemImage)
-        }
-      },
+      content: { WorkspaceRows(session: session) },
       icon: {
         SizedLiveIcon(hue: .blue, status: session.isRefreshing ? .working : .idle) { BranchGlyph() }
       },
@@ -336,6 +325,65 @@ private struct RepositorySections: View {
         Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = branch }
           .disabled(session.worktree(for: branch) != nil)
       }
+    }
+  }
+}
+
+/// The open repository's screens: Changes, History and Stashes, with what each holds.
+struct WorkspaceRows: View {
+  let session: RepositorySession
+
+  var body: some View {
+    let status = session.status
+    let conflicts = status?.conflicted.count ?? 0
+    ForEach(RepositoryMode.allCases) { mode in
+      SidebarRow(value: mode, mode.title, systemImage: mode.systemImage) {
+        switch mode {
+        case .changes:
+          if conflicts > 0 {
+            Count(conflicts, .attention)
+          } else if let count = status?.changeCount, count > 0 {
+            Count(count, .attention)
+          }
+        case .stashes:
+          if !session.stashes.isEmpty { Count(session.stashes.count) }
+        case .history:
+          EmptyView()
+        }
+      }
+      .kitHelp(mode.title, shortcut: "⌘\(mode.shortcut.character)", systemImage: mode.systemImage)
+    }
+  }
+}
+
+/// The Workspace's rows under the open repository's row (`.inline`), a step in from it. A row beside folders keeps a
+/// chevron's empty slot, which these don't: `steps` is 2 there.
+struct InlineWorkspaceRows: View {
+  let session: RepositorySession
+  var steps = 1
+  @Environment(\.kitRowIndentLevel) private var level
+
+  var body: some View {
+    VStack(alignment: .leading, spacing: 2) { WorkspaceRows(session: session) }
+      .kitRowIndent(level + steps)
+      .transition(.opacity)
+  }
+}
+
+extension VaultProjectsLayout {
+  /// Where Git keeps the choice: one for all its lists.
+  static let gitKey = "RepositoriesLayout"
+}
+
+/// The lists' header menu's choice of where the open repository's Workspace goes.
+struct ProjectsLayoutMenu: View {
+  @AppStorage(VaultProjectsLayout.gitKey) private var layout = VaultProjectsLayout.separate
+
+  var body: some View {
+    KitMenuSection("Show the Project") {
+      KitMenuOptions(
+        selection: Binding(get: { layout }, set: { new in withKitAnimation { layout = new } }),
+        options: VaultProjectsLayout.allCases.map { ($0.title, $0) })
     }
   }
 }

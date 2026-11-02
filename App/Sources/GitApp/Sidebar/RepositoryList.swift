@@ -18,9 +18,9 @@ import VaultUI
 /// and shows an icon for each other repository that needs attention.
 ///
 /// The header's context menu orders a long list (by name, recent changes, last commit or last push), hides
-/// repositories unused for a week or without changes behind a Show More row, groups by folder or not, and picks how
-/// much the rows show. Without folders, or sorted by date, the list doesn't reorder by dragging (a drag still moves a
-/// repository into a folder).
+/// repositories unused for a week or without changes behind a Show More row, groups by folder or not, and picks where
+/// the open repository's Workspace goes (`VaultProjectsLayout`). Without folders, or sorted by date, the list doesn't
+/// reorder by dragging (a drag still moves a repository into a folder).
 struct RepositoryList: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
@@ -29,6 +29,8 @@ struct RepositoryList: View {
   private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @Binding var selection: String?
   @Binding var selected: Set<String>
+  /// The repository on screen, whose Workspace goes under its row in `.inline`.
+  let shown: String?
   let filter: String
   @State private var anchor: String?
   /// The group whose name is a field in its row.
@@ -41,7 +43,7 @@ struct RepositoryList: View {
   @AppStorage("RepositoriesHideUnused") private var hidesUnused = false
   @AppStorage("RepositoriesOnlyWithChanges") private var onlyWithChanges = false
   @AppStorage("RepositoriesGroupByFolder") private var groupsByFolder = true
-  @AppStorage("RepositoriesDisplay") private var display = VaultProjectsDisplay.regular
+  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
   /// Show More: the repositories the filters hide, until the list is filtered again.
   @State private var showsMore = false
   @State private var confirmsRemoveAll = false
@@ -167,7 +169,9 @@ struct RepositoryList: View {
     KitSection(
       "Repositories", meta: meta(layout, more: more), systemImage: "folder", hue: .indigo,
       status: library.isImporting ? .working : .idle,
-      isExpanded: .init(get: { !isCollapsed }, set: { isCollapsed = !$0 })
+      // Folded, a search still shows what it finds.
+      isExpanded: .init(
+        get: { !isCollapsed || (projectsLayout == .folding && !filter.isEmpty) }, set: { isCollapsed = !$0 })
     ) {
       if groupsByFolder {
         ReorderableOutline(
@@ -222,7 +226,6 @@ struct RepositoryList: View {
       Button("Remove All Projects…", systemImage: "trash") { confirmsRemoveProjects = true }
         .disabled(repositories.isEmpty && library.unlistedProjects(besides: repositories).isEmpty)
     }
-    .kitRowDensity(display.density())
     .help(attentionHelp(layout))
     .kitConfirmation(
       repositories.count == 1 ? "Remove 1 repository from the list?" : "Remove all \(repositories.count) repositories from the list?", isPresented: $confirmsRemoveAll,
@@ -244,6 +247,11 @@ struct RepositoryList: View {
     .onChange(of: [hidesUnused, onlyWithChanges]) { showsMore = false }
     .animation(.kit, value: visible(nodes).map(\.id))
     .onChange(of: isCollapsed) { storedCollapsed = isCollapsed }
+    // `.folding`: a picked repository folds the list, as does choosing it with one open; the others open it again.
+    .onChange(of: selection) { _, new in
+      if projectsLayout == .folding, new != nil { isCollapsed = true }
+    }
+    .onChange(of: projectsLayout) { _, new in isCollapsed = new == .folding && selection != nil }
     .onChange(of: selection, initial: true) { _, path in
       if let path, !selected.contains(path) || selected.count == 1 {
         selected = [path]
@@ -269,7 +277,7 @@ struct RepositoryList: View {
   }
 
   /// The All Repositories page, then Sort By and Show, as on the board: the sort's options, then the filters and
-  /// the folders; then how much the rows show.
+  /// the folders; then where the open repository's Workspace goes.
   @ViewBuilder private var optionsMenu: some View {
     Button("All Repositories", systemImage: "square.grid.2x2") {
       withKitAnimation { library.showsAllRepositories = true }
@@ -293,11 +301,7 @@ struct RepositoryList: View {
       Toggle("Only With Changes", isOn: $onlyWithChanges.animation(.kit))
       Toggle("Group by Folder", isOn: $groupsByFolder.animation(.kit))
     }
-    KitMenuSection("Display") {
-      KitMenuOptions(
-        selection: Binding(get: { display }, set: { new in withKitAnimation { display = new } }),
-        options: VaultProjectsDisplay.allCases.map { ($0.title, $0) })
-    }
+    ProjectsLayoutMenu()
   }
 
   /// What Show More brings back.
@@ -327,11 +331,8 @@ struct RepositoryList: View {
     let members = layout.repositories(in: group.id)
     let visible = members.filter { !$0.isHidden }
     let summaries = visible.compactMap { library.summaries[$0.path] }
-    let note = group.note?.isEmpty == false ? group.note : nil
-    let count = members.count == 1 ? "1 repository" : "\(members.count) repositories"
     return GroupHeader(
-      group: group, subtitle: display == .compact ? nil : note ?? (display == .detailed ? count : nil),
-      iconSize: display.iconSize(.mac), isCollapsed: library.collapsedGroups.contains(group.id) && filter.isEmpty,
+      group: group, isCollapsed: library.collapsedGroups.contains(group.id) && filter.isEmpty,
       summary: RepositorySummary(combining: summaries),
       isBusy: members.contains { library.remoteActivity[$0.path] != nil },
       help: groupHelp(group, members: visible, layout: layout)
@@ -415,16 +416,20 @@ struct RepositoryList: View {
 
   private func repositoryRow(_ repository: SavedRepository, layout: SidebarLayout) -> some View {
     let isMulti = selected.count > 1 && selected.contains(repository.path)
-    return RepositoryRow(
-      repository: repository, icon: layout.icon(of: repository.path), summary: library.summaries[repository.path],
-      isCurrent: repository.path == selection, isSelected: isMulti,
-      activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path],
-      display: display
-    ) {
-      click(repository.path, layout: layout)
+    return VStack(alignment: .leading, spacing: 2) {
+      RepositoryRow(
+        repository: repository, icon: layout.icon(of: repository.path), summary: library.summaries[repository.path],
+        isCurrent: repository.path == selection, isSelected: isMulti,
+        activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path]
+      ) {
+        click(repository.path, layout: layout)
+      }
+      .opacity(repository.isHidden ? 0.5 : 1)
+      .kitContextMenu { repositoryMenu(targets(for: repository.path, layout: layout), layout: layout) }
+      if projectsLayout == .inline, repository.path == shown, let session = library.loadedSession(for: repository.path) {
+        InlineWorkspaceRows(session: session, steps: groupsByFolder ? 2 : 1)
+      }
     }
-    .opacity(repository.isHidden ? 0.5 : 1)
-    .kitContextMenu { repositoryMenu(targets(for: repository.path, layout: layout), layout: layout) }
     .transition(.row)
   }
 
@@ -580,8 +585,6 @@ struct RepositoryList: View {
 /// note, and the summed state of the repositories in it. Click collapses it.
 private struct GroupHeader: View {
   let group: VaultProjectGroup
-  let subtitle: String?
-  let iconSize: CGFloat
   let isCollapsed: Bool
   let summary: RepositorySummary
   let isBusy: Bool
@@ -589,10 +592,10 @@ private struct GroupHeader: View {
   let toggle: () -> Void
 
   var body: some View {
-    SidebarRow(group.name, subtitle: subtitle) {
+    SidebarRow(group.name, subtitle: group.note?.isEmpty == false ? group.note : nil) {
       Avatar(
         name: group.name, kind: .thing, systemImage: isCollapsed ? "folder" : "folder.fill",
-        hue: StableHue.pick(group.name), status: isBusy ? .working : .idle, size: iconSize)
+        hue: StableHue.pick(group.name), status: isBusy ? .working : .idle, size: 18)
     } trailing: {
       StatusMarks(summary: summary)
     }
@@ -657,15 +660,13 @@ struct RepositoryRow: View {
   var activity: RemoteAction?
   /// How the last fetch, pull or push from the sidebar ended: the row plays its effect.
   var outcome: RemoteOutcome?
-  /// How much it shows: Detailed adds its branch.
-  var display = VaultProjectsDisplay.regular
   /// What a click does: open it, or (⌘, ⇧) select it with others.
   let action: () -> Void
 
   var body: some View {
-    SidebarRow(repository.name, subtitle: display == .detailed ? summary?.branch : nil) {
+    SidebarRow(repository.name) {
       let status: WorkStatus = activity == nil ? .idle : .working
-      Avatar(name: repository.name, imageData: icon, kind: .thing, status: status, size: display.iconSize(.mac))
+      Avatar(name: repository.name, imageData: icon, kind: .thing, status: status, size: 18)
     } trailing: {
       if let activity {
         Text("\(activity.title)ing…")
