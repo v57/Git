@@ -44,8 +44,11 @@
           for (remote, id) in zip(remotes, ids) {
             var project = try store.record(VaultProject.self, id: id) ?? VaultProject(id: id, name: remote.name)
             let icon = remote.icon.flatMap { FileManager.default.contents(atPath: $0) }
-            guard try store.record(VaultProject.self, id: id) == nil || project.icon != icon else { continue }
+            let statuses = remote.status.map { ["debug": $0] } ?? [:]
+            guard try store.record(VaultProject.self, id: id) == nil || project.icon != icon || project.statuses != statuses
+            else { continue }
             project.icon = icon
+            project.statuses = statuses
             _ = try store.save(project)
           }
           let tree = try store.projectTree()
