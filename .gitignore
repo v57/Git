@@ -44,3 +44,4 @@ tmp
 # one, through <App>-Local.xcworkspace or V57_LOCAL=1), so nothing pins them
 /Git.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 /Git-Local.xcworkspace/xcshareddata/
+/Package.resolved
