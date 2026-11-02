@@ -12,7 +12,11 @@ import VaultUI
 /// Macs (the vault's projects on devices of their Hub, or folders on any SSH host saved in the Vault app) run the
 /// Mac's own git over SSH through GitKit, so everything the Mac app does with changes works there.
 public struct GitApp: App {
-  public init() {}
+  public init() {
+    // The devices and their projects sync on their own, and this device shows up on the others to be let in.
+    Vault.shared.startSync()
+    try? Vault.shared.store?.publishDeviceKey()
+  }
 
   public var body: some Scene {
     WindowGroup {
