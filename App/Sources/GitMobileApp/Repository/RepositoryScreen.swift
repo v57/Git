@@ -64,6 +64,13 @@ struct RepositoryScreen: View {
     .navigationDestination(for: Commit.self) { commit in CommitScreen(model: model, commit: commit) }
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
     .kitNotice(item: $model.failure, title: \.title, message: \.message)
+    .kitConfirmation(
+      "Couldn’t \(model.httpsOffer?.action.title ?? "Sync") over SSH",
+      isPresented: .init(get: { model.httpsOffer != nil }, set: { if !$0 { model.httpsOffer = nil } }),
+      message: httpsMessage, confirm: "Switch and \(model.httpsOffer?.action.title ?? "Sync")", role: nil
+    ) {
+      if let offer = model.httpsOffer { Task { await model.acceptHTTPS(offer) } }
+    }
     .task {
       model.profiles = profiles
       await model.open()
@@ -83,6 +90,22 @@ struct RepositoryScreen: View {
     if case .remote(let repository) = source, let lastSeen = repository.lastSeen {
       LastSeenChanges(device: lastSeen.device, status: lastSeen.status).padding(.top, 8)
     }
+  }
+
+  private var httpsMessage: String? {
+    guard let offer = model.httpsOffer else { return nil }
+    let device = model.target?.name ?? "This device"
+    var lines = [
+      "\(device) couldn’t sign in to \(offer.remote.host) over SSH: \(offer.reason.split(separator: "\n").first ?? "")",
+      "Switch \(offer.remote.remote) to \(offer.remote.url) and \(offer.action.title.lowercased()) again?",
+    ]
+    if GitCredentials.credential(for: offer.remote.host) == nil {
+      lines.append(
+        offer.remote.host == "github.com"
+          ? "Git isn’t signed in to GitHub with full access here, so this needs \(device)’s own git credentials. You can sign in under Settings."
+          : "This needs \(device)’s own git credentials.")
+    }
+    return lines.joined(separator: "\n\n")
   }
 
   private var content: some View {

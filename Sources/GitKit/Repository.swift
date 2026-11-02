@@ -768,6 +768,34 @@ extension Repository {
     try await git(["remote", "add", "--", name, url])
   }
 
+  /// The remote using SSH, for a command that failed with `isSSHLoginFailure`: the current branch's first.
+  public func remoteOverSSH() async -> HTTPSRemote? {
+    var names = (try? await remotes()) ?? []
+    if let branch = try? await status().branch, let current = try? await pushRemote(for: branch) {
+      names = [current] + names.filter { $0 != current }
+    }
+    for name in names {
+      for arguments in [["--push", "--", name], ["--", name]] {
+        guard let url = try? await output(["remote", "get-url"] + arguments) else { continue }
+        let sshURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let remote = HTTPSRemote(remote: name, sshURL: sshURL) { return remote }
+      }
+    }
+    return nil
+  }
+
+  /// Moves a remote to its HTTPS address, once git can read from there: a wrong address changes nothing.
+  public func switchToHTTPS(_ remote: HTTPSRemote) async throws {
+    try await git(["ls-remote", "--", remote.url, "HEAD"], environment: credentials)
+    try await git(["remote", "set-url", "--", remote.remote, remote.url])
+    // A push URL of its own stays otherwise.
+    let pushURL = try await output(["remote", "get-url", "--push", "--", remote.remote])
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if HTTPSRemote(remote: remote.remote, sshURL: pushURL) != nil {
+      try await git(["remote", "set-url", "--push", "--", remote.remote, remote.url])
+    }
+  }
+
   /// The environment network commands run with: the runner's account's credentials.
   private var credentials: [String: String] { GitCredentials.environment(account: runner.credentialAccount) }
 

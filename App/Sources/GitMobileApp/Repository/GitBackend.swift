@@ -35,6 +35,9 @@ nonisolated protocol GitBackend: Sendable {
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws
   func pull(progress: @escaping @Sendable (String) -> Void) async throws
   func push(progress: @escaping @Sendable (String) -> Void) async throws
+  /// The remote to offer HTTPS for after git's ssh couldn't sign in.
+  func remoteOverSSH() async -> HTTPSRemote?
+  func switchToHTTPS(_ remote: HTTPSRemote) async throws
 }
 
 struct GitFeatures: OptionSet, Sendable {
@@ -112,6 +115,8 @@ nonisolated struct RemoteBackend: GitBackend {
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.fetch(progress: progress) }
   func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.pull(progress: progress) }
   func push(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.push(progress: progress) }
+  func remoteOverSSH() async -> HTTPSRemote? { await repository.remoteOverSSH() }
+  func switchToHTTPS(_ remote: HTTPSRemote) async throws { try await repository.switchToHTTPS(remote) }
 
   /// A renamed file's old path too, so both sides of the rename move together.
   private static func paths(_ changes: [FileChange]) -> [String] {
@@ -202,6 +207,9 @@ nonisolated struct LocalBackend: GitBackend {
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.fetch(progress: progress) }
   func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.pull(progress: progress) }
   func push(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.push(progress: progress) }
+  // GitEngine has no SSH, so it never tries a login that could fail.
+  func remoteOverSSH() async -> HTTPSRemote? { nil }
+  func switchToHTTPS(_ remote: HTTPSRemote) async throws { throw BackendError.unsupported("Switching a remote") }
 
   private static func paths(_ changes: [FileChange]) -> [String] {
     Array(Set(changes.flatMap { [$0.path, $0.originalPath].compactMap { $0 } })).sorted()

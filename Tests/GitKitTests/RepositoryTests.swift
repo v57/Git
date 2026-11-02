@@ -399,6 +399,61 @@ struct TempRepo {
     #expect(Repository.lastPush(inReflog: reflog) == Date(timeIntervalSince1970: 1_700_000_200))
   }
 
+  @Test func sshURLsHaveAnHTTPSAddress() {
+    func url(_ ssh: String) -> String? { HTTPSRemote(remote: "origin", sshURL: ssh)?.url }
+    #expect(url("git@github.com:v57/Git.git") == "https://github.com/v57/Git.git")
+    #expect(url("github.com:v57/Git.git") == "https://github.com/v57/Git.git")
+    #expect(url("ssh://git@github.com/v57/Git.git") == "https://github.com/v57/Git.git")
+    #expect(url("ssh://git@github.com:22/v57/Git.git") == "https://github.com/v57/Git.git")
+    #expect(url("git+ssh://git@example.com/Git") == "https://example.com/Git")
+    #expect(HTTPSRemote(remote: "origin", sshURL: "git@GitHub.com:v57/Git.git")?.host == "github.com")
+    for other in [
+      "https://github.com/v57/Git.git", "file:///tmp/Git.git", "/tmp/Git.git", "../Git.git", "./a:b", "git@host:",
+      "git@host:~/Git.git", "ssh://host",
+    ] {
+      #expect(url(other) == nil, "\(other)")
+    }
+  }
+
+  @Test func onlyALoginFailureOffersHTTPS() {
+    #expect(GitError(message: "Host key verification failed.\nfatal: Could not read from remote repository.").isSSHLoginFailure)
+    #expect(GitError(message: "git@github.com: Permission denied (publickey).").isSSHLoginFailure)
+    #expect(!GitError(message: "ssh: Could not resolve hostname github.com\nfatal: Could not read from remote repository.").isSSHLoginFailure)
+    #expect(!GitError(message: "error: cannot open .git/FETCH_HEAD: Permission denied").isSSHLoginFailure)
+  }
+
+  @Test func switchingToHTTPSMovesBothURLsOfTheRemoteInUse() async throws {
+    let upstream = try await TempRepo(bare: true)
+    let temp = try await TempRepo(in: upstream.root.deletingLastPathComponent())
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("init")
+    try await temp.repo.addRemote("backup", url: "/tmp/backup.git")
+    try await temp.repo.addRemote("origin", url: "git@example.test:v57/repo.git")
+    try await temp.repo.git(["remote", "set-url", "--push", "origin", "ssh://git@example.test/v57/repo.git"])
+    let offer = try #require(await temp.repo.remoteOverSSH())
+    #expect(offer == HTTPSRemote(remote: "origin", host: "example.test", url: "https://example.test/v57/repo.git"))
+
+    // A local path stands in for the HTTPS address, which the check before the switch reads from.
+    let local = HTTPSRemote(remote: "origin", host: "example.test", url: upstream.root.path)
+    try await temp.repo.switchToHTTPS(local)
+    #expect(try await temp.repo.remoteURL("origin") == upstream.root.path)
+    #expect(try await temp.repo.output(["remote", "get-url", "--push", "origin"]).contains(upstream.root.path))
+    #expect(await temp.repo.remoteOverSSH() == nil)
+    try await temp.repo.push()
+    #expect(try await temp.repo.status().upstream == "origin/main")
+  }
+
+  @Test func anAddressGitCannotReadLeavesTheRemoteAlone() async throws {
+    let temp = try await TempRepo()
+    let ssh = "git@example.test:v57/repo.git"
+    try await temp.repo.addRemote("origin", url: ssh)
+    let missing = temp.root.deletingLastPathComponent().appendingPathComponent("missing.git").path
+    await #expect(throws: GitError.self) {
+      try await temp.repo.switchToHTTPS(HTTPSRemote(remote: "origin", host: "example.test", url: missing))
+    }
+    #expect(try await temp.repo.remoteURL("origin") == ssh)
+  }
+
   @Test func publishAddsTheRemoteAndTracksIt() async throws {
     let remote = try await TempRepo(bare: true)
     let temp = try await TempRepo(in: remote.root.deletingLastPathComponent())

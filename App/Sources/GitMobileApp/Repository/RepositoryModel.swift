@@ -46,6 +46,14 @@ enum RepositorySource: Hashable, Identifiable {
     var message: String
   }
 
+  /// A sync git's ssh couldn't sign in for, and the HTTPS address that could take over.
+  struct HTTPSOffer {
+    var action: SyncAction
+    var remote: HTTPSRemote
+    /// What ssh said.
+    var reason: String
+  }
+
   let source: RepositorySource
   private(set) var phase: Phase
   private(set) var backend: (any GitBackend)?
@@ -66,6 +74,7 @@ enum RepositorySource: Hashable, Identifiable {
   /// Increments after every refresh, so open diffs reload.
   private(set) var revision = 0
   var failure: Failure?
+  var httpsOffer: HTTPSOffer?
 
   static let pageSize = 100
 
@@ -308,10 +317,32 @@ enum RepositorySource: Hashable, Identifiable {
       Task { @MainActor in self?.progress = line }
     }
     switch action {
-    case .fetch: await perform("Fetching…", failure: "Couldn’t Fetch") { try await $0.fetch(progress: report) }
-    case .pull: await perform("Pulling…", failure: "Couldn’t Pull") { try await $0.pull(progress: report) }
-    case .push: await perform("Pushing…", failure: "Couldn’t Push") { try await $0.push(progress: report) }
+    case .fetch: await sync(action, "Fetching…", "Couldn’t Fetch") { try await $0.fetch(progress: report) }
+    case .pull: await sync(action, "Pulling…", "Couldn’t Pull") { try await $0.pull(progress: report) }
+    case .push: await sync(action, "Pushing…", "Couldn’t Push") { try await $0.push(progress: report) }
     }
+  }
+
+  /// Runs a sync; one git's ssh couldn't sign in for asks to go on over HTTPS instead of failing.
+  private func sync(
+    _ action: SyncAction, _ title: String, _ failure: String, _ run: @escaping (any GitBackend) async throws -> Void
+  ) async {
+    await perform(title, failure: failure) { backend in
+      do {
+        try await run(backend)
+      } catch let error as GitError where error.isSSHLoginFailure {
+        guard let remote = await backend.remoteOverSSH() else { throw error }
+        self.httpsOffer = HTTPSOffer(action: action, remote: remote, reason: error.message)
+      }
+    }
+  }
+
+  /// Moves the remote to HTTPS and runs the sync again.
+  func acceptHTTPS(_ offer: HTTPSOffer) async {
+    let switched = await perform("Switching to HTTPS…", failure: "Couldn’t Switch to HTTPS") {
+      try await $0.switchToHTTPS(offer.remote)
+    }
+    if switched { await sync(offer.action) }
   }
 
   func report(_ error: Error, title: String) {
