@@ -23,8 +23,7 @@ struct SettingsView: View {
       SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
         VaultAccountsSettings()
       }
-      SettingsPane("Devices", systemImage: "laptopcomputer", hue: .blue, section: "v57") { VaultDevicesSettings() }
-      // Git on iPhone and iPad runs this Mac's git over SSH: which devices can sign in, and the other keys.
+      // Your devices, and Git on iPhone and iPad runs this Mac's git over SSH: which can sign in, and the other keys.
       SettingsPane("Remote", systemImage: "network", hue: .teal, section: "v57") { VaultRemoteSettings() }
     }
     .frame(width: 680, height: 460)
