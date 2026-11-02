@@ -21,8 +21,16 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Assets.xcassets,
+				"Git-iOS-Info.plist",
 			);
 			target = 617105000000000100000000 /* Git iOS */;
+		};
+		000000000000000000000011 /* Exceptions for "Resources" folder in "Git" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				"Git-iOS-Info.plist",
+			);
+			target = 000000000000000100000000 /* Git */;
 		};
 /* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
 
@@ -42,6 +50,7 @@
 		A10000000000000000000030 /* Resources */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			exceptions = (
+				000000000000000000000011 /* Exceptions for "Resources" folder in "Git" target */,
 				617105000000000000000011 /* Exceptions for "Resources" folder in "Git iOS" target */,
 			);
 			name = Resources;
@@ -416,7 +425,7 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Git signs in to your Macs over SSH to work with the repositories there.";
-				INFOPLIST_KEY_UIBackgroundModes = remote-notification;
+				INFOPLIST_FILE = "App/Resources/Git-iOS-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
@@ -456,7 +465,7 @@
 				INFOPLIST_KEY_LSSupportsOpeningDocumentsInPlace = YES;
 				INFOPLIST_KEY_NSHumanReadableCopyright = "Copyright © 2026 Dmitry Kozlov. MIT License.";
 				INFOPLIST_KEY_NSLocalNetworkUsageDescription = "Git signs in to your Macs over SSH to work with the repositories there.";
-				INFOPLIST_KEY_UIBackgroundModes = remote-notification;
+				INFOPLIST_FILE = "App/Resources/Git-iOS-Info.plist";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UIFileSharingEnabled = YES;
