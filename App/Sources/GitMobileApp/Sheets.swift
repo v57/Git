@@ -6,6 +6,7 @@ import GitRemote
 import GitUI
 import SwiftUI
 import VaultKit
+import VaultUI
 
 /// Clone: an HTTPS URL (or `owner/repo` for GitHub) into a folder of its name on this device, with git's progress
 /// while it fetches.
@@ -220,8 +221,8 @@ struct NewBranchSheet: View {
   }
 }
 
-/// Settings: the GitHub sign-in for cloning private repositories and pushing. Who commits is the vault's Your Name,
-/// asked at the first commit that needs it.
+/// Settings: the GitHub sign-in for cloning private repositories and pushing, and the user's devices. Who commits is
+/// the vault's Your Name, asked at the first commit that needs it.
 struct SettingsSheet: View {
   @Environment(\.kitDismiss) private var dismiss
 
@@ -229,6 +230,7 @@ struct SettingsSheet: View {
     // The sheet's body scrolls itself, fading under the header and over the footer.
     KitSheet(title: "Settings", systemImage: "gearshape", hue: .gray) {
       GitHubSettingsView()
+      VaultDevicesSettings()
     } footer: {
       Button("Done") { dismiss() }
       .buttonStyle(.kitPrimary)
