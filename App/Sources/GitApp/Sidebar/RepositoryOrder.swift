@@ -2,7 +2,7 @@ import ComponentKit
 import Foundation
 import GitKit
 
-/// How the Repositories section orders a long list (its Sort and Filter menu).
+/// How the Repositories section orders a long list (its header's context menu).
 enum RepositorySort: String, CaseIterable, Identifiable {
   /// The folders' own order (dragged by hand), or by name without folders.
   case name
