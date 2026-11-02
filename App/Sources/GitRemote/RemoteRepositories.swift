@@ -199,6 +199,16 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
       failures.isEmpty ? "\(repository.name) isn’t on a device Git can reach." : failures.joined(separator: "\n"))
   }
 
+  /// Runs `action` in the repository over a connection just for this; how it is afterwards, when that can be read.
+  public static func run(
+    _ action: RemoteAction, on repository: RemoteRepository, vault: Vault = .shared
+  ) async throws -> RepositorySummary? {
+    let opened = try await open(repository, vault: vault)
+    defer { opened.transport.close() }
+    try await action.run(in: opened.repository)
+    return (try? await opened.repository.summaryStatus()).map { RepositorySummary($0) }
+  }
+
   /// An error's message for the screen.
   public static func describe(_ error: Error) -> String {
     if let error = error as? GitError { return error.message }

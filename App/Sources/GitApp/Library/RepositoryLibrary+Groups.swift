@@ -100,35 +100,6 @@ struct SidebarLayout {
   }
 }
 
-/// A network operation started on repositories from the sidebar.
-enum RemoteAction: String {
-  case fetch, pull, push
-
-  var title: String {
-    switch self {
-    case .fetch: "Fetch"
-    case .pull: "Pull"
-    case .push: "Push"
-    }
-  }
-
-  var systemImage: String {
-    switch self {
-    case .fetch: "arrow.clockwise"
-    case .pull: "arrow.down.to.line"
-    case .push: "arrow.up.to.line"
-    }
-  }
-
-  func run(in repository: Repository) async throws {
-    switch self {
-    case .fetch: try await repository.fetch()
-    case .pull: try await repository.pull()
-    case .push: try await repository.push()
-    }
-  }
-}
-
 /// How a sidebar fetch, pull or push ended; `count` grows with each, so the row's effect plays again.
 struct RemoteOutcome: Equatable {
   var action: RemoteAction
@@ -144,12 +115,6 @@ struct RemoteOutcome: Equatable {
     case .push: return .send("arrow.up.circle.fill")
     }
   }
-}
-
-struct RemoteFailure: Identifiable {
-  let id = UUID()
-  var title: String
-  var message: String
 }
 
 extension RepositoryLibrary {
@@ -190,16 +155,7 @@ extension RepositoryLibrary {
   func moveOut(_ itemIDs: [String], context: ModelContext) {
     let layout = layout(context)
     let ids = itemIDs.compactMap(layout.vaultID(of:))
-    vault.perform { store in
-      let tree = try store.projectTree()
-      let byGroup = Dictionary(grouping: ids.filter { tree.parent(of: $0) != nil }) { tree.parent(of: $0)! }
-      for (groupID, ids) in byGroup {
-        let parent = tree.parent(of: groupID)
-        let siblings = tree.children(of: parent).map(\.id)
-        let next = siblings.firstIndex(of: groupID).flatMap { $0 + 1 < siblings.count ? siblings[$0 + 1] : nil }
-        try store.moveProjects(ids, into: parent, before: next)
-      }
-    }
+    vault.perform { try $0.moveProjectsOut(ids) }
   }
 
   // MARK: Groups
@@ -357,14 +313,7 @@ extension RepositoryLibrary {
         addNext()
       }
     }
-    guard !failures.isEmpty else { return }
-    let noun = failures.count == 1 ? "repository" : "\(failures.count) repositories"
-    remoteFailure = RemoteFailure(
-      title: "Couldn't \(action.title.lowercased()) \(failures.count == 1 ? failures[0].name : noun)",
-      message: failures.map { failure in
-        let message = failure.message.split(separator: "\n").prefix(3).joined(separator: "\n")
-        return failures.count == 1 ? message : "\(failure.name): \(message)"
-      }.joined(separator: "\n\n"))
+    if let failure = RemoteFailure(action, failures: failures) { remoteFailure = failure }
   }
 
   /// Runs `action` in a repository on another device: in its session when it's open, else over a connection just for
@@ -374,10 +323,7 @@ extension RepositoryLibrary {
     guard let repository = remoteRepository(key) else {
       throw GitError(message: "The repository isn’t on any of your devices any more.")
     }
-    let opened = try await RemoteRepositories.open(repository, vault: vault)
-    defer { opened.transport.close() }
-    try await action.run(in: opened.repository)
-    if let status = try? await opened.repository.summaryStatus() { checked(key, RepositorySummary(status)) }
+    if let summary = try await RemoteRepositories.run(action, on: repository, vault: vault) { checked(key, summary) }
   }
 
   // MARK: Left out of On Your Devices

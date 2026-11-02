@@ -1,6 +1,7 @@
 import ComponentKit
 import GitEngine
 import GitHubKit
+import GitKit
 import GitRemote
 import GitUI
 import SwiftUI
@@ -41,6 +42,7 @@ struct RepositoriesView: View {
   @State private var savedRevision = 0
   /// Asks for the name and email at the first commit that needs them.
   @State private var profiles = VaultProfileRequest()
+  @State private var groups = RemoteGroups()
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
 
@@ -96,7 +98,7 @@ struct RepositoriesView: View {
 
   private var sidebar: some View {
     RepositoriesSidebar(
-      local: local.repositories, remote: remote, tree: remoteTree, selection: $selection,
+      local: local.repositories, remote: remote, tree: remoteTree, groups: groups, selection: $selection,
       columnVisibility: $columnVisibility, sheet: $sheet
     ) { source in
       remove(source)
@@ -135,11 +137,17 @@ struct RepositoriesView: View {
         if let source = sources.first(where: { $0.id == selection }) {
           RepositoryScreen(source: source).id(source.id)
         } else {
-          RepositoriesWelcome(sources: sources, selection: $selection, sheet: $sheet)
+          RepositoriesWelcome(sources: sources.filter(isListed), selection: $selection, sheet: $sheet)
         }
       }
       .kitSidebarToggle(columnVisibility: $columnVisibility)
     }
+  }
+
+  /// Not left out of the list by a group's Hide or Remove.
+  private func isListed(_ source: RepositorySource) -> Bool {
+    guard case .remote(let repository) = source else { return true }
+    return !groups.hidden.contains(repository.id) && !groups.removed.contains(repository.id)
   }
 
   private func remove(_ source: RepositorySource) {
@@ -214,6 +222,7 @@ struct RepositoriesSidebar: View {
   let remote: [RemoteRepository]
   /// The vault's projects among `remote`, in their groups.
   let tree: VaultProjectTree
+  @Bindable var groups: RemoteGroups
   @Binding var selection: RepositorySource.ID?
   @Binding var columnVisibility: NavigationSplitViewVisibility
   @Binding var sheet: LibrarySheet?
@@ -222,7 +231,17 @@ struct RepositoriesSidebar: View {
   @State private var pendingRemoval: RepositorySource?
   @State private var showsAddMenu = false
   @State private var collapsedGroups: Set<String> = []
+  /// One switch with the Mac's Show Hidden.
+  @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
   @Environment(\.kitIdiom) private var idiom
+
+  /// What the groups' menus act on: all but the removed.
+  private var listed: VaultProjectTree { tree.filter { !groups.removed.contains($0.id) } }
+
+  /// Not hidden (or Show Hidden is on), or the open one.
+  private func isShown(_ project: VaultProject) -> Bool {
+    showsHidden || !groups.hidden.contains(project.id) || selection == "remote:" + project.id
+  }
 
   /// The folders opened on a Mac here, which aren't vault projects.
   private var opened: [RemoteRepository] { remote.filter { tree.node(id: $0.id) == nil } }
@@ -273,15 +292,23 @@ struct RepositoriesSidebar: View {
           }
       }
       VaultProjectsSection(
-        tree.filter { matches($0.name) }, selection: projectSelection, key: "remoteProjects",
+        listed.filter { matches($0.name) && isShown($0) }, selection: projectSelection, key: "remoteProjects",
         collapsedGroups: $collapsedGroups
-      )
+      ) {
+        titleMenu
+      }
       .title("On Your Devices")
       .renamableGroups { group, name in
         var group = group
         group.name = name
         Vault.shared.save(group)
       }
+      .groupMenu { group, rename in groupMenu(group, rename: rename) }
+      .groupTrailing(whenOpen: true) { _, projects in groupCounts(projects) }
+      .groupStatus { _, projects in
+        members(projects).contains { groups.activity[$0.id] != nil } ? .working : .idle
+      }
+      .rowDimmed { groups.hidden.contains($0.id) }
       .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
       .trailing { project in
         HStack(spacing: 8) {
@@ -294,8 +321,12 @@ struct RepositoriesSidebar: View {
           .labelStyle(.iconOnly)
       }
       .emptyState {
-        Text("Projects on the devices of your Hub appear here, in their groups. Open a folder on any SSH host with Open on a Mac.")
-          .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
+        Text(
+          tree.projects().isEmpty
+            ? "Projects on the devices of your Hub appear here, in their groups. Open a folder on any SSH host with Open on a Mac."
+            : search.isEmpty ? "All hidden or removed." : "No repositories match “\(search)”."
+        )
+        .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
       }
       if !opened.isEmpty {
         KitSection(
@@ -333,6 +364,7 @@ struct RepositoriesSidebar: View {
       }
     }
     .navigationTitle("Git")
+    .kitNotice(item: $groups.failure, title: \.title, message: \.message)
     .kitConfirmation(
       "Delete \(pendingRemoval?.name ?? "")?",
       isPresented: .init(get: { pendingRemoval != nil }, set: { if !$0 { pendingRemoval = nil } }),
@@ -351,10 +383,95 @@ struct RepositoriesSidebar: View {
     return branch + " · " + places
   }
 
-  /// Its changes and commits to push and pull when its device last said (the vault's status).
+  /// What's running on it, else its changes and commits to push and pull when this device or its own last looked.
   @ViewBuilder private func lastSeen(_ repository: RemoteRepository) -> some View {
-    if let status = repository.lastSeen?.status {
-      SyncCounts(changes: status.changeCount, ahead: status.ahead, behind: status.behind)
+    if let activity = groups.activity[repository.id] {
+      Text("\(activity.title)ing…").kitFont(.caption).foregroundStyle(.kitSecondary)
+    } else if let summary = groups.summary(of: repository) {
+      SyncCounts(changes: summary.changeCount, ahead: summary.ahead, behind: summary.behind)
+    }
+  }
+
+  // MARK: Groups
+
+  private func members(_ projects: [VaultProject]) -> [RemoteRepository] {
+    projects.compactMap { project in remote.first { $0.id == project.id } }
+  }
+
+  /// The summed state of a group's repositories, the hidden ones aside, as the Mac's groups show.
+  private func groupCounts(_ projects: [VaultProject]) -> some View {
+    let summary = RepositorySummary(
+      combining: members(projects).filter { !groups.hidden.contains($0.id) }.compactMap(groups.summary))
+    return SyncCounts(changes: summary.changeCount, ahead: summary.ahead, behind: summary.behind)
+  }
+
+  /// The Mac's group menu, but for Show in Finder: there's no folder here.
+  @ViewBuilder private func groupMenu(_ group: VaultProjectGroup, rename: @escaping () -> Void) -> some View {
+    let tree = listed
+    let members = members(tree.projects(in: group.id))
+    let ids = members.map(\.id)
+    let parent = tree.parent(of: group.id)
+    // Groups it can move into: not itself, not one inside it, not the one it is in.
+    let destinations = tree.groups.filter { !tree.isWithin($0.id, group.id) && $0.id != parent }
+    ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
+      let targets = action == .push ? members.filter { groups.summary(of: $0).map { $0.hasUpstream && $0.ahead > 0 } ?? false } : members
+      Button(action.title + " All", systemImage: action.systemImage) { Task { await groups.run(action, on: targets) } }
+        .disabled(targets.allSatisfy { groups.activity[$0.id] != nil })
+    }
+    Divider()
+    Button("Rename…", systemImage: "pencil", action: rename)
+    Button("Ungroup", systemImage: "folder.badge.minus") {
+      withAnimation(.kit) { Vault.shared.perform { try $0.ungroupProjects(group.id) } }
+      collapsedGroups.remove(group.id)
+    }
+    if !destinations.isEmpty {
+      KitSubmenu("Move to Group", systemImage: "folder") {
+        ForEach(destinations) { destination in
+          Button(title(of: destination, in: tree)) {
+            withAnimation(.kit) { Vault.shared.perform { try $0.moveProjects([group.id], into: destination.id) } }
+          }
+        }
+      }
+    }
+    if parent != nil {
+      Button("Move Out of Group", systemImage: "arrow.up.left") {
+        withAnimation(.kit) { Vault.shared.perform { try $0.moveProjectsOut([group.id]) } }
+      }
+    }
+    Divider()
+    if ids.allSatisfy(groups.hidden.contains) {
+      Button("Unhide Group", systemImage: "eye") { withAnimation(.kit) { groups.setHidden(ids, false) } }
+    } else {
+      Button("Hide Group", systemImage: "eye.slash") { withAnimation(.kit) { groups.setHidden(ids, true) } }
+    }
+    Button("Remove Group from List", systemImage: "minus.circle") {
+      if let selection, ids.contains(where: { "remote:" + $0 == selection }) { self.selection = nil }
+      withAnimation(.kit) { groups.remove(ids) }
+    }
+  }
+
+  /// "v57 › Agentus (Developer)": a group with the groups it is in, and its note.
+  private func title(of group: VaultProjectGroup, in tree: VaultProjectTree) -> String {
+    let title = (tree.ancestors(of: group.id).map(\.name) + [group.name]).joined(separator: " › ")
+    guard let note = group.note, !note.isEmpty else { return title }
+    return "\(title) (\(note))"
+  }
+
+  /// The way back to what the groups' menus left out.
+  @ViewBuilder private var titleMenu: some View {
+    let hidden = listed.projects().count { groups.hidden.contains($0.id) }
+    let removed = tree.projects().map(\.id).filter(groups.removed.contains)
+    if hidden > 0 || !removed.isEmpty {
+      if hidden > 0 {
+        Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hidden) Hidden", systemImage: "eye") {
+          withAnimation(.kit) { showsHidden.toggle() }
+        }
+      }
+      if !removed.isEmpty {
+        Button("Restore \(removed.count) Removed", systemImage: "arrow.uturn.backward") {
+          withAnimation(.kit) { groups.restore(removed) }
+        }
+      }
     }
   }
 
