@@ -231,6 +231,8 @@ struct RepositoriesSidebar: View {
   @State private var pendingRemoval: RepositorySource?
   @State private var showsAddMenu = false
   @State private var collapsedGroups: Set<String> = []
+  /// On Your Devices, folded at launch.
+  @State private var isRemoteOpen = false
   /// One switch with the Mac's Show Hidden.
   @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
   @Environment(\.kitIdiom) private var idiom
@@ -298,6 +300,8 @@ struct RepositoriesSidebar: View {
         titleMenu
       }
       .title("On Your Devices")
+      // A search still shows what it finds, and an empty list says why.
+      .isExpanded(.init(get: { isRemoteOpen || !search.isEmpty || listed.projects().isEmpty }, set: { isRemoteOpen = $0 }))
       .renamableGroups { group, name in
         var group = group
         group.name = name

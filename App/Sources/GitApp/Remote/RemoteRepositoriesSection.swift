@@ -20,7 +20,8 @@ struct RemoteRepositoriesSection: View {
   let shown: String?
   let filter: String
   @State private var collapsedGroups: Set<String> = []
-  @State private var isExpanded = true
+  /// Folded at launch.
+  @State private var isExpanded = false
   @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
   /// One switch with the Repositories list's Show Hidden.
   @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
@@ -84,8 +85,8 @@ struct RemoteRepositoriesSection: View {
           GroupHelpDetail(help: groupHelp(projects, remote))
         }
         .rowDimmed { library.hiddenRemotes.contains($0.id) }
-        // Folded with the Repositories list, and a search still shows what it finds.
-        .isExpanded(.init(get: { isExpanded || (projectsLayout == .folding && !filter.isEmpty) }, set: { isExpanded = $0 }))
+        // A search still shows what it finds.
+        .isExpanded(.init(get: { isExpanded || !filter.isEmpty }, set: { isExpanded = $0 }))
         .rowContent(projectsLayout == .inline) { project in inlineWorkspace(remote.first { $0.id == project.id }) }
         .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
         .trailing { project in
@@ -93,6 +94,8 @@ struct RemoteRepositoriesSection: View {
         }
         .onChange(of: selection, initial: true) { _, new in
           if projectsLayout == .folding, new != nil { isExpanded = false }
+          // Its Workspace goes under its row here, so the list stays open around it.
+          if projectsLayout == .inline, let new, library.remoteRepository(new) != nil { isExpanded = true }
         }
         .onChange(of: projectsLayout) { _, new in isExpanded = !(new == .folding && selection != nil) }
       }
