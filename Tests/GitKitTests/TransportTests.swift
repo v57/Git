@@ -82,6 +82,37 @@ final class RecordingTransport: GitTransport, @unchecked Sendable {
     #expect(calls.contains("discard new.txt"))
   }
 
+  /// As the SSH transport runs it: the script as a shell's argument, the secrets ahead of git's own input on stdin.
+  @Test(arguments: ["/bin/sh", "/bin/zsh", "/bin/bash"])
+  func credentialsReachGitOverStdinInAShell(shell: String) async throws {
+    let account = UUID().uuidString
+    GitCredentials.set(GitCredential(username: "aiko", password: "token 'with' $pecial"), for: "example.test", account: account)
+    defer { GitCredentials.set(nil, for: "example.test", account: account) }
+    let environment = GitCredentials.environment(account: account)
+    let secrets = GitCredentials.shellSecrets(in: environment)
+    #expect(!secrets.script.contains("token"))
+    #expect(!secrets.script.contains("aiko"))
+
+    let process = Process()
+    process.executableURL = URL(fileURLWithPath: shell)
+    process.arguments = ["-c", secrets.script + "exec git credential fill"]
+    process.environment = ProcessInfo.processInfo.environment
+      .merging(environment.filter { !GitCredentials.isSecret($0.key) }) { $1 }
+      .merging(["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1"]) { $1 }
+    let input = Pipe()
+    let output = Pipe()
+    process.standardInput = input
+    process.standardOutput = output
+    try process.run()
+    try input.fileHandleForWriting.write(contentsOf: secrets.input + Data("protocol=https\nhost=example.test\n\n".utf8))
+    try input.fileHandleForWriting.close()
+    let filled = String(decoding: output.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    #expect(filled.contains("username=aiko\n"))
+    #expect(filled.contains("password=token 'with' $pecial\n"))
+  }
+
   @Test func failsWithGitsMessageAndTimesOut() async throws {
     let temp = try await TempRepo()
     var runner = TempRepo.runner

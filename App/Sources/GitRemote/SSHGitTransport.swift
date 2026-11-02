@@ -72,11 +72,16 @@ public nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendabl
     _ arguments: [String], in directory: URL?, input: Data?, environment: [String: String],
     progress: (@Sendable (String) -> Void)?
   ) async throws -> GitResult {
-    var script = environment.keys.sorted().map { "export \($0)=\(Self.quote(environment[$0]!)); " }.joined()
+    // The script is `$SHELL -c`'s argument, which `ps` shows there: credentials come over stdin, ahead of git's input.
+    let secrets = GitCredentials.shellSecrets(in: environment)
+    var script = secrets.script
+    script += environment.keys.sorted().filter { !GitCredentials.isSecret($0) }
+      .map { "export \($0)=\(Self.quote(environment[$0]!)); " }.joined()
     if let directory { script += "cd \(Self.path(directory.path)) && " }
     script += "exec git " + arguments.map(Self.quote).joined(separator: " ")
     let lines = progress.map(LineSplitter.init)
-    let output = try await shell(script, input: input, onError: lines.map { lines in { lines.append($0) } })
+    let output = try await shell(
+      script, input: secrets.input + (input ?? Data()), onError: lines.map { lines in { lines.append($0) } })
     lines?.finish()
     // A command ended by a signal reports no status: it failed.
     return GitResult(stdout: output.stdout, stderr: output.stderr, exitCode: output.status ?? 255)

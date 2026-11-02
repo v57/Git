@@ -18,7 +18,8 @@ public struct GitCredential: Sendable, Hashable {
 /// process environment. The helpers configured for that host before it (osxkeychain, gh, …) are
 /// cleared, so git neither reads the user's stored credential nor saves the app's token anywhere.
 /// The token reaches git only through that one process's environment, never its arguments, which
-/// other users can read with `ps`.
+/// other users can read with `ps`. On another machine it gets there over the command's stdin
+/// (`shellSecrets`), since the command's text is an argument too.
 ///
 /// Each account (an app's sign-in, e.g. a vault account's GitHub sign-in) has its own credentials;
 /// `nil` is the default one. A repository uses its runner's `credentialAccount`, so two windows
@@ -70,5 +71,19 @@ public enum GitCredentials {
     }
     environment["GIT_CONFIG_COUNT"] = String(count)
     return environment
+  }
+
+  /// Whether an entry of `environment(account:)` is a username or password.
+  public static func isSecret(_ name: String) -> Bool {
+    name.hasPrefix("GITKIT_USERNAME_") || name.hasPrefix("GITKIT_PASSWORD_")
+  }
+
+  /// For a command given to a shell as text: the start of a script that reads `environment`'s
+  /// secrets from stdin and exports them, and the lines to send it. A shell's `read` takes no more
+  /// than its line, so what follows on stdin stays for the command.
+  public static func shellSecrets(in environment: [String: String]) -> (script: String, input: Data) {
+    let names = environment.keys.filter(isSecret).sorted()
+    let script = names.map { "IFS= read -r \($0); export \($0); " }.joined()
+    return (script, Data(names.map { environment[$0]! + "\n" }.joined().utf8))
   }
 }

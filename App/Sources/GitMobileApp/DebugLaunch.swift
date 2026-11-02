@@ -18,6 +18,7 @@
   /// - `GIT_DEBUG_SHOW`: `history`, `commit:<index>` or `diff:<path>`, once the repository is open.
   /// - `GIT_DEBUG_PERFORM`: steps separated by `;`: `stage:<path>`, `stageAll`, `unstageAll`, `commit:<message>`,
   ///   `fetch`, `pull`, `push`, `branch:<name>`, `switch:<name>`, run in order once it's open.
+  /// - `GIT_DEBUG_CREDENTIAL`: `host:username:password`, a made-up sign-in git gets for that host.
   ///
   /// The open repository's state goes to `Library/Caches/git-debug-state.txt` in the app's container as it changes:
   ///
@@ -66,6 +67,9 @@
 
     /// Shows `GIT_DEBUG_SHOW`, runs `GIT_DEBUG_PERFORM`, and keeps writing the state.
     static func attach(to model: RepositoryModel, pane: Binding<RepositoryScreen.Pane>) async {
+      if let parts = environment["GIT_DEBUG_CREDENTIAL"]?.split(separator: ":", maxSplits: 2), parts.count == 3 {
+        GitCredentials.set(GitCredential(username: String(parts[1]), password: String(parts[2])), for: String(parts[0]))
+      }
       Task { [weak model] in
         var written = ""
         while let model {
