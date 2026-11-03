@@ -190,12 +190,17 @@ struct RepositoryScreen: View {
   }
 
   var body: some View {
-    ZStack {
-      content
-        .id(screenID)
-        .transition(.page)
+    VStack(spacing: 0) {
+      if session.repository.isRemote {
+        OtherDeviceSecurityBanner().padding(.horizontal, KitMetrics.gutter).padding(.top, 8)
+      }
+      ZStack {
+        content
+          .id(screenID)
+          .transition(.page)
+      }
+      .animation(.kit, value: screenID)
     }
-    .animation(.kit, value: screenID)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       // The commit toast (Undo, Push), for this repository only.
       .kitToasts()

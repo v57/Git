@@ -193,12 +193,12 @@ private struct RepositorySections: View {
           SidebarRow(remote, systemImage: "cloud") {
             if let date = session.lastFetched { Text("fetched \(date.kitFormatted(.ago))") }
           }
-          .action { Task { await session.fetch() } }
+          .action { if GitSecurity.refusal(for: session.repository) == nil { Task { await session.fetch() } } }
           .kitHelp(remote, meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
         }
       } accessory: {
         Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
-          .disabled(session.isBusy)
+          .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
           .kitHelp("Fetch", shortcut: "⇧⌘F", meta: "Fetch \(remotes.joined(separator: ", "))", systemImage: "arrow.clockwise", hue: .blue)
       }
       .kitSticky(top: .titleWhileVisible, bottom: .title)

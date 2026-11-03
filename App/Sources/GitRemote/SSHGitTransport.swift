@@ -12,6 +12,7 @@ import SSHKit
 /// credentials apply.
 public nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendable {
   public let target: RemoteTarget
+  public var machineID: String { target.id }
   private let login: @Sendable () async throws -> SSHServer
   private let onNewHostKey: @Sendable (String) -> Void
   private let lock = NSLock()

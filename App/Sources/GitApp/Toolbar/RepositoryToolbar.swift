@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import SwiftData
 import SwiftUI
 
@@ -102,6 +103,7 @@ private struct SyncButtons: View {
   private var summary: RepositorySummary? {
     session.revision == 0 ? library.summaries[library.key(of: session)] : nil
   }
+  private var refusal: String? { GitSecurity.refusal(for: session.repository) }
   private var ahead: Int { session.status?.ahead ?? summary?.ahead ?? 0 }
   private var hasUpstream: Bool { session.status.map { $0.upstream != nil } ?? summary?.hasUpstream ?? false }
   private var hasRemote: Bool { summary.map(\.hasUpstream) ?? !session.remotes.isEmpty }
@@ -113,17 +115,17 @@ private struct SyncButtons: View {
     Button(session.activity == .fetching ? "Fetching…" : "Fetch", systemImage: "arrow.clockwise") {
       Task { await count(session.fetch(), into: $fetched) }
     }
-    .disabled(!hasRemote || session.isBusy)
+    .disabled(!hasRemote || session.isBusy || refusal != nil)
     .kitHelp(
-      "Fetch", shortcut: "⇧⌘F", meta: fetchHelp, systemImage: "arrow.clockwise", hue: .blue,
+      "Fetch", shortcut: "⇧⌘F", meta: refusal ?? fetchHelp, systemImage: "arrow.clockwise", hue: .blue,
       status: session.activity == .fetching ? session.workStatus : .idle)
     .effect(.shimmer, on: fetched)
     Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
       Task { await count(session.pull(), into: $pulled) }
     }
-    .disabled(!hasUpstream || session.isBusy)
+    .disabled(!hasUpstream || session.isBusy || refusal != nil)
     .kitHelp(
-      "Pull", shortcut: "⇧⌘P", meta: hasUpstream ? "From \(session.status?.upstream ?? "")" : "This branch has no upstream",
+      "Pull", shortcut: "⇧⌘P", meta: refusal ?? (hasUpstream ? "From \(session.status?.upstream ?? "")" : "This branch has no upstream"),
       systemImage: "arrow.down.to.line", hue: .blue,
       status: session.activity == .pulling ? session.workStatus : .idle)
     .effect(.receive("arrow.down.circle.fill"), on: pulled)
@@ -145,15 +147,15 @@ private struct SyncButtons: View {
       }
       .animation(.kit, value: ahead)
     }
-    .disabled(!canPush || session.isBusy)
+    .disabled(!canPush || session.isBusy || refusal != nil)
     .kitHelp(
-      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: pushHelp,
+      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: refusal ?? pushHelp,
       systemImage: "arrow.up.to.line", hue: .blue,
       status: session.activity == .pushing ? session.workStatus : .idle)
     .effect(.send("arrow.up.circle.fill"), on: pushed)
     .kitContextMenu {
       Button("Force Push…", systemImage: "exclamationmark.arrow.triangle.2.circlepath") { confirmForcePush = true }
-        .disabled(!hasUpstream || session.isBusy)
+        .disabled(!hasUpstream || session.isBusy || refusal != nil)
     }
     .effect(.failure, on: failed)
     .kitConfirmation(

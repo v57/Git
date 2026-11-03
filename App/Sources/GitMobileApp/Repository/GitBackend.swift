@@ -204,9 +204,16 @@ nonisolated struct LocalBackend: GitBackend {
   func branches() async throws -> [Branch] { try await repository.branches() }
   func switchTo(_ branch: Branch) async throws { try await repository.switchTo(branch) }
   func createBranch(_ name: String) async throws { try await repository.createBranch(name) }
-  func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.fetch(progress: progress) }
-  func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.pull(progress: progress) }
-  func push(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.push(progress: progress) }
+  func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.fetch, progress) }
+  func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.pull, progress) }
+  func push(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.push(force: false), progress) }
+
+  /// There's no git here to fall back on: always in the app, at the level's rules for addresses.
+  private func network(_ action: GitNetworkAction, _ progress: @escaping @Sendable (String) -> Void) async throws {
+    let request = GitNetworkRequest(level: await GitNetwork.level(), progress: progress)
+    _ = try await GitEngineNetwork().perform(action, in: repository.url, request: request)
+  }
+
   // GitEngine's own login says what to do when it fails: the key is this device's, not another machine's.
   func remoteOverSSH() async -> HTTPSRemote? { nil }
   func switchToHTTPS(_ remote: HTTPSRemote) async throws { throw BackendError.unsupported("Switching a remote") }

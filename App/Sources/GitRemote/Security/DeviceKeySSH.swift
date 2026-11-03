@@ -1,16 +1,21 @@
+#if canImport(GitEngine)
 import Foundation
 import GitEngine
-import GitRemote
 import SSHKit
 import VaultKit
 
-/// How repositories on this device reach SSH remotes: GitEngine speaks git, and this logs in with the key the vault
-/// keeps for this device. A host it hasn't met is remembered in the vault on first use and a changed key is refused,
-/// as for the user's other SSH hosts.
+/// How GitEngine reaches SSH remotes: it speaks git, and this logs in with the key the vault keeps for this device. A
+/// host it hasn't met is remembered in the vault on first use and a changed key is refused, as for the user's other
+/// SSH hosts; `~/.ssh` plays no part.
 enum DeviceKeySSH {
   static func install() {
     GitSSH.setConnector { address, command in
-      let login = try await MainActor.run { try server(for: address) }
+      let login: SSHServer
+      do {
+        login = try await MainActor.run { try server(for: address) }
+      } catch {
+        throw GitEngineError(.authentication, "This device has no SSH key to sign in with: \(error.localizedDescription)")
+      }
       do {
         let connection = try await SSHConnection.connect(server: login)
         if login.knownFingerprint == nil {
@@ -23,7 +28,7 @@ enum DeviceKeySSH {
       } catch SSHTunnelError.authenticationFailed {
         throw GitEngineError(
           .authentication,
-          "\(address.host) didn’t accept this device’s SSH key. Copy it from Settings and add it to your account there.")
+          "\(address.host) didn’t accept this device’s SSH key. Copy it from Settings ▸ Security and add it to your account there.")
       } catch let error as SSHTunnelError {
         throw GitEngineError(.network, error.localizedDescription)
       }
@@ -69,3 +74,4 @@ enum DeviceKeySSH {
     }
   }
 }
+#endif

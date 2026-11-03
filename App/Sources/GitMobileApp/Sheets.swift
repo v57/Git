@@ -230,6 +230,7 @@ struct SettingsSheet: View {
     // The sheet's body scrolls itself, fading under the header and over the footer.
     KitSheet(title: "Settings", systemImage: "gearshape", hue: .gray) {
       GitHubSettingsView()
+      SecuritySettingsCard()
       DeviceSSHKeyCard()
       VaultDevicesSettings()
     } footer: {

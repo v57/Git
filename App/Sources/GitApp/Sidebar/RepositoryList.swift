@@ -620,7 +620,9 @@ struct RemoteActionButtons: View {
     ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
       let targets = action == .push ? pushPaths : paths
       Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: targets) } }
-        .disabled(targets.allSatisfy { library.remoteActivity[$0] != nil })
+        .disabled(targets.allSatisfy {
+          library.remoteActivity[$0] != nil || (RepositoryLibrary.isRemote($0) && GitSecurity.level.otherDeviceRefusal != nil)
+        })
     }
   }
 }

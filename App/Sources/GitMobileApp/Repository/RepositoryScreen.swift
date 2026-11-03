@@ -110,6 +110,9 @@ struct RepositoryScreen: View {
 
   private var content: some View {
     VStack(alignment: .leading, spacing: 12) {
+      if model.isRemote {
+        OtherDeviceSecurityBanner().padding(.horizontal, KitMetrics.gutter + 4)
+      }
       KitSegmented(
         selection: $pane,
         segments: [
@@ -180,7 +183,7 @@ struct SyncTools: View {
       } label: {
         Label(title(action), systemImage: action.systemImage)
       }
-      .disabled(model.isBusy || !model.hasRemote)
+      .disabled(model.isBusy || !model.hasRemote || (model.isRemote && GitSecurity.level.otherDeviceRefusal != nil))
     }
   }
 

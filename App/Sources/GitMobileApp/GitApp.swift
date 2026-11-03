@@ -17,7 +17,7 @@ public struct GitApp: App {
     // The devices and their projects sync on their own, and this device shows up on the others to be let in.
     Vault.shared.startSync()
     try? Vault.shared.store?.publishDeviceKey()
-    DeviceKeySSH.install()
+    GitSecurity.install()
   }
 
   public var body: some Scene {
@@ -421,7 +421,7 @@ struct RepositoriesSidebar: View {
     ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
       let targets = action == .push ? members.filter { groups.summary(of: $0).map { $0.hasUpstream && $0.ahead > 0 } ?? false } : members
       Button(action.title + " All", systemImage: action.systemImage) { Task { await groups.run(action, on: targets) } }
-        .disabled(targets.allSatisfy { groups.activity[$0.id] != nil })
+        .disabled(GitSecurity.level.otherDeviceRefusal != nil || targets.allSatisfy { groups.activity[$0.id] != nil })
     }
     Divider()
     Button("Rename…", systemImage: "pencil", action: rename)

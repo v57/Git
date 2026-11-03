@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftUI
 
@@ -236,7 +237,7 @@ private struct CommitList: View {
         Button("Pull", systemImage: "arrow.down") { Task { await session.pull() } }
           .buttonStyle(.kit)
           .controlSize(.small)
-          .disabled(session.isBusy)
+          .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
       }
       .kitCardSlice(0, of: count)
       rows(layout.toPull, layout: layout, kind: .toPull, cardSize: count)
@@ -252,7 +253,7 @@ private struct CommitList: View {
         Button("Push", systemImage: "arrow.up") { Task { await session.push() } }
           .buttonStyle(.kitPrimary)
           .controlSize(.small)
-          .disabled(session.isBusy)
+          .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
       }
       .kitCardSlice(0, of: count)
       rows(layout.toPush, layout: layout, kind: .toPush, cardSize: count)

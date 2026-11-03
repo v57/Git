@@ -274,7 +274,9 @@ extension RepositoryLibrary {
   /// Runs `action` in each repository (a path, or a `remoteKey` for one on another device), a few at a time, and
   /// reports the ones that failed.
   func run(_ action: RemoteAction, on paths: [String]) async {
-    let paths = paths.filter { remoteActivity[$0] == nil }
+    // Those on other devices are off at Vault key only, and their menus say so.
+    let isOff = GitSecurity.level.otherDeviceRefusal != nil
+    let paths = paths.filter { remoteActivity[$0] == nil && !(isOff && Self.isRemote($0)) }
     guard !paths.isEmpty else { return }
     for path in paths { remoteActivity[path] = action }
     var failures: [(name: String, message: String)] = []

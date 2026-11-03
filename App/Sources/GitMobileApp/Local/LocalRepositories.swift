@@ -56,9 +56,10 @@ import VaultKit
   func clone(_ remote: String, progress: @escaping @Sendable (String) -> Void) async throws -> LocalRepository {
     let url = folder.appendingPathComponent(freeName(Self.name(ofRemote: remote)), isDirectory: true)
     do {
-      let repository = try await LocalRepository.clone(from: remote, to: url, progress: progress)
+      let request = GitNetworkRequest(level: await GitNetwork.level(), progress: progress)
+      _ = try await GitEngineNetwork().clone(remote, to: url, request: request)
       reload()
-      return repository
+      return try LocalRepository(url: url)
     } catch {
       try? FileManager.default.removeItem(at: url)
       throw error

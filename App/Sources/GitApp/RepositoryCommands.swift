@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import SwiftUI
 
 extension FocusedValues {
@@ -12,6 +13,7 @@ extension FocusedValues {
 struct RepositoryCommands: Commands {
   @FocusedValue(\.repositoryLibrary) private var library
   @FocusedValue(\.repositorySession) private var session
+  private var networkOff: Bool { session.map { GitSecurity.refusal(for: $0.repository) != nil } ?? false }
   @FocusedValue(\.repositoryViewState) private var state
 
   var body: some Commands {
@@ -45,9 +47,10 @@ struct RepositoryCommands: Commands {
       Divider()
       Button("Fetch") { run { await $0.fetch() } }
         .keyboardShortcut("f", modifiers: [.command, .shift])
+        .disabled(networkOff)
       Button("Pull") { run { await $0.pull() } }
         .keyboardShortcut("p", modifiers: [.command, .shift])
-        .disabled(session?.status?.upstream == nil)
+        .disabled(session?.status?.upstream == nil || networkOff)
       if session?.remotes.isEmpty == true {
         Button("Publish to GitHub…") { state?.isPublishPresented = true }
           .keyboardShortcut("p")
@@ -55,7 +58,7 @@ struct RepositoryCommands: Commands {
       } else {
         Button("Push") { run { await $0.push() } }
           .keyboardShortcut("p")
-          .disabled(session?.status?.branch == nil)
+          .disabled(session?.status?.branch == nil || networkOff)
       }
       Divider()
       Button("Stage All") { run { await $0.stageAll() } }

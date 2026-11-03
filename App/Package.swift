@@ -24,7 +24,8 @@ let kits = String(Context.packageDirectory.split(whereSeparator: { $0 == "/" || 
 /// - GitUI: what both apps show: the diff's hunk cards and highlighting, the change kind badge, the message sheet and
 ///   the GitHub settings (the sign-in sheet is the libraries' GitHubUI, which Markdown shows too).
 /// - GitRemote: repositories on the user's other devices, for both apps: the vault's projects there, the SSH login
-///   (this device's key or a saved password) and GitKit's transport over one SSH connection (SSHGitTransport).
+///   (this device's key or a saved password) and GitKit's transport over one SSH connection (SSHGitTransport). Also
+///   the security level, and on Apple platforms GitEngine doing network actions in the app with this device's key.
 let appSettings: [SwiftSetting] = [
   .swiftLanguageMode(.v5), .defaultIsolation(MainActor.self), .enableUpcomingFeature("ApproachableConcurrency"),
   .enableUpcomingFeature("MemberImportVisibility"),
@@ -55,7 +56,7 @@ let package = Package(
     .target(
       name: "GitUI",
       dependencies: [
-        .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
+        "GitRemote", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
         .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
         .product(name: "ComponentKit", package: "Component"), .product(name: "VaultKit", package: "Vault"),
       ],
@@ -65,6 +66,8 @@ let package = Package(
       dependencies: [
         .product(name: "GitKit", package: kits), .product(name: "VaultKit", package: "Vault"),
         .product(name: "SSHKit", package: "SSH"),
+        // Git in Swift, for network actions in the app. Elsewhere they stay with the git command.
+        .product(name: "GitEngine", package: kits, condition: .when(platforms: [.macOS, .iOS])),
       ],
       swiftSettings: appSettings),
     .target(

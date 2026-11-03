@@ -1,6 +1,7 @@
 import ComponentKit
 import GitHubKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftUI
 import VaultKit
@@ -20,6 +21,14 @@ struct SettingsView: View {
     KitSettings(selection: $pane, window: .hiddenTitleBar) {
       SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
       SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { AccountGitHubSettings() }
+      #if os(macOS)
+        SettingsPane("Security", systemImage: "lock.shield", hue: .green) {
+          VStack(alignment: .leading, spacing: 18) {
+            SecuritySettingsCard()
+            DeviceSSHKeyCard()
+          }
+        }
+      #endif
       SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
         VaultAccountsSettings()
       }
@@ -46,8 +55,7 @@ private struct GeneralSettingsView: View {
     FormCard(
       "Git",
       footer: "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
-        + "Pushing uses your SSH agent, Keychain and git credential helpers, or your GitHub "
-        + "account for github.com while you're signed in."
+        + "Settings ▸ Security decides what network actions use."
     ) {
       FormRow(
         "git executable", help: "Automatic when empty", systemImage: "terminal", hue: .gray,
@@ -125,7 +133,6 @@ private struct AccountGitHubSettings: View {
       GitHubSettingsView()
         .environment(GitHubAccount.forAccount(accountID))
         .id(accountID)
-      DeviceSSHKeyCard()
     }
     .onChange(of: frontmost.id) { picked = nil }
   }

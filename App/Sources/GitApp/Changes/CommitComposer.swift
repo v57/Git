@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import SwiftUI
 
 /// The commit form: summary with a character count, description, Amend, then Commit & Push and
@@ -85,7 +86,7 @@ struct CommitComposer: View {
         Button("Commit & Push") { Task { await commit(push: true) } }
           .buttonStyle(.kit)
           .keyboardShortcut(.return, modifiers: [.command, .shift])
-          .disabled(!canCommit || session.remotes.isEmpty)
+          .disabled(!canCommit || session.remotes.isEmpty || GitSecurity.refusal(for: session.repository) != nil)
           .kitHelp("Commit & Push", shortcut: "⇧⌘↩", systemImage: "arrow.up.to.line")
         Button {
           Task { await commit(push: false) }

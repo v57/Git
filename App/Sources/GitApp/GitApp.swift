@@ -28,18 +28,8 @@ public struct GitApp: App {
     if syncs { Vault.shared.startSync() }
     // Personal's GitHub sign-in hands git its token at launch, as before accounts.
     _ = GitHubAccount.app
-    // git's ssh signs in with the vault's key for this device, as the app itself does. In a debug run with
-    // GIT_DEBUG_DEVICE_KEY too, to try it on a repository that stays out of the user's vault.
-    #if DEBUG
-      let usesDeviceKey = syncs || ProcessInfo.processInfo.environment["GIT_DEBUG_DEVICE_KEY"] != nil
-    #else
-      let usesDeviceKey = true
-    #endif
-    if usesDeviceKey { GitSSHAgent.setIdentity(RemoteRepositories.deviceKeyIdentity) }
-    #if DEBUG
-      // An in-memory vault publishes nothing by itself, and Settings' SSH Key card shows what's published.
-      if !syncs, usesDeviceKey { try? Vault.shared.store?.publishDeviceKey() }
-    #endif
+    // Network actions follow Settings ▸ Security.
+    GitSecurity.install()
     GitExecutable.customPath = UserDefaults.standard.string(forKey: SettingsKeys.gitPath)
     #if DEBUG
       // --light and --dark draw the app in that appearance, for screenshots.

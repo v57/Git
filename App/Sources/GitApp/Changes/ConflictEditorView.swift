@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import SwiftUI
 
 /// Resolve Conflicts: shown in place of Changes while a merge, rebase, cherry-pick or revert
@@ -629,7 +630,7 @@ private struct OperationComplete: View {
       if !session.remotes.isEmpty {
         Button("Push to \(remote)") { Task { await session.push() } }
           .buttonStyle(.kitPrimary)
-          .disabled(session.isBusy)
+          .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
       }
     }
   }

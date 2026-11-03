@@ -203,6 +203,7 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
   public static func run(
     _ action: RemoteAction, on repository: RemoteRepository, vault: Vault = .shared
   ) async throws -> RepositorySummary? {
+    if let refusal = GitSecurity.level.otherDeviceRefusal { throw GitError(message: refusal) }
     let opened = try await open(repository, vault: vault)
     defer { opened.transport.close() }
     try await action.run(in: opened.repository)
@@ -263,14 +264,6 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
     let blob = VaultIdentity.publicKeyBlob(key)
     return SSHKey(kind: .ecdsaP256, publicKeyBlob: Array(blob), comment: VaultDevice.name) { data in
       Array(try VaultIdentity.sshSignature(Data(data), key: key))
-    }
-  }
-
-  /// The same key for git's own `ssh`, through `GitSSHAgent`.
-  public nonisolated static func deviceKeyIdentity() throws -> GitSSHAgent.Identity {
-    let key = try VaultIdentity.key()
-    return GitSSHAgent.Identity(publicKeyBlob: VaultIdentity.publicKeyBlob(key), comment: "v57 device key") { data in
-      try VaultIdentity.sshSignature(data, key: key)
     }
   }
 
