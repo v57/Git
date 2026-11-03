@@ -12,7 +12,7 @@
   /// - `GIT_DEBUG_REMOTE`: repositories on another machine (GitRemote's `DebugRemotes`); one with a `group` becomes a
   ///   vault project in that group in this device's vault, as the Mac's projects are.
   /// - `GIT_DEBUG_SELECT`: the repository opened at launch (its name), or `none`. Else the first debug remote.
-  /// - `GIT_DEBUG_CLONE`: an HTTPS URL cloned to this device at launch (unless a folder of its name is there), then
+  /// - `GIT_DEBUG_CLONE`: an HTTPS or SSH URL (`GIT_DEBUG_SSH_KEY`: a private key file for it, on a simulator) cloned to this device at launch (unless a folder of its name is there), then
   ///   opened.
   /// - `GIT_DEBUG_SHEET`: `clone`, `create`, `addRemote` or `settings`, shown at launch.
   /// - `GIT_DEBUG_SHOW`: `history`, `commit:<index>` or `diff:<path>`, once the repository is open.

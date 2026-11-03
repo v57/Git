@@ -125,6 +125,7 @@ private struct AccountGitHubSettings: View {
       GitHubSettingsView()
         .environment(GitHubAccount.forAccount(accountID))
         .id(accountID)
+      DeviceSSHKeyCard()
     }
     .onChange(of: frontmost.id) { picked = nil }
   }

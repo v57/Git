@@ -71,24 +71,22 @@ import VaultKit
     reload()
   }
 
-  /// "atlas" for `https://github.com/aiko/atlas.git`.
+  /// "atlas" for `https://github.com/aiko/atlas.git` and `git@box:atlas.git`.
   static func name(ofRemote remote: String) -> String {
     var name = remote.trimmingCharacters(in: .whitespacesAndNewlines)
     while name.hasSuffix("/") { name.removeLast() }
-    name = String(name.split(separator: "/").last ?? "")
+    name = String(name.split(whereSeparator: { $0 == "/" || $0 == ":" }).last ?? "")
     if name.hasSuffix(".git") { name.removeLast(4) }
     return name.isEmpty ? "Repository" : name
   }
 
-  /// A remote as the user typed it, made into an HTTPS URL GitEngine fetches from: `aiko/atlas` and
-  /// `github.com/aiko/atlas` are GitHub's, `git@github.com:aiko/atlas.git` becomes HTTPS (GitEngine has no SSH).
-  static func httpsURL(_ text: String) -> String? {
+  /// A remote as the user typed it, made into a URL GitEngine fetches from: `aiko/atlas` and `github.com/aiko/atlas`
+  /// are GitHub's over HTTPS, and an SSH address (`git@github.com:aiko/atlas.git`) signs in with this device's key.
+  static func remoteURL(_ text: String) -> String? {
     var text = text.trimmingCharacters(in: .whitespacesAndNewlines)
     guard !text.isEmpty else { return nil }
-    if text.hasPrefix("git@"), let colon = text.firstIndex(of: ":") {
-      let host = text[text.index(text.startIndex, offsetBy: 4)..<colon]
-      text = "https://\(host)/\(text[text.index(after: colon)...])"
-    } else if text.hasPrefix("http://") || text.hasPrefix("https://") {
+    if GitSSHAddress(text) != nil { return text }
+    if text.hasPrefix("http://") || text.hasPrefix("https://") {
       // As typed.
     } else if text.split(separator: "/").count == 2, !text.contains(".") || text.hasSuffix(".git") {
       text = "https://github.com/" + text

@@ -8,7 +8,7 @@ import SwiftUI
 import VaultKit
 import VaultUI
 
-/// Clone: an HTTPS URL (or `owner/repo` for GitHub) into a folder of its name on this device, with git's progress
+/// Clone: an HTTPS or SSH URL (or `owner/repo` for GitHub) into a folder of its name on this device, with git's progress
 /// while it fetches.
 struct CloneSheet: View {
   let opened: (LocalRepository) -> Void
@@ -19,14 +19,14 @@ struct CloneSheet: View {
   @Environment(\.kitDismiss) private var dismiss
   @Environment(GitHubAccount.self) private var account
 
-  private var url: String? { LocalRepositories.httpsURL(remote) }
+  private var url: String? { LocalRepositories.remoteURL(remote) }
 
   var body: some View {
     KitSheet(title: "Clone Repository", meta: "To this device", systemImage: "square.and.arrow.down", hue: .blue) {
       FormCard(
         footer: account.isSignedIn
-          ? "Private GitHub repositories clone with your GitHub sign-in."
-          : "Public repositories clone as they are. Sign in to GitHub in Settings for private ones."
+          ? "Private GitHub repositories clone with your GitHub sign-in. An SSH address signs in with this device’s key."
+          : "Public repositories clone as they are. Sign in to GitHub in Settings for private ones, or use an SSH address, which signs in with this device’s key."
       ) {
         FormRow(
           "URL", help: url.map { LocalRepositories.name(ofRemote: $0) }, systemImage: "link", hue: .blue,
@@ -230,6 +230,7 @@ struct SettingsSheet: View {
     // The sheet's body scrolls itself, fading under the header and over the footer.
     KitSheet(title: "Settings", systemImage: "gearshape", hue: .gray) {
       GitHubSettingsView()
+      DeviceSSHKeyCard()
       VaultDevicesSettings()
     } footer: {
       Button("Done") { dismiss() }

@@ -207,7 +207,7 @@ nonisolated struct LocalBackend: GitBackend {
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.fetch(progress: progress) }
   func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.pull(progress: progress) }
   func push(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.push(progress: progress) }
-  // GitEngine has no SSH, so it never tries a login that could fail.
+  // GitEngine's own login says what to do when it fails: the key is this device's, not another machine's.
   func remoteOverSSH() async -> HTTPSRemote? { nil }
   func switchToHTTPS(_ remote: HTTPSRemote) async throws { throw BackendError.unsupported("Switching a remote") }
 

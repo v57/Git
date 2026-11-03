@@ -142,7 +142,7 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
 ## iPhone and iPad
 
 The app lists two kinds of repositories:
-- **On this iPhone or iPad.** Clone one over HTTPS or create one. It lives in the app's folder, which the Files
+- **On this iPhone or iPad.** Clone one over HTTPS or SSH (signing in with this device's key) or create one. It lives in the app's folder, which the Files
   app shows under Git. `GitEngine` reads and writes it with no git binary. It supports changes and diffs, staging
   whole files, discarding, commits, history, creating and switching branches, fetch, fast-forward pull and
   push. Sign in to GitHub in Settings to clone and push private repositories. Commits use the repository's

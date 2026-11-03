@@ -836,8 +836,14 @@ extension Repository {
     let isLocal = runner.transport == nil
     let hostKeys = isLocal ? await Self.newHostKeys(runner: runner, in: url) : [:]
     try await GitSSHAgent.serving(isLocal: isLocal) { agent in
-      try await git(
-        arguments, environment: credentials.merging(hostKeys) { $1 }.merging(agent) { $1 }, progress: progress)
+      do {
+        try await git(
+          arguments, environment: credentials.merging(hostKeys) { $1 }.merging(agent) { $1 }, progress: progress)
+      } catch let error as GitError where !agent.isEmpty && error.message.contains("Permission denied (") {
+        throw GitError(
+          arguments: error.arguments, exitCode: error.exitCode,
+          message: error.message + "\n\nThe server took none of your SSH keys. Add this Mac’s from Settings ▸ GitHub.")
+      }
     }
   }
 

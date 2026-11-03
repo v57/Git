@@ -17,6 +17,7 @@ public struct GitApp: App {
     // The devices and their projects sync on their own, and this device shows up on the others to be let in.
     Vault.shared.startSync()
     try? Vault.shared.store?.publishDeviceKey()
+    DeviceKeySSH.install()
   }
 
   public var body: some Scene {
@@ -184,7 +185,7 @@ struct RepositoriesWelcome: View {
       emptyMessage:
         "Clone one to this device, or open one on your Mac: projects on the devices of your Hub show up here, and any SSH host in the Vault app works too."
     ) {
-      WelcomeAction("Clone Repository…", detail: "From GitHub or any HTTPS URL", systemImage: "square.and.arrow.down") {
+      WelcomeAction("Clone Repository…", detail: "From GitHub or any HTTPS or SSH URL", systemImage: "square.and.arrow.down") {
         sheet = .clone
       }
       WelcomeAction("New Repository…", detail: "An empty one on this device", systemImage: "plus.square") {

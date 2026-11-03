@@ -258,11 +258,19 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
   }
 
   /// This device's SSH key (Secure Enclave, shared by the v57 apps).
-  private static func deviceKey() throws -> SSHKey {
+  public static func deviceKey() throws -> SSHKey {
     let key = try VaultIdentity.key()
     let blob = VaultIdentity.publicKeyBlob(key)
     return SSHKey(kind: .ecdsaP256, publicKeyBlob: Array(blob), comment: VaultDevice.name) { data in
       Array(try VaultIdentity.sshSignature(Data(data), key: key))
+    }
+  }
+
+  /// The same key for git's own `ssh`, through `GitSSHAgent`.
+  public nonisolated static func deviceKeyIdentity() throws -> GitSSHAgent.Identity {
+    let key = try VaultIdentity.key()
+    return GitSSHAgent.Identity(publicKeyBlob: VaultIdentity.publicKeyBlob(key), comment: "v57 device key") { data in
+      try VaultIdentity.sshSignature(data, key: key)
     }
   }
 
