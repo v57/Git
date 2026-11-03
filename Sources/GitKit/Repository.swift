@@ -52,18 +52,34 @@ public struct Repository: Sendable, Hashable, Identifiable {
     return Repository(url: url, runner: runner)
   }
 
+  /// The environment that lets `ssh` remember a host it hasn't met: without a terminal it can't ask, so the first
+  /// connection would fail. A changed key is still refused, as in `SSHLogin`. Nothing when the user runs `ssh` their
+  /// own way (`core.sshCommand`, `GIT_SSH_COMMAND`).
+  static func newHostKeys(runner: GitRunner, in directory: URL) async -> [String: String] {
+    guard ProcessInfo.processInfo.environment["GIT_SSH_COMMAND"] == nil, ProcessInfo.processInfo.environment["GIT_SSH"] == nil,
+      let configured = try? await runner.run(["config", "--get", "core.sshCommand"], in: directory, allowedExitCodes: [0, 1]),
+      configured.output.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    else { return [:] }
+    return ["GIT_SSH_COMMAND": "ssh -o StrictHostKeyChecking=accept-new"]
+  }
+
   /// Clones `remote` into `destination`.
   public static func clone(
     _ remote: String, to destination: URL, runner: GitRunner = GitRunner(),
     progress: (@Sendable (String) -> Void)? = nil
   ) async throws -> Repository {
-    try await runner.run(
-      ["clone", "--progress", "--", remote, destination.path],
-      in: destination.deletingLastPathComponent(),
-      environment: GitCredentials.environment(
-        account: runner.credentialAccount,
-        hosts: runner.transport == nil ? nil : Set(GitCredentials.host(ofRemote: remote).map { [$0] } ?? [])),
-      progress: progress)
+    let credentials = GitCredentials.environment(
+      account: runner.credentialAccount,
+      hosts: runner.transport == nil ? nil : Set(GitCredentials.host(ofRemote: remote).map { [$0] } ?? []))
+    let isLocal = runner.transport == nil
+    let hostKeys = isLocal ? await newHostKeys(runner: runner, in: destination.deletingLastPathComponent()) : [:]
+    try await GitSSHAgent.serving(isLocal: isLocal) { agent in
+      try await runner.run(
+        ["clone", "--progress", "--", remote, destination.path],
+        in: destination.deletingLastPathComponent(),
+        environment: credentials.merging(hostKeys) { $1 }.merging(agent) { $1 },
+        progress: progress)
+    }
     return Repository(url: destination, runner: runner)
   }
 }
@@ -788,7 +804,7 @@ extension Repository {
 
   /// Moves a remote to its HTTPS address, once git can read from there: a wrong address changes nothing.
   public func switchToHTTPS(_ remote: HTTPSRemote) async throws {
-    try await git(["ls-remote", "--", remote.url, "HEAD"], environment: credentials(forHost: remote.host))
+    try await network(["ls-remote", "--", remote.url, "HEAD"], forHost: remote.host)
     try await git(["remote", "set-url", "--", remote.remote, remote.url])
     // A push URL of its own stays otherwise.
     let pushURL = try await output(["remote", "get-url", "--push", "--", remote.remote])
@@ -811,15 +827,27 @@ extension Repository {
     return GitCredentials.environment(account: runner.credentialAccount, hosts: Set(hosts))
   }
 
+  /// Runs a command that talks to a remote: with the account's credentials and, for an SSH remote on this Mac, the app's
+  /// key (`GitSSHAgent`).
+  private func network(
+    _ arguments: [String], forHost host: String? = nil, progress: (@Sendable (String) -> Void)? = nil
+  ) async throws {
+    let credentials = await credentials(forHost: host)
+    let isLocal = runner.transport == nil
+    let hostKeys = isLocal ? await Self.newHostKeys(runner: runner, in: url) : [:]
+    try await GitSSHAgent.serving(isLocal: isLocal) { agent in
+      try await git(
+        arguments, environment: credentials.merging(hostKeys) { $1 }.merging(agent) { $1 }, progress: progress)
+    }
+  }
+
   public func fetch(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(
-      ["fetch", "--all", "--prune", "--progress"], environment: credentials(),
-      progress: progress)
+    try await network(["fetch", "--all", "--prune", "--progress"], progress: progress)
   }
 
   /// `git pull` with the user's pull settings (merge, rebase, ff-only).
   public func pull(progress: (@Sendable (String) -> Void)? = nil) async throws {
-    try await git(["pull", "--progress"], environment: credentials(), progress: progress)
+    try await network(["pull", "--progress"], progress: progress)
   }
 
   /// Pushes the current branch. A branch without an upstream is pushed to its push remote (or
@@ -837,7 +865,7 @@ extension Repository {
       let remote = try await pushRemote(for: branch)
       arguments += ["--set-upstream", remote, "HEAD"]
     }
-    try await git(arguments, environment: credentials(), progress: progress)
+    try await network(arguments, progress: progress)
   }
 
   public func deleteRemoteBranch(_ branch: Branch, progress: (@Sendable (String) -> Void)? = nil)
@@ -848,9 +876,8 @@ extension Repository {
     }
     let ref = "refs/heads/\(branch.localName)"
     do {
-      try await git(
-        ["push", "--progress", "--force-with-lease=\(ref):\(branch.sha)", remote, "--delete", ref],
-        environment: credentials(), progress: progress)
+      try await network(
+        ["push", "--progress", "--force-with-lease=\(ref):\(branch.sha)", remote, "--delete", ref], progress: progress)
     } catch let error as GitError where error.message.contains("(stale info)") {
       throw GitError(
         arguments: error.arguments, exitCode: error.exitCode,
