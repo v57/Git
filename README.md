@@ -99,8 +99,9 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
 - **git CLI.** GitKit runs the installed git binary with an argument vector. It looks for a custom path from
   Settings first, then Homebrew, then `/usr/bin/git` (which requires the Command Line Tools). It never parses
   human-readable output. It reads porcelain v2, `-z` separated records and `%x1f` separated log fields.
-- **Your git setup applies.** Your config, hooks, commit signing, SSH agent and credential helpers all apply. The
-  runner turns off terminal prompts, so a missing credential fails with git's own message instead of hanging.
+- **Your git setup applies.** Your config, hooks and commit signing apply to everything git runs. The runner turns off
+  terminal prompts, so a missing credential fails with git's own message instead of hanging. Network actions depend on
+  the security level below.
 - **Who commits.** A repository's own `user.name` and `user.email` win. Otherwise the window's vault account
   names who commits (its Your Name, `VaultProfile`), handed to git as `GIT_AUTHOR_*` and `GIT_COMMITTER_*` for that
   command only, so the terminal's git config never changes. Without either, git's own settings apply. Only when nothing
@@ -109,12 +110,25 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
   also asks once per Mac whether Terminal should use the name too (a switch in that sheet, or a confirmation when the
   name is already saved) and writes it with `git config --global` only on yes (`TerminalIdentity`); Settings ▸ General
   shows who Terminal commits as and does it later.
-- **The GitHub account stays in the app.** While you're signed in with access to private
-  repositories, fetch, pull, push and clone over
-  `https://github.com` use the app's token instead of your credential helpers: `GitCredentials` passes
-  git a helper through `GIT_CONFIG_COUNT` environment entries, clearing the configured helpers for that
-  host first, so the token is never written to osxkeychain or gh and never appears in an argument list.
-  The token itself lives in a keychain item only the app can read without a prompt.
+- **Security level.** Settings ▸ Security picks how far clone, fetch, pull and push may go, on all your devices.
+  Status, commit, merge and rebase run git at every level, and never see a key or token.
+  1. **Use git:** git with your own setup, plus the app's GitHub token in its environment, where anything git runs
+     (a hook, say) can read it.
+  2. **In-app first** (the default): in the app, with this device's key (in its Secure Enclave) or the token. If that
+     can't work, git with your own keys and helpers, never the token. A repository with a `pre-push` hook or LFS goes
+     straight to git.
+  3. **SSH only:** as above, and HTTPS remotes move to SSH the next time you use them, once SSH was seen to work. They
+     move back if you lower the level. HTTPS is refused.
+  4. **Vault key only:** never git on the network, and only this device's key signs in. `pre-push` hooks don't run,
+     `~/.ssh/config` isn't read, and submodules, LFS and folder remotes are refused, saying why.
+
+  Levels 3 and 4 need this device's key on the server first (Settings ▸ Security shows it). Repositories on your other
+  devices use their own git and keys: Level 4 turns their fetch, pull and push off, Level 3 warns, and above Level 1 they
+  get the token only after you accept the switch to HTTPS. Linux and Windows stay on Use git for now.
+- **The GitHub account stays in the app.** The token lives in a keychain item only the app can read without a prompt.
+  In the app it's used directly, only over HTTPS. At Use git, `GitCredentials` passes git a helper through
+  `GIT_CONFIG_COUNT` environment entries, clearing the configured helpers for that host first, so the token is never
+  written to osxkeychain or gh and never appears in an argument list.
 - **Line staging.** `PatchBuilder` rewrites the diff and the result goes through `git apply --cached`
   (`--reverse` to unstage, no `--cached` to discard).
   - Unselected lines on the side being kept become context, and unselected lines on the other side are dropped.
@@ -188,7 +202,7 @@ In the diff view:
 
 ## Not yet
 
-- No in-app prompts for SSH passphrases or HTTPS credentials. Keys in the SSH agent or Keychain and git
-  credential helpers work.
+- No in-app prompts for SSH passphrases or HTTPS credentials. When a network action runs git, keys in the SSH agent
+  or Keychain and git credential helpers work.
 - No inline editing in the conflict editor. Use Open for edits beyond picking sides, then Mark as
   Resolved.
