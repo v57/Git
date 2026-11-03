@@ -98,7 +98,7 @@ extension GitContext {
   }
 
   /// `url` with the longest prefix a `url.<base>.<key>` names replaced by its base.
-  private func rewritten(_ url: String, _ key: String) -> String? {
+  func rewritten(_ url: String, _ key: String) -> String? {
     var best: (prefix: String, base: String)?
     for base in settings.subsections(of: "url") {
       for prefix in settings.values("url.\(base).\(key)") where url.hasPrefix(prefix) {

@@ -327,7 +327,7 @@ enum AddressRules {
       guard level == .vaultKeyOnly, let alias = await SSHSetup.aliasReason(address, request) else { return nil }
       return "\(name): \(alias) Vault key only doesn’t read that config: use the server’s real address."
     case .https, .unencrypted:
-      return "\(name) uses \(url), and \(level.title) only signs in over SSH. Use its SSH address."
+      return "\(name) uses \(url), which \(level.title) refuses. Use its SSH address."
     case .local:
       return level == .vaultKeyOnly ? "\(name) is a folder on this machine (\(url)), which Vault key only doesn’t reach." : nil
     case .helper:
@@ -423,8 +423,13 @@ struct RemoteMover {
     guard newURL != nil || newPush.contains(where: { $0 != nil }) else { return }
     guard rawURLs.count <= 1 else { throw GitEngineError.refused("\(remote) has several addresses.") }
     for url in Set(([newURL] + newPush).compactMap { $0 }).sorted() {
-      progress?("Checking \(url)…")
-      try await Self.check(url)
+      // Where it would really go: `insteadOf` applies to the new address too, and can send it back to HTTPS.
+      let effective = context.rewritten(url, "insteadof") ?? url
+      guard case .ssh = RemoteAddress(effective) else {
+        throw GitEngineError.refused("Your git settings (url.insteadOf) send \(url) to \(effective), so \(remote) can’t move to SSH.")
+      }
+      progress?("Checking \(effective)…")
+      try await Self.check(effective)
     }
     try context.updateConfig { config in
       if let newURL, let old = rawURLs.first {

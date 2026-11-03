@@ -323,6 +323,40 @@ import Testing
     #expect(try git(["config", "--get-regexp", "v57"], in: folder, allowingFailure: true) == "")
   }
 
+  /// `insteadOf` applies to the address a remote moves to, so the check goes where later actions will.
+  @Test func sshOnlyChecksWhereTheMovedAddressReallyGoes() async throws {
+    let scene = try Scene()
+    let folder = try scene.served.clone(url: httpsAddress(scene.served))
+    try git(["config", "url.ssh://me@elsewhere.invalid/.insteadOf", "git@example.invalid:"], in: folder)
+    let served = scene.served
+    let hosts = ServedRepository.Log()
+    let connector: GitSSH.Connector = { address, command in
+      hosts.append("\(address.user ?? "")@\(address.host)")
+      return try await served.connector(address, command)
+    }
+    let configuration = GitNetwork.Configuration(engine: GitEngineNetwork(), level: { .sshOnly }, sshClientAddress: nil)
+    try await GitNetwork.$scoped.withValue(configuration) {
+      try await GitSSH.$scoped.withValue(connector) { try await scene.repository(folder).fetch() }
+    }
+    #expect(!hosts.commands.isEmpty)
+    #expect(Set(hosts.commands) == ["me@elsewhere.invalid"])
+    #expect(try git(["config", "remote.origin.url"], in: folder).hasPrefix("git@example.invalid:"))
+
+    // A setting that forces HTTPS would undo the move: it stays, and says so.
+    let other = try Scene()
+    let https = httpsAddress(other.served)
+    let forced = try other.served.clone(url: https)
+    try git(["config", "url.https://example.invalid/.insteadOf", "git@example.invalid:"], in: forced)
+    do {
+      try await at(.sshOnly, other.served) { try await other.repository(forced).fetch() }
+      Issue.record("It went over HTTPS")
+    } catch {
+      #expect(error.localizedDescription.contains("insteadOf"))
+    }
+    #expect(try git(["config", "remote.origin.url"], in: forced) == https + "\n")
+    #expect(other.served.log.commands.isEmpty)
+  }
+
   @Test func sshOnlyChangesNothingWhenTheKeyDoesntWork() async throws {
     for login in [Login.refused, .unreachable] {
       let scene = try Scene()

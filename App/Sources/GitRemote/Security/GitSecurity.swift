@@ -11,9 +11,15 @@ import VaultKit
 public enum GitSecurity {
   public static var level: GitSecurityLevel {
     get {
-      Vault.shared.personalVault.gitSettings?.securityLevel.flatMap(GitSecurityLevel.init(rawValue:)) ?? .standard
+      #if DEBUG
+        if let debugLevel { return debugLevel }
+      #endif
+      return Vault.shared.personalVault.gitSettings?.securityLevel.flatMap(GitSecurityLevel.init(rawValue:)) ?? .standard
     }
     set {
+      #if DEBUG
+        debugLevel = nil
+      #endif
       Vault.shared.personalVault.save(VaultGitSettings(securityLevel: newValue.rawValue))
     }
   }
@@ -38,13 +44,20 @@ public enum GitSecurity {
   }
 
   #if DEBUG
+    /// `GIT_DEBUG_SECURITY_LEVEL`'s level, until one is picked in Settings. It stays out of the vault, which syncs.
+    private static var debugLevel: GitSecurityLevel?
+
     /// `GIT_DEBUG_SECURITY_LEVEL`: a level to start with (1 to 4). `GIT_DEBUG_WRITE_PUBLIC_KEY`: a file for this device's
     /// public key line, published in the vault as Settings shows it, for a test server's `authorized_keys`. For trying
-    /// the levels in an `--in-memory` run, on repositories that stay out of the user's vault.
+    /// the levels in an `--in-memory` run, on repositories that stay out of the user's vault. `GIT_DEBUG_CREDENTIAL`:
+    /// `host:username:password`, a made-up sign-in for that host, to see where a token goes.
     private static func applyDebugEnvironment() {
       let environment = ProcessInfo.processInfo.environment
-      if let level = environment["GIT_DEBUG_SECURITY_LEVEL"].flatMap(Int.init).flatMap(GitSecurityLevel.init(rawValue:)) {
-        self.level = level
+      debugLevel = environment["GIT_DEBUG_SECURITY_LEVEL"].flatMap(Int.init).flatMap(GitSecurityLevel.init(rawValue:))
+      if let parts = environment["GIT_DEBUG_CREDENTIAL"]?.split(separator: ":", maxSplits: 2), parts.count == 3 {
+        let credential = GitCredential(username: String(parts[1]), password: String(parts[2]))
+        GitCredentials.set(credential, for: String(parts[0]))
+        GitCredentials.set(credential, for: String(parts[0]), account: VaultAccount.personal.id)
       }
       if let path = environment["GIT_DEBUG_WRITE_PUBLIC_KEY"] {
         let vault = Vault.shared

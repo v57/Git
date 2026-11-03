@@ -41,7 +41,7 @@ public enum GitSecurityLevel: Int, Sendable, CaseIterable, Identifiable {
   /// What to tell the user about a repository on another device at this level, while it keeps working.
   public var otherDeviceWarning: String? {
     guard self == .sshOnly else { return nil }
-    return "SSH only can’t be enforced here: git on that device uses its own keys and settings."
+    return "Git on that device uses its own keys and settings, which it can’t check."
   }
 }
 
