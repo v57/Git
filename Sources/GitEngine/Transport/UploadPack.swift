@@ -74,13 +74,13 @@ struct Advertisement {
 
 /// Fetching from a server's `git-upload-pack`, in protocol v2 when it speaks it and v0 otherwise.
 struct UploadPack {
-  let transport: SmartHTTP
+  let transport: any ServiceTransport
   let advertisement: Advertisement
 
   static let service = "git-upload-pack"
 
   static func connect(_ remote: String) async throws -> UploadPack {
-    let (transport, data) = try await SmartHTTP.discover(remote, service: service, version2: true)
+    let (transport, data) = try await GitEngine.connect(remote, service: service, version2: true)
     return UploadPack(transport: transport, advertisement: try await Advertisement.parse(data))
   }
 
@@ -92,7 +92,7 @@ struct UploadPack {
       body.append(PktLine.encode(argument + "\n"))
     }
     body.append(PktLine.flushPacket)
-    var reader = PktLineReader(try await transport.post(Self.service, body: body, version2: true).makeAsyncIterator())
+    var reader = PktLineReader(try await transport.exchange(Self.service, body: body, version2: true))
     var refs: [RemoteRef] = []
     while let packet = try await reader.next(), let line = packet.text {
       // `<id> <name>[ symref-target:<ref>][ peeled:<id>]`; an unborn HEAD starts with `unborn`.
@@ -147,8 +147,7 @@ struct UploadPack {
       data.append(PktLine.encode("done\n"))
       body = data
     }
-    var reader = PktLineReader(
-      try await transport.post(Self.service, body: body, version2: advertisement.version2).makeAsyncIterator())
+    var reader = PktLineReader(try await transport.exchange(Self.service, body: body, version2: advertisement.version2))
     let sideband = advertisement.version2 || advertisement.supports("side-band-64k")
     var sideband64 = SideBand(progress: progress)
     if advertisement.version2 {

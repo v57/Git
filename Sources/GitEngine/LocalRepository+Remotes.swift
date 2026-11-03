@@ -90,6 +90,7 @@ extension LocalRepository {
       throw GitEngineError.notFound("There's no remote named \(remote).")
     }
     let receivePack = try await ReceivePack.connect(url)
+    defer { receivePack.transport.close() }
     let advertised = receivePack.advertisement.refs
     let old = advertised.first { $0.name == destination }?.id ?? .zero
     if old != local {
@@ -124,7 +125,7 @@ extension LocalRepository {
     }
   }
 
-  /// Clones `remote` (HTTPS) into `url`, which must not exist or be empty: fetches every branch, checks out the
+  /// Clones `remote` (HTTPS, or SSH through `GitSSH`) into `url`, which must not exist or be empty: fetches every branch, checks out the
   /// remote's default branch and sets `origin` and the branch's upstream as `git clone` does.
   @concurrent public static func clone(
     from remote: String, to url: URL, progress: (@Sendable (String) -> Void)? = nil
@@ -196,6 +197,7 @@ struct Fetcher {
       throw GitEngineError.notFound("There's no remote named \(remote).")
     }
     let uploadPack = try await UploadPack.connect(url)
+    defer { uploadPack.transport.close() }
     let refs = try await uploadPack.listRefs()
     let refspecs = context.fetchRefspecs(remote)
     let store = context.objects

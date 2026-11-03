@@ -226,7 +226,7 @@ import Testing
       #expect(error.kind == .notFound)
     }
     await #expect(throws: GitEngineError.self) {
-      _ = try await LocalRepository.clone(from: "git@github.com:a/b.git", to: remote.fixture.sibling("y"))
+      _ = try await LocalRepository.clone(from: "ftp://example.com/a/b.git", to: remote.fixture.sibling("y"))
     }
   }
 

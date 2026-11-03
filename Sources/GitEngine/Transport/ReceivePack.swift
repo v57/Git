@@ -2,13 +2,13 @@ import Foundation
 
 /// Pushing to a server's `git-receive-pack` (protocol v0, the only one it speaks).
 struct ReceivePack {
-  let transport: SmartHTTP
+  let transport: any ServiceTransport
   let advertisement: Advertisement
 
   static let service = "git-receive-pack"
 
   static func connect(_ remote: String) async throws -> ReceivePack {
-    let (transport, data) = try await SmartHTTP.discover(remote, service: service, version2: false)
+    let (transport, data) = try await GitEngine.connect(remote, service: service, version2: false)
     return ReceivePack(transport: transport, advertisement: try await Advertisement.parse(data))
   }
 
@@ -27,7 +27,7 @@ struct ReceivePack {
     body.append(PktLine.flushPacket)
     if let pack { body.append(pack) }
 
-    var reader = PktLineReader(try await transport.post(Self.service, body: body, version2: false).makeAsyncIterator())
+    var reader = PktLineReader(try await transport.exchange(Self.service, body: body, version2: false))
     var report: [String] = []
     if sideband {
       // The report is pkt-lines inside band 1.

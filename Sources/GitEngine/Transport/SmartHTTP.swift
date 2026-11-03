@@ -14,6 +14,45 @@ import GitKit
   typealias ResponseBytes = URLSession.AsyncBytes
 #endif
 
+/// How a git service's requests and answers travel: HTTP's POSTs or an SSH channel.
+protocol ServiceTransport: Sendable {
+  /// Sends `body` and returns the answer's bytes as they arrive.
+  func exchange(_ service: String, body: Data, version2: Bool) async throws -> ServerBytes
+  /// The conversation is over.
+  func close()
+}
+
+/// The start of a conversation with `service` on `remote`: the transport for its address, and what it advertised.
+func connect(
+  _ remote: String, service: String, version2: Bool
+) async throws -> (any ServiceTransport, Data) {
+  if let address = GitSSHAddress(remote) {
+    return try await GitSSHTransport.discover(address, service: service)
+  }
+  return try await SmartHTTP.discover(remote, service: service, version2: version2)
+}
+
+/// An answer's bytes, whichever way they came.
+struct ServerBytes: AsyncIteratorProtocol {
+  private var response: ResponseBytes.AsyncIterator?
+  private let channel: ChannelBytes?
+
+  init(response: ResponseBytes.AsyncIterator) {
+    self.response = response
+    channel = nil
+  }
+
+  init(channel: ChannelBytes) {
+    response = nil
+    self.channel = channel
+  }
+
+  mutating func next() async throws -> UInt8? {
+    if let channel { return try await channel.next() }
+    return try await response?.next()
+  }
+}
+
 /// A ref a server advertises.
 struct RemoteRef: Equatable {
   var name: String
@@ -26,7 +65,7 @@ struct RemoteRef: Equatable {
 
 /// git's smart HTTP protocol over URLSession: `GET info/refs?service=…` to discover, `POST <service>` to talk.
 /// Credentials come from `GitCredentials` for the URL's host and go out as HTTP Basic authentication.
-final class SmartHTTP: Sendable {
+final class SmartHTTP: ServiceTransport {
   /// The repository URL without a trailing slash, after redirects and an added `.git` when that was needed.
   let baseURL: URL
   private let session: URLSession
@@ -45,7 +84,7 @@ final class SmartHTTP: Sendable {
     guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
       url.host != nil
     else {
-      throw GitEngineError.refused("“\(remote)” isn't an HTTPS address. Only HTTPS remotes work on this device.")
+      throw GitEngineError.refused("“\(remote)” isn't an HTTPS or SSH address. Only those work on this device.")
     }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
@@ -87,8 +126,15 @@ final class SmartHTTP: Sendable {
     return (finalURL == baseURL ? self : SmartHTTP(baseURL: finalURL, session: session), data)
   }
 
+  func exchange(_ service: String, body: Data, version2: Bool) async throws -> ServerBytes {
+    ServerBytes(response: try await post(service, body: body, version2: version2).makeAsyncIterator())
+  }
+
+  /// Every request stands alone.
+  func close() {}
+
   /// POSTs `body` to `service` and returns the response's bytes as they arrive.
-  func post(_ service: String, body: Data, version2: Bool) async throws -> ResponseBytes {
+  private func post(_ service: String, body: Data, version2: Bool) async throws -> ResponseBytes {
     var request = request(baseURL.appendingPathComponent(service))
     request.httpMethod = "POST"
     request.httpBody = body
