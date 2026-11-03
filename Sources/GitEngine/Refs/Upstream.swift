@@ -48,13 +48,13 @@ struct Upstream {
 
 extension GitContext {
   func fetchRefspecs(_ remote: String) -> [Refspec] {
-    let configured = config.values("remote.\(remote).fetch").compactMap(Refspec.init)
+    let configured = settings.values("remote.\(remote).fetch").compactMap(Refspec.init)
     return configured.isEmpty ? [Refspec(Refspec.defaultFetch(remote: remote))!] : configured
   }
 
   /// `branch.<name>.remote` and `.merge`, mapped to the remote-tracking ref.
   func upstream(of branch: String) -> Upstream? {
-    guard let remote = config.value("branch.\(branch).remote"), let merge = config.value("branch.\(branch).merge")
+    guard let remote = settings.value("branch.\(branch).remote"), let merge = settings.value("branch.\(branch).merge")
     else { return nil }
     if remote == "." { return Upstream(remote: remote, mergeRef: merge, trackingRef: merge) }
     for refspec in fetchRefspecs(remote) {
@@ -63,15 +63,48 @@ extension GitContext {
     return nil
   }
 
-  /// The remote to fetch from or push to for the current branch: its upstream's, else `origin`, else the only one.
-  func defaultRemote() throws -> String {
-    if let branch = try head().branchName, let remote = config.value("branch.\(branch).remote"), remote != "." {
-      return remote
+  /// The remote `git push` uses for `branch`: the branch's push remote, the default push remote, its upstream's, else
+  /// `origin`, else the only one (as `Repository.pushRemote`).
+  func pushRemote(for branch: String) throws -> String {
+    for key in ["branch.\(branch).pushRemote", "remote.pushDefault", "branch.\(branch).remote"] {
+      if let value = settings.value(key), !value.isEmpty { return value }
     }
-    let remotes = config.subsections(of: "remote")
+    let remotes = self.remotes
     if remotes.contains("origin") { return "origin" }
     if remotes.count == 1 { return remotes[0] }
-    if remotes.isEmpty { throw GitEngineError.refused("This repository has no remote.") }
-    throw GitEngineError.refused("Several remotes and none is the default. Set an upstream for the branch first.")
+    if remotes.isEmpty { throw GitEngineError.refused("This repository has no remote to push to.") }
+    throw GitEngineError.refused(
+      "Several remotes and none is the default. Set one with git config remote.pushDefault <remote>.")
+  }
+
+  /// The remotes, in the order git read them.
+  var remotes: [String] { settings.subsections(of: "remote").filter { settings.value("remote.\($0).url") != nil } }
+
+  /// The address `remote` fetches from, with `url.<base>.insteadOf` applied.
+  func fetchURL(_ remote: String) throws -> String {
+    guard let url = settings.values("remote.\(remote).url").first else {
+      throw GitEngineError.notFound("There's no remote named \(remote).")
+    }
+    return rewritten(url, "insteadof") ?? url
+  }
+
+  /// The addresses `remote` pushes to: every `pushurl`, else its `url` (`pushInsteadOf` first, then `insteadOf`).
+  func pushURLs(_ remote: String) throws -> [String] {
+    let pushURLs = settings.values("remote.\(remote).pushurl")
+    if !pushURLs.isEmpty { return pushURLs.map { rewritten($0, "insteadof") ?? $0 } }
+    let urls = settings.values("remote.\(remote).url")
+    if urls.isEmpty { throw GitEngineError.notFound("There's no remote named \(remote).") }
+    return urls.map { rewritten($0, "pushinsteadof") ?? rewritten($0, "insteadof") ?? $0 }
+  }
+
+  /// `url` with the longest prefix a `url.<base>.<key>` names replaced by its base.
+  private func rewritten(_ url: String, _ key: String) -> String? {
+    var best: (prefix: String, base: String)?
+    for base in settings.subsections(of: "url") {
+      for prefix in settings.values("url.\(base).\(key)") where url.hasPrefix(prefix) {
+        if prefix.count > (best?.prefix.count ?? -1) { best = (prefix, base) }
+      }
+    }
+    return best.map { $0.base + url.dropFirst($0.prefix.count) }
   }
 }

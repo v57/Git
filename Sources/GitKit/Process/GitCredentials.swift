@@ -12,14 +12,16 @@ public struct GitCredential: Sendable, Hashable {
   }
 }
 
-/// Credentials the app hands git for HTTPS hosts, in place of the user's credential helpers.
+/// The app's credentials for HTTPS hosts: GitEngine reads them in-process for its own requests, and at
+/// `GitSecurityLevel.useGit` the `git` command gets them in place of the user's credential helpers.
 ///
-/// Fetch, pull, push and clone run with one credential helper per host that answers from the
+/// There, fetch, pull, push and clone run with one credential helper per host that answers from the
 /// process environment. The helpers configured for that host before it (osxkeychain, gh, …) are
 /// cleared, so git neither reads the user's stored credential nor saves the app's token anywhere.
-/// The token reaches git only through that one process's environment, never its arguments, which
-/// other users can read with `ps`. On another machine it gets there over the command's stdin
-/// (`shellSecrets`), since the command's text is an argument too.
+/// Anything git runs (a hook, `core.sshCommand`) can read that environment, which is why the higher levels
+/// never build it for this machine. The token isn't in git's arguments, which other users can read with `ps`. On
+/// another machine it gets there over the command's stdin (`shellSecrets`), since the command's text is an argument
+/// too; above `useGit` only after the user accepted the HTTPS offer for that repository.
 ///
 /// Each account (an app's sign-in, e.g. a vault account's GitHub sign-in) has its own credentials;
 /// `nil` is the default one. A repository uses its runner's `credentialAccount`, so two windows
@@ -31,6 +33,9 @@ public enum GitCredentials {
   }
 
   private static let store = OSAllocatedUnfairLock<[Key: GitCredential]>(initialState: [:])
+
+  /// Whose credentials GitEngine's requests use in this task: the repository's runner's `credentialAccount`.
+  @TaskLocal public static var activeAccount: String?
 
   /// Sets the credential for `host` (e.g. `github.com`) in `account`, or removes it with `nil`.
   public static func set(_ credential: GitCredential?, for host: String, account: String? = nil) {

@@ -37,6 +37,26 @@ public struct HTTPSRemote: Sendable, Hashable {
   }
 }
 
+/// A remote reached over HTTPS, and the same repository's address over SSH: the reverse of `HTTPSRemote`.
+public struct SSHRemote: Sendable, Hashable {
+  public var host: String
+  public var url: String
+
+  /// `https://github.com/owner/repo.git` as `git@github.com:owner/repo.git`, the login repository hosts take. Nil for
+  /// any other URL. A login or port in the address stays behind: they're HTTPS's.
+  public init?(httpsURL: String) {
+    guard let components = URLComponents(string: httpsURL), let scheme = components.scheme?.lowercased(),
+      scheme == "https" || scheme == "http", let host = components.host, !host.isEmpty
+    else { return nil }
+    var path = Substring(components.path)
+    while path.hasPrefix("/") { path = path.dropFirst() }
+    while path.hasSuffix("/") { path = path.dropLast() }
+    guard !path.isEmpty else { return nil }
+    self.host = host.lowercased()
+    url = "git@\(host):\(path)"
+  }
+}
+
 extension GitError {
   /// Whether git's ssh got no further than the login: an unknown host key, which a session without a terminal can't
   /// accept, or no key the server takes. A network failure is not one: HTTPS wouldn't get through either.

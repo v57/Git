@@ -54,7 +54,12 @@ final class GitHTTPServer: @unchecked Sendable {
   private var isRunning: Bool { lock.withLock { running } }
 
   func stop() {
-    lock.withLock { running = false }
+    // Once: a second close could take a descriptor another test has just opened.
+    let wasRunning = lock.withLock {
+      defer { running = false }
+      return running
+    }
+    guard wasRunning else { return }
     shutdown(listener, Int32(SHUT_RDWR))
     close(listener)
   }

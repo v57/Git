@@ -47,10 +47,13 @@ public protocol GitTransport: Sendable {
   func discard(_ url: URL) async throws
   /// When the file last changed (`FETCH_HEAD`, for when the repository was last fetched); nil when unknown.
   func modificationDate(of url: URL) async -> Date?
+  /// Names the machine, to remember what the user accepted for a repository there.
+  var machineID: String { get }
 }
 
 extension GitTransport {
   public func modificationDate(of url: URL) async -> Date? { nil }
+  public var machineID: String { "" }
 }
 
 /// Runs git with an argument vector (never through a shell).

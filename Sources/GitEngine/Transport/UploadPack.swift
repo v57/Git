@@ -84,11 +84,21 @@ struct UploadPack {
     return UploadPack(transport: transport, advertisement: try await Advertisement.parse(data))
   }
 
-  /// The server's branches and tags, and where its HEAD points.
-  func listRefs() async throws -> [RemoteRef] {
-    guard advertisement.version2 else { return advertisement.refs }
+  /// What the repository's object IDs are, when it isn't git's usual SHA-1: GitEngine reads only SHA-1.
+  var unsupportedObjectFormat: String? {
+    advertisement.capabilities["object-format"].flatMap { $0 == "sha1" ? nil : $0 }
+  }
+
+  /// The server's refs: HEAD, branches, tags and what else `prefixes` ask for (a remote's own fetch refspecs), and
+  /// where its HEAD points. Names git wouldn't take are left out.
+  func listRefs(prefixes: [String] = []) async throws -> [RemoteRef] {
+    guard advertisement.version2 else { return advertisement.refs.filter { RefName.isValid($0.name) } }
     var body = command("ls-refs")
-    for argument in ["peel", "symrefs", "ref-prefix HEAD", "ref-prefix refs/heads/", "ref-prefix refs/tags/"] {
+    let arguments =
+      ["peel", "symrefs"]
+      + (["HEAD", "refs/heads/", "refs/tags/"] + prefixes.filter { !$0.hasPrefix("refs/heads/") && !$0.hasPrefix("refs/tags/") })
+      .map { "ref-prefix \($0)" }
+    for argument in arguments {
       body.append(PktLine.encode(argument + "\n"))
     }
     body.append(PktLine.flushPacket)
@@ -103,7 +113,7 @@ struct UploadPack {
         if attribute.hasPrefix("symref-target:") { ref.symrefTarget = String(attribute.dropFirst(14)) }
         if attribute.hasPrefix("peeled:") { ref.peeled = ObjectID(hex: attribute.dropFirst(7)) }
       }
-      refs.append(ref)
+      if RefName.isValid(ref.name) { refs.append(ref) }
     }
     return refs
   }

@@ -20,12 +20,15 @@ enum Head: Equatable {
 /// Loose refs, `packed-refs` and symbolic refs under a `.git` directory.
 final class RefStore {
   let gitDirectory: URL
+  /// Where shared refs live: a linked worktree has its own HEAD and few others.
+  let commonDirectory: URL
   /// Who appears in reflog entries.
   var identity: GitSignature?
   private var packedCache: [String: (id: ObjectID, peeled: ObjectID?)]?
 
-  init(gitDirectory: URL) {
+  init(gitDirectory: URL, commonDirectory: URL? = nil) {
     self.gitDirectory = gitDirectory
+    self.commonDirectory = commonDirectory ?? gitDirectory
   }
 
   enum Value: Equatable {
@@ -33,7 +36,14 @@ final class RefStore {
     case symbolic(String)
   }
 
-  private func url(_ name: String) -> URL { gitDirectory.appendingPathComponent(name) }
+  /// A ref's file, or its log's under `logs/`.
+  private func url(_ name: String) -> URL {
+    let ref = name.hasPrefix("logs/") ? String(name.dropFirst(5)) : name
+    let isWorktrees = !ref.hasPrefix("refs/") || ref.hasPrefix("refs/bisect/") || ref.hasPrefix("refs/worktree/")
+      || ref.hasPrefix("refs/rewritten/")
+    let folder = isWorktrees && ref != "packed-refs" ? gitDirectory : commonDirectory
+    return folder.appendingPathComponent(name)
+  }
 
   /// `packed-refs`: `<id> <name>` lines, each optionally followed by `^<peeled id>`.
   private func packed() -> [String: (id: ObjectID, peeled: ObjectID?)] {

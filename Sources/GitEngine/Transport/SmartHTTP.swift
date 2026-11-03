@@ -64,13 +64,16 @@ struct RemoteRef: Equatable {
 }
 
 /// git's smart HTTP protocol over URLSession: `GET info/refs?service=…` to discover, `POST <service>` to talk.
-/// Credentials come from `GitCredentials` for the URL's host and go out as HTTP Basic authentication.
+/// Credentials come from `GitCredentials` for the URL's host and go out as HTTP Basic authentication, only over HTTPS.
 final class SmartHTTP: ServiceTransport {
   /// The repository URL without a trailing slash, after redirects and an added `.git` when that was needed.
   let baseURL: URL
   private let session: URLSession
 
   static let agent = "git/2.45.0-GitEngine"
+
+  /// Stand-ins for the network in tests (`URLSessionConfiguration.protocolClasses`).
+  nonisolated(unsafe) static var testProtocols: [AnyClass] = []
 
   private init(baseURL: URL, session: URLSession) {
     self.baseURL = baseURL
@@ -84,13 +87,14 @@ final class SmartHTTP: ServiceTransport {
     guard let url = URL(string: text), let scheme = url.scheme?.lowercased(), scheme == "https" || scheme == "http",
       url.host != nil
     else {
-      throw GitEngineError.refused("“\(remote)” isn't an HTTPS or SSH address. Only those work on this device.")
+      throw GitEngineError.unsupported("“\(remote)” isn't an HTTPS or SSH address. Only those work on this device.")
     }
     let configuration = URLSessionConfiguration.ephemeral
     configuration.httpCookieStorage = nil
     configuration.urlCache = nil
     configuration.timeoutIntervalForRequest = 120
-    let session = URLSession(configuration: configuration)
+    if !testProtocols.isEmpty { configuration.protocolClasses = testProtocols }
+    let session = URLSession(configuration: configuration, delegate: RedirectGuard(), delegateQueue: nil)
     var candidates = [url]
     if !url.path.hasSuffix(".git") { candidates.append(URL(string: text + ".git")!) }
     var lastError: (any Error)?
@@ -131,7 +135,7 @@ final class SmartHTTP: ServiceTransport {
   }
 
   /// Every request stands alone.
-  func close() {}
+  func close() { session.finishTasksAndInvalidate() }
 
   /// POSTs `body` to `service` and returns the response's bytes as they arrive.
   private func post(_ service: String, body: Data, version2: Bool) async throws -> ResponseBytes {
@@ -167,14 +171,21 @@ final class SmartHTTP: ServiceTransport {
     var request = URLRequest(url: url)
     request.setValue(Self.agent, forHTTPHeaderField: "User-Agent")
     request.setValue("no-cache", forHTTPHeaderField: "Pragma")
-    if let host = baseURL.host, let credential = GitCredentials.credential(for: host) {
+    if let credential = Self.credential(for: url) {
       let token = Data("\(credential.username):\(credential.password)".utf8).base64EncodedString()
       request.setValue("Basic \(token)", forHTTPHeaderField: "Authorization")
     }
     return request
   }
 
-  private var hasCredential: Bool { baseURL.host.flatMap { GitCredentials.credential(for: $0) } != nil }
+  /// The credential for a request to `url`, for the account this task works for (`GitCredentials.activeAccount`).
+  /// Never over plain HTTP, where anyone on the way could read it, even for a host that has one.
+  static func credential(for url: URL) -> GitCredential? {
+    guard url.scheme?.lowercased() == "https", let host = url.host else { return nil }
+    return GitCredentials.credential(for: host, account: GitCredentials.activeAccount)
+  }
+
+  private var hasCredential: Bool { Self.credential(for: baseURL) != nil }
 
   private func load(_ request: URLRequest) async throws -> (Data, HTTPURLResponse) {
     do {
@@ -193,6 +204,24 @@ final class SmartHTTP: ServiceTransport {
   static func networkError(_ error: any Error, host: String?) -> GitEngineError {
     if let error = error as? GitEngineError { return error }
     return GitEngineError.network("Couldn't reach \(host ?? "the server"): \(error.localizedDescription)")
+  }
+
+  /// A redirect keeps a request's headers, so one to another host or to plain HTTP loses the credentials first.
+  private final class RedirectGuard: NSObject, URLSessionTaskDelegate {
+    func urlSession(
+      _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+      newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void
+    ) {
+      completionHandler(SmartHTTP.redirected(request, from: task.originalRequest?.url))
+    }
+  }
+
+  static func redirected(_ request: URLRequest, from origin: URL?) -> URLRequest {
+    var request = request
+    if request.url?.scheme?.lowercased() != "https" || request.url?.host?.lowercased() != origin?.host?.lowercased() {
+      request.setValue(nil, forHTTPHeaderField: "Authorization")
+    }
+    return request
   }
 
   /// Turns an HTTP failure into a message: sign in for 401/403, not found for 404.

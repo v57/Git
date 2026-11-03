@@ -31,6 +31,10 @@ public struct GitSSHAddress: Sendable, Hashable {
         address = address[..<colon]
       }
     } else {
+      // `helper::address` runs a helper (`ext::sh -c …`), it's no host.
+      if let helper = text.range(of: "::"), !text[..<helper.lowerBound].contains(where: { !($0.isLetter || $0.isNumber || "+.-".contains($0)) }) {
+        return nil
+      }
       // scp's `[user@]host:path`, which git takes for a local path when a slash comes before the colon.
       let start = text.firstIndex(of: "]") ?? text.startIndex
       guard let colon = text[start...].firstIndex(of: ":"), !text[..<colon].contains("/") else { return nil }
@@ -77,13 +81,15 @@ public enum GitSSH {
 
   private static let lock = NSLock()
   nonisolated(unsafe) private static var connector: Connector?
+  /// A connector for one task and what it starts, for tests running side by side.
+  @TaskLocal static var scoped: Connector?
 
   /// Sets how SSH remotes are reached. Without one they're refused.
   public static func setConnector(_ connector: Connector?) {
     lock.withLock { self.connector = connector }
   }
 
-  static var current: Connector? { lock.withLock { connector } }
+  static var current: Connector? { scoped ?? lock.withLock { connector } }
 }
 
 /// A service over SSH: one connection for the whole conversation, which is why it speaks protocol v0 (asking for v2
@@ -102,7 +108,7 @@ final class GitSSHTransport: ServiceTransport, @unchecked Sendable {
   /// Starts `service` on the server and reads what it advertises.
   static func discover(_ address: GitSSHAddress, service: String) async throws -> (GitSSHTransport, Data) {
     guard let connector = GitSSH.current else {
-      throw GitEngineError.refused("SSH remotes don't work here yet. Use the repository's HTTPS address.")
+      throw GitEngineError.unsupported("SSH remotes don't work here yet. Use the repository's HTTPS address.")
     }
     let channel = try await connector(address, address.command(service))
     let transport = GitSSHTransport(channel: channel, host: address.host)
@@ -118,6 +124,7 @@ final class GitSSHTransport: ServiceTransport, @unchecked Sendable {
         advertisement.append(PktLine.encode(line))
       }
       advertisement.append(PktLine.flushPacket)
+      transport.bytes.hasAdvertised = true
       return (transport, advertisement)
     } catch {
       channel.close()
@@ -151,6 +158,9 @@ final class ChannelBytes: @unchecked Sendable {
   private var chunk = Data()
   private var position = 0
   private var ended = false
+  /// The service got as far as listing what it has. A command that fails before that never let this login in: a
+  /// repository host says so that way (`Repository not found`, `Permission denied`).
+  var hasAdvertised = false
 
   init(channel: any GitSSHChannel, host: String) {
     self.channel = channel
@@ -181,6 +191,8 @@ final class ChannelBytes: @unchecked Sendable {
     let outcome = try await channel.finished()
     guard let status = outcome.status, status != 0 else { return }
     let message = outcome.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
-    throw GitEngineError.network(message.isEmpty ? "\(host) stopped with status \(status)." : "\(host): \(message)")
+    throw GitEngineError(
+      hasAdvertised ? .network : .authentication,
+      message.isEmpty ? "\(host) stopped with status \(status)." : "\(host): \(message)")
   }
 }

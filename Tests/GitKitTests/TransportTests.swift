@@ -8,10 +8,18 @@ import Testing
 final class RecordingTransport: GitTransport, @unchecked Sendable {
   private let lock = NSLock()
   private var calls: [String] = []
+  private var ranCommands: [String] = []
   private var lastNetworkEnvironment: [String: String] = [:]
   let runner = TempRepo.runner
+  let machineID: String
+
+  init(machineID: String = "") {
+    self.machineID = machineID
+  }
 
   var recorded: [String] { lock.withLock { calls } }
+  /// The git commands that ran: `fetch`, `status`…
+  var commands: [String] { lock.withLock { ranCommands } }
   /// The environment of the last call that had one.
   var environment: [String: String] { lock.withLock { lastNetworkEnvironment } }
 
@@ -22,6 +30,7 @@ final class RecordingTransport: GitTransport, @unchecked Sendable {
     progress: (@Sendable (String) -> Void)?
   ) async throws -> GitResult {
     record("git")
+    lock.withLock { ranCommands.append(arguments.first { !$0.hasPrefix("-") && !$0.contains("=") } ?? "") }
     if !environment.isEmpty { lock.withLock { lastNetworkEnvironment = environment } }
     // The runner adds the global config again; git takes the repeated -c options.
     return try await runner.run(
@@ -162,6 +171,72 @@ final class RecordingTransport: GitTransport, @unchecked Sendable {
 
     // Git on this machine keeps them all, as before: it's the app's own process that hands them over.
     #expect(GitCredentials.environment(account: account).filter { $0.key.hasPrefix("GITKIT_PASSWORD_") }.count == 2)
+  }
+
+  /// Above `useGit`, another machine gets the token only for a repository whose HTTPS offer the user accepted, and at
+  /// `vaultKeyOnly` it runs nothing on the network.
+  @Test func levelsDecideWhatAnotherMachineGets() async throws {
+    let account = UUID().uuidString
+    GitCredentials.set(GitCredential(username: "octo", password: "for-host"), for: "127.0.0.1", account: account)
+    defer { GitCredentials.set(nil, for: "127.0.0.1", account: account) }
+    func passwords(_ transport: RecordingTransport) -> Set<String> {
+      Set(transport.environment.filter { $0.key.hasPrefix("GITKIT_PASSWORD_") }.values)
+    }
+    func at<T>(_ level: GitSecurityLevel, _ body: () async throws -> T) async rethrows -> T {
+      try await GitNetwork.$scoped.withValue(GitNetwork.Configuration(engine: nil, level: { level })) { try await body() }
+    }
+    let temp = try await TempRepo()
+    let transport = RecordingTransport()
+    var runner = TempRepo.runner
+    runner.transport = transport
+    runner.credentialAccount = account
+    let repo = Repository(url: temp.root, runner: runner)
+    try await repo.addRemote("origin", url: "https://127.0.0.1:1/repo.git")
+
+    await at(.useGit) { await #expect(throws: GitError.self) { try await repo.fetch() } }
+    #expect(passwords(transport) == ["for-host"])
+
+    for level in [GitSecurityLevel.inAppFirst, .sshOnly] {
+      let plain = RecordingTransport()
+      var runner = runner
+      runner.transport = plain
+      let repo = Repository(url: temp.root, runner: runner)
+      await at(level) { await #expect(throws: GitError.self) { try await repo.fetch() } }
+      #expect(passwords(plain).isEmpty)
+    }
+
+    let refused = RecordingTransport()
+    var refusedRunner = runner
+    refusedRunner.transport = refused
+    let blocked = Repository(url: temp.root, runner: refusedRunner)
+    await at(.vaultKeyOnly) {
+      await #expect(throws: GitError.self) { try await blocked.fetch() }
+      await #expect(throws: GitError.self) { try await blocked.pull() }
+      await #expect(throws: GitError.self) { try await blocked.push() }
+      await #expect(throws: GitError.self) {
+        try await blocked.switchToHTTPS(HTTPSRemote(remote: "origin", host: "127.0.0.1", url: "https://127.0.0.1:1/r.git"))
+      }
+    }
+    // A push reads the status first; nothing that talks to a remote ran.
+    #expect(passwords(refused).isEmpty)
+    #expect(refused.commands.allSatisfy { !["fetch", "pull", "push", "ls-remote", "clone"].contains($0) })
+
+    // Accepting the offer lets the token through, for this machine and repository only.
+    let accepting = RecordingTransport(machineID: "accepting-\(UUID().uuidString)")
+    var acceptingRunner = runner
+    acceptingRunner.transport = accepting
+    let accepted = Repository(url: temp.root, runner: acceptingRunner)
+    await at(.inAppFirst) {
+      await #expect(throws: GitError.self) {
+        try await accepted.switchToHTTPS(HTTPSRemote(remote: "origin", host: "127.0.0.1", url: "https://127.0.0.1:1/r.git"))
+      }
+      #expect(passwords(accepting) == ["for-host"])
+      let next = RecordingTransport(machineID: accepting.machineID)
+      var nextRunner = acceptingRunner
+      nextRunner.transport = next
+      await #expect(throws: GitError.self) { try await Repository(url: temp.root, runner: nextRunner).fetch() }
+      #expect(passwords(next) == ["for-host"])
+    }
   }
 
   @Test func failsWithGitsMessageAndTimesOut() async throws {

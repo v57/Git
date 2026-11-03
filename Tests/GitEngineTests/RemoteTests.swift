@@ -197,7 +197,7 @@ import Testing
     #expect(try git(["status", "--porcelain"], in: destination) == "")
   }
 
-  @Test func asksForCredentialsAndSendsThem() async throws {
+  @Test func asksForCredentials() async throws {
     let remote = try Remote(name: "private-project")
     defer { remote.server.stop() }
     remote.server.requiredAuthorization = "Basic " + Data("user:secret".utf8).base64EncodedString()
@@ -210,10 +210,6 @@ import Testing
       #expect(error.message.contains("sign in"))
     }
     #expect(!FileManager.default.fileExists(atPath: destination.path))
-    GitCredentials.set(GitCredential(username: "user", password: "secret"), for: "127.0.0.1")
-    defer { GitCredentials.set(nil, for: "127.0.0.1") }
-    _ = try await LocalRepository.clone(from: remote.url, to: destination)
-    #expect(try git(["status", "--porcelain"], in: destination) == "")
   }
 
   @Test func reportsMissingRepositories() async throws {

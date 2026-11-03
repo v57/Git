@@ -17,6 +17,8 @@ public struct GitEngineError: Error, Sendable, Hashable, LocalizedError, CustomS
     case authentication
     /// The network or the server failed.
     case network
+    /// The engine can't do this with this repository or address; git can.
+    case unsupported
     /// A file couldn't be read or written.
     case fileSystem
   }
@@ -36,6 +38,7 @@ public struct GitEngineError: Error, Sendable, Hashable, LocalizedError, CustomS
   static func refused(_ message: String) -> GitEngineError { GitEngineError(.refused, message) }
   static func notFound(_ message: String) -> GitEngineError { GitEngineError(.notFound, message) }
   static func network(_ message: String) -> GitEngineError { GitEngineError(.network, message) }
+  static func unsupported(_ message: String) -> GitEngineError { GitEngineError(.unsupported, message) }
 
   static func missingObject(_ id: ObjectID) -> GitEngineError {
     .corrupt("The repository is missing object \(id.hex).")

@@ -1,32 +1,64 @@
 import Foundation
+import GitKit
 
 /// Everything one operation needs from a repository: its folders, objects, refs and config. Each operation makes
 /// its own, so nothing is shared between tasks.
 final class GitContext {
   let worktree: URL
+  /// This working tree's folder: `.git`, or where a linked worktree's or a submodule's `.git` file points.
   let gitDirectory: URL
+  /// What a linked worktree shares with the main repository (objects, refs, config): `gitDirectory` otherwise.
+  let commonDirectory: URL
   let objects: ObjectStore
   let refs: RefStore
   private(set) var config: GitConfig
+  /// Everything git reads here where the app has git to ask (`git config --list`: the user's and the system's too).
+  private var inherited: GitConfig?
 
-  init(worktree: URL) throws {
+  init(worktree: URL, settings: [GitSetting]? = nil) throws {
     self.worktree = worktree
-    gitDirectory = worktree.appendingPathComponent(".git", isDirectory: true)
+    let dotGit = worktree.appendingPathComponent(".git", isDirectory: true)
     var isDirectory: ObjCBool = false
-    guard FileManager.default.fileExists(atPath: gitDirectory.path, isDirectory: &isDirectory), isDirectory.boolValue,
-      FileManager.default.fileExists(atPath: gitDirectory.appendingPathComponent("HEAD").path)
-    else {
+    guard FileManager.default.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) else {
       throw GitEngineError(.notARepository, "\(worktree.lastPathComponent) isn't a git repository.")
     }
-    objects = ObjectStore(directory: gitDirectory.appendingPathComponent("objects"))
-    refs = RefStore(gitDirectory: gitDirectory)
-    config = GitConfig(url: gitDirectory.appendingPathComponent("config"))
-    if let name = config.value("user.name"), let email = config.value("user.email") {
+    if isDirectory.boolValue {
+      gitDirectory = dotGit
+    } else {
+      guard let text = try? String(contentsOf: worktree.appendingPathComponent(".git"), encoding: .utf8),
+        text.hasPrefix("gitdir:")
+      else { throw GitEngineError(.notARepository, "\(worktree.lastPathComponent) isn't a git repository.") }
+      gitDirectory = Self.resolve(String(text.dropFirst(7)), from: worktree)
+    }
+    guard FileManager.default.fileExists(atPath: gitDirectory.appendingPathComponent("HEAD").path) else {
+      throw GitEngineError(.notARepository, "\(worktree.lastPathComponent) isn't a git repository.")
+    }
+    if let text = try? String(contentsOf: gitDirectory.appendingPathComponent("commondir"), encoding: .utf8) {
+      commonDirectory = Self.resolve(text, from: gitDirectory)
+    } else {
+      commonDirectory = gitDirectory
+    }
+    objects = ObjectStore(directory: commonDirectory.appendingPathComponent("objects"))
+    refs = RefStore(gitDirectory: gitDirectory, commonDirectory: commonDirectory)
+    config = GitConfig(url: commonDirectory.appendingPathComponent("config"))
+    inherited = settings.map(GitConfig.init(settings:))
+    let named = inherited ?? config
+    if let name = named.value("user.name"), let email = named.value("user.email") {
       refs.identity = GitSignature(name: name, email: email)
     }
   }
 
-  var configURL: URL { gitDirectory.appendingPathComponent("config") }
+  /// A path in a `.git` or `commondir` file, relative to the folder holding the file.
+  private static func resolve(_ text: String, from folder: URL) -> URL {
+    let path = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let url = path.hasPrefix("/") ? URL(fileURLWithPath: path) : folder.appendingPathComponent(path)
+    return url.standardizedFileURL
+  }
+
+  /// What git would read for a key: every config file where the app could ask git, `.git/config` otherwise.
+  var settings: GitConfig { inherited ?? config }
+
+  var configURL: URL { commonDirectory.appendingPathComponent("config") }
   var indexURL: URL { gitDirectory.appendingPathComponent("index") }
 
   func updateConfig(_ change: (inout GitConfig) throws -> Void) throws {
@@ -41,11 +73,15 @@ final class GitContext {
       throw error
     }
     config = fresh
+    if var merged = inherited {
+      try change(&merged)
+      inherited = merged
+    }
   }
 
   /// `core.filemode`: whether the executable bit in the working tree means anything.
-  var trustsExecutableBit: Bool { config.bool("core.filemode", default: true) }
-  var supportsSymlinks: Bool { config.bool("core.symlinks", default: true) }
+  var trustsExecutableBit: Bool { settings.bool("core.filemode", default: true) }
+  var supportsSymlinks: Bool { settings.bool("core.symlinks", default: true) }
 
   func readIndex() throws -> GitIndex { try GitIndex(url: indexURL) }
 

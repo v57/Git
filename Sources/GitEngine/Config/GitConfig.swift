@@ -1,4 +1,5 @@
 import Foundation
+import GitKit
 
 /// A git config file (`.git/config`), kept as its lines so edits leave the rest of the file as it was.
 ///
@@ -14,6 +15,19 @@ struct GitConfig {
 
   init(url: URL) {
     self.init(text: (try? String(contentsOf: url, encoding: .utf8)) ?? "")
+  }
+
+  /// What `git config --list` printed, each section's values in the order git read them.
+  init(settings: [GitSetting]) {
+    var order: [String] = []
+    var sections: [String: [String]] = [:]
+    for setting in settings {
+      guard let key = Key(setting.key) else { continue }
+      let header = Self.sectionHeader(key)
+      if sections[header] == nil { order.append(header) }
+      sections[header, default: []].append("\t\(key.name) = \(Self.encode(setting.value))")
+    }
+    lines = order.flatMap { [$0] + sections[$0]! }
   }
 
   var text: String { lines.isEmpty ? "" : lines.joined(separator: "\n") + "\n" }
@@ -142,6 +156,20 @@ struct GitConfig {
   func bool(_ key: String, default fallback: Bool) -> Bool {
     guard let value = value(key)?.lowercased() else { return fallback }
     return ["true", "yes", "on", "1"].contains(value)
+  }
+
+  /// The names of the keys directly in `section` (`repositoryformatversion` for `core`).
+  func names(in section: String) -> [String] {
+    var names: [String] = []
+    var inSection = false
+    for line in lines {
+      switch Self.parse(line) {
+      case .section(let name, let subsection): inSection = name == section.lowercased() && subsection == nil
+      case .entry(let name, _) where inSection: names.append(name)
+      default: break
+      }
+    }
+    return names
   }
 
   /// The subsections of `section` in file order: the remotes for `remote`.

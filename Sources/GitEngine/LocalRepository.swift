@@ -27,7 +27,7 @@ public struct LocalRepository: Sendable, Hashable, Identifiable {
     (try? GitContext(worktree: url.standardizedFileURL)) != nil
   }
 
-  func context() throws -> GitContext { try GitContext(worktree: url) }
+  func context(settings: [GitSetting]? = nil) throws -> GitContext { try GitContext(worktree: url, settings: settings) }
 
   /// Creates an empty repository in `url` (made if needed), as `git init` does.
   public static func initialize(at url: URL, initialBranch: String = "main") throws -> LocalRepository {
@@ -76,12 +76,19 @@ public struct LocalRepository: Sendable, Hashable, Identifiable {
 
   /// A value from `.git/config`, e.g. `user.name`, `remote.origin.url` or `branch.main.merge`.
   public func config(_ key: String) -> String? {
-    GitConfig(url: url.appendingPathComponent(".git/config")).value(key)
+    (try? context())?.config.value(key)
   }
 
   /// Sets a value in `.git/config`, or removes it with `nil`.
   public func setConfig(_ key: String, _ value: String?) throws {
     try context().updateConfig { try $0.set(key, value) }
+  }
+}
+
+/// Whether a server's ref name is one git takes. A ref's name is a path under `.git`: never trust `refs/heads/../../x`.
+enum RefName {
+  static func isValid(_ name: String) -> Bool {
+    name == "HEAD" || (name.hasPrefix("refs/") && BranchName.isValid(String(name.dropFirst(5))))
   }
 }
 
