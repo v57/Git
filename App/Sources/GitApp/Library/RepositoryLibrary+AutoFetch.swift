@@ -47,6 +47,7 @@ extension RepositoryLibrary {
   private func autoFetch(_ keys: [String]) async {
     guard !keys.isEmpty else { return }
     keys.forEach(AutoFetch.shared.noteAttempt)
-    await run(.fetch, on: keys, quiet: true)
+    // Nobody asked for this just now: a device key that would have to ask the user fails it instead.
+    await VaultIdentity.quietly { await run(.fetch, on: keys, quiet: true) }
   }
 }

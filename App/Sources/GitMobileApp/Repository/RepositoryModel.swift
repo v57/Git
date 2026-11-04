@@ -344,7 +344,8 @@ enum RepositorySource: Hashable, Identifiable {
     guard auto.runsOnSelection, let backend else { return }
     guard await auto.isDue(backend, key: source.id, isOtherDevice: isRemote) else { return }
     auto.noteAttempt(source.id)
-    try? await backend.fetch { _ in }
+    // Nobody asked for this just now: a device key that would have to ask the user fails it instead.
+    await VaultIdentity.quietly { _ = try? await backend.fetch { _ in } }
     await refresh()
   }
 

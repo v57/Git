@@ -27,5 +27,7 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>NSFaceIDUsageDescription</key>
+	<string>Confirms it's you before this device's SSH key signs in to a server.</string>
 </dict>
 </plist>
