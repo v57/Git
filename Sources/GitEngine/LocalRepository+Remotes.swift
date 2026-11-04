@@ -12,6 +12,13 @@ extension LocalRepository {
     try context().fetchURL(remote)
   }
 
+  /// When anything last fetched here: `FETCH_HEAD`'s date, as git leaves it.
+  public func lastFetchDate() async -> Date? {
+    guard let gitDirectory = try? context().gitDirectory else { return nil }
+    let file = gitDirectory.appendingPathComponent("FETCH_HEAD")
+    return (try? FileManager.default.attributesOfItem(atPath: file.path))?[.modificationDate] as? Date
+  }
+
   /// Adds a remote that fetches every branch into `refs/remotes/<name>/`.
   public func addRemote(_ name: String, url: String) async throws {
     let context = try context()

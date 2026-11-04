@@ -272,8 +272,9 @@ extension RepositoryLibrary {
   // MARK: Fetch, pull and push
 
   /// Runs `action` in each repository (a path, or a `remoteKey` for one on another device), a few at a time, and
-  /// reports the ones that failed.
-  func run(_ action: RemoteAction, on paths: [String]) async {
+  /// reports the ones that failed. `quiet`, for what the user didn't ask for right now (auto-fetch): a failure changes
+  /// nothing on screen.
+  func run(_ action: RemoteAction, on paths: [String], quiet: Bool = false) async {
     // Those on other devices are off at Vault key only, and their menus say so.
     let isOff = GitSecurity.level.otherDeviceRefusal != nil
     let paths = paths.filter { remoteActivity[$0] == nil && !(isOff && Self.isRemote($0)) }
@@ -302,8 +303,10 @@ extension RepositoryLibrary {
       for _ in 0..<4 { addNext() }
       for await (path, message) in group {
         remoteActivity[path] = nil
-        remoteOutcomes[path] = RemoteOutcome(
-          action: action, succeeded: message == nil, count: (remoteOutcomes[path]?.count ?? 0) + 1)
+        if message == nil || !quiet {
+          remoteOutcomes[path] = RemoteOutcome(
+            action: action, succeeded: message == nil, count: (remoteOutcomes[path]?.count ?? 0) + 1)
+        }
         if let message {
           failures.append((remoteRepository(path)?.name ?? (path as NSString).lastPathComponent, message))
         }
@@ -315,7 +318,7 @@ extension RepositoryLibrary {
         addNext()
       }
     }
-    if let failure = RemoteFailure(action, failures: failures) { remoteFailure = failure }
+    if !quiet, let failure = RemoteFailure(action, failures: failures) { remoteFailure = failure }
   }
 
   /// Runs `action` in a repository on another device: in its session when it's open, else over a connection just for

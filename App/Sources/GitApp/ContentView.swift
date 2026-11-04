@@ -68,6 +68,7 @@ struct ContentView: View {
       Task { await library.createRepository(into: context) }
     }
     .task { library.vaultProjects.start(context: context, library: library) }
+    .task { await library.autoFetchAtStartup(context: context) }
     // A folder opened in Git (Shell's Open With, `open -a Git <folder>`): added if needed, then shown.
     .onOpenURL { url in
       guard url.isFileURL else { return }
@@ -77,6 +78,8 @@ struct ContentView: View {
     .task(id: selectedPath) { await showSelection() }
     .task(id: selectedPath) {
       await library.activate(selectedPath, context: context)
+      // On its own task: picking another repository doesn't stop a fetch that started.
+      if !Task.isCancelled, let path = selectedPath { Task { await library.autoFetchSelected(path) } }
       #if DEBUG
         // A screenshot scene's repository: its screen from the arguments, then the picture.
         let scene = LaunchScene.shared

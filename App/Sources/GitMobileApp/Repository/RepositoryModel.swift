@@ -337,6 +337,17 @@ enum RepositorySource: Hashable, Identifiable {
     }
   }
 
+  /// Settings ▸ Privacy's auto-fetch, as the repository opens: an ordinary fetch at the level's rules, if it's due. It
+  /// runs beside whatever the user does, and a failure stays quiet, since nobody asked for it just now.
+  func autoFetchIfDue() async {
+    let auto = AutoFetch.shared
+    guard auto.runsOnSelection, let backend else { return }
+    guard await auto.isDue(backend, key: source.id, isOtherDevice: isRemote) else { return }
+    auto.noteAttempt(source.id)
+    try? await backend.fetch { _ in }
+    await refresh()
+  }
+
   /// Moves the remote to HTTPS and runs the sync again.
   func acceptHTTPS(_ offer: HTTPSOffer) async {
     let switched = await perform("Switching to HTTPS…", failure: "Couldn’t Switch to HTTPS") {

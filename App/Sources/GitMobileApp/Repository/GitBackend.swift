@@ -33,6 +33,10 @@ nonisolated protocol GitBackend: Sendable {
   func switchTo(_ branch: Branch) async throws
   func createBranch(_ name: String) async throws
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws
+  /// When anything last fetched here, for auto-fetch.
+  func lastFetchDate() async -> Date?
+  /// Where the remotes fetch from.
+  func remoteURLs() async -> [String]
   func pull(progress: @escaping @Sendable (String) -> Void) async throws
   func push(progress: @escaping @Sendable (String) -> Void) async throws
   /// The remote to offer HTTPS for after git's ssh couldn't sign in.
@@ -113,6 +117,14 @@ nonisolated struct RemoteBackend: GitBackend {
   func switchTo(_ branch: Branch) async throws { try await repository.switchTo(branch) }
   func createBranch(_ name: String) async throws { try await repository.createBranch(name) }
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.fetch(progress: progress) }
+  func lastFetchDate() async -> Date? { await repository.lastFetchDate() }
+  func remoteURLs() async -> [String] {
+    var urls: [String] = []
+    for remote in (try? await repository.remotes()) ?? [] {
+      if let url = try? await repository.remoteURL(remote) { urls.append(url) }
+    }
+    return urls
+  }
   func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.pull(progress: progress) }
   func push(progress: @escaping @Sendable (String) -> Void) async throws { try await repository.push(progress: progress) }
   func remoteOverSSH() async -> HTTPSRemote? { await repository.remoteOverSSH() }
@@ -205,6 +217,14 @@ nonisolated struct LocalBackend: GitBackend {
   func switchTo(_ branch: Branch) async throws { try await repository.switchTo(branch) }
   func createBranch(_ name: String) async throws { try await repository.createBranch(name) }
   func fetch(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.fetch, progress) }
+  func lastFetchDate() async -> Date? { await repository.lastFetchDate() }
+  func remoteURLs() async -> [String] {
+    var urls: [String] = []
+    for remote in (try? await repository.remotes()) ?? [] {
+      if let url = try? await repository.remoteURL(remote) { urls.append(url) }
+    }
+    return urls
+  }
   func pull(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.pull, progress) }
   func push(progress: @escaping @Sendable (String) -> Void) async throws { try await network(.push(force: false), progress) }
 

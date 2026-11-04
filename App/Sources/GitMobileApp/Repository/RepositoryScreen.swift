@@ -74,6 +74,7 @@ struct RepositoryScreen: View {
     .task {
       model.profiles = profiles
       await model.open()
+      Task { await model.autoFetchIfDue() }
       #if DEBUG
         await DebugLaunch.attach(to: model, pane: $pane)
       #endif
