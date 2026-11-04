@@ -14,28 +14,20 @@ public nonisolated final class SSHGitTransport: GitTransport, @unchecked Sendabl
   public let target: RemoteTarget
   public var machineID: String { target.id }
   private let login: @Sendable () async throws -> SSHServer
-  private let onNewHostKey: @Sendable (String) -> Void
   private let lock = NSLock()
   private var connecting: Task<SSHConnection, Error>?
 
-  public init(
-    target: RemoteTarget, login: @escaping @Sendable () async throws -> SSHServer,
-    onNewHostKey: @escaping @Sendable (String) -> Void
-  ) {
+  public init(target: RemoteTarget, login: @escaping @Sendable () async throws -> SSHServer) {
     self.target = target
     self.login = login
-    self.onNewHostKey = onNewHostKey
   }
 
   /// The open connection, or a new one when there's none or it dropped. Callers arriving while one opens share it.
   public func connection() async throws -> SSHConnection {
     let task = lock.withLock { () -> Task<SSHConnection, Error> in
       if let connecting { return connecting }
-      let task = Task { [login, onNewHostKey] in
-        let server = try await login()
-        let connection = try await SSHConnection.connect(server: server, timeout: 15)
-        if server.knownFingerprint == nil { onNewHostKey(connection.hostKeyFingerprint) }
-        return connection
+      let task = Task { [login] in
+        try await SSHConnection.connect(server: try await login(), timeout: 15)
       }
       connecting = task
       return task

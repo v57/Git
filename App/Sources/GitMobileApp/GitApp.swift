@@ -24,6 +24,7 @@ public struct GitApp: App {
     WindowGroup {
       RepositoriesView()
         .environment(GitHubAccount.app)
+        .vaultHostKeyRequests()
         .componentKit()
     }
   }

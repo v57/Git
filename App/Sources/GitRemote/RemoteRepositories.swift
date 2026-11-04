@@ -3,6 +3,7 @@ import Foundation
 import GitKit
 import SSHKit
 import VaultKit
+import VaultUI
 
 /// A machine a repository is on, and how to sign in to it: one of the vault's hosts (a device on the user's Hub, or
 /// any SSH host saved in the Vault app) and the repository's folder there.
@@ -165,9 +166,7 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
     _ target: RemoteTarget, vault: Vault = .shared
   ) async throws -> (repository: Repository, transport: SSHGitTransport) {
     let transport = SSHGitTransport(
-      target: target, login: { try await MainActor.run { try RemoteRepositories.login(for: target, vault: vault) } },
-      onNewHostKey: { fingerprint in Task { @MainActor in RemoteRepositories.trust(fingerprint, for: target, vault: vault) } }
-    )
+      target: target, login: { try await MainActor.run { try RemoteRepositories.login(for: target, vault: vault) } })
     let output = try await transport.shell(
       "cd \(SSHGitTransport.path(target.directory)) && exec git rev-parse --show-toplevel")
     guard output.status == 0 else {
@@ -230,32 +229,24 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
       throw LoginError.unknownHost
     }
     guard !host.user.isEmpty else { throw LoginError.noUser(host.displayName) }
-    var server: SSHServer
+    // The key the device signed, else the one the user accepted, else the user is asked before anything is sent.
+    let trust = SSHHostTrust.known(
+      target.hostKey.flatMap(fingerprint(ofHostKey:)) ?? vault.knownHost(for: host)?.fingerprint,
+      otherwise: .ask { key in
+        await VaultHostKeyRequest.shared.approve(key.fingerprint, keyType: key.type, for: host, in: vault)
+      })
     switch host.auth {
     case .password:
-      server = SSHServer(
+      return SSHServer(
         host: target.host, fallbackHosts: target.fallbackHosts, port: target.port, user: host.user,
-        password: VaultSecrets.password(for: host.id))
+        password: VaultSecrets.password(for: host.id), trust: trust)
     case .deviceKey:
-      server = SSHServer(
+      return SSHServer(
         host: target.host, fallbackHosts: target.fallbackHosts, port: target.port, user: host.user,
-        key: try deviceKey())
+        key: try deviceKey(), trust: trust)
     case .importedKey:
       throw LoginError.importedKey(host.displayName)
     }
-    if let line = target.hostKey, let fingerprint = fingerprint(ofHostKey: line) {
-      server.knownFingerprint = fingerprint
-    } else {
-      server.knownFingerprint = try? vault.trustStore(for: host)?.knownFingerprint(host: target.host, port: target.port)
-    }
-    return server
-  }
-
-  /// Remembers a host's key after the first login to it.
-  public static func trust(_ fingerprint: String, for target: RemoteTarget, vault: Vault = .shared) {
-    guard target.hostKey == nil, let host = vault.host(id: target.id) ?? vault.personalVault.host(id: target.id)
-    else { return }
-    try? vault.trustStore(for: host)?.trust(fingerprint: fingerprint, host: target.host, port: target.port)
   }
 
   /// This device's SSH key (Secure Enclave, shared by the v57 apps).

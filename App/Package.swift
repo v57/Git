@@ -65,7 +65,7 @@ let package = Package(
       name: "GitRemote",
       dependencies: [
         .product(name: "GitKit", package: kits), .product(name: "VaultKit", package: "Vault"),
-        .product(name: "SSHKit", package: "SSH"),
+        .product(name: "VaultUI", package: "Vault"), .product(name: "SSHKit", package: "SSH"),
         // Git in Swift, for network actions in the app. Elsewhere they stay with the git command.
         .product(name: "GitEngine", package: kits, condition: .when(platforms: [.macOS, .iOS])),
       ],

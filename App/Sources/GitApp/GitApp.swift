@@ -7,6 +7,7 @@ import SwiftData
 import SwiftUI
 import UpdateKit
 import VaultKit
+import VaultUI
 
 public struct GitApp: App {
   @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
@@ -61,6 +62,7 @@ public struct GitApp: App {
       GitWindow()
         .onChange(of: gitPath) { _, path in GitExecutable.customPath = path }
         .kitLazyLoading(Self.buildsLazily)
+        .vaultHostKeyRequests()
         .componentKit(accent: .accentColor)
     }
     .defaultSize(width: 1440, height: 900)

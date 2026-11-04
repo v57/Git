@@ -86,7 +86,9 @@
       let text = remote.keyText ?? remote.key.flatMap { try? String(contentsOfFile: $0, encoding: .utf8) } ?? ""
       return SSHServer(
         host: target.host, fallbackHosts: target.fallbackHosts, port: target.port, user: remote.user,
-        key: try? SSHKey(importing: text))
+        key: try? SSHKey(importing: text),
+        // A test server named by this debug run's environment.
+        trust: .ask { _ in true })
     }
   }
 #endif

@@ -3,10 +3,12 @@ import Foundation
 import GitEngine
 import SSHKit
 import VaultKit
+import VaultUI
 
-/// How GitEngine reaches SSH remotes: it speaks git, and this logs in with the key the vault keeps for this device. A
-/// host it hasn't met is remembered in the vault on first use and a changed key is refused, as for the user's other
-/// SSH hosts; `~/.ssh` plays no part.
+/// How GitEngine reaches SSH remotes: it speaks git, and this logs in with the key the vault keeps for this device.
+/// GitHub, GitLab and Bitbucket are known ahead of time (`SSHKnownHosts`). About any other host it hasn't met the user is
+/// asked, before this device's key signs anything, and a yes is remembered in the vault. A changed key is refused, as
+/// for the user's other SSH hosts; `~/.ssh` plays no part.
 enum DeviceKeySSH {
   static func install() {
     GitSSH.setConnector { address, command in
@@ -18,12 +20,6 @@ enum DeviceKeySSH {
       }
       do {
         let connection = try await SSHConnection.connect(server: login)
-        if login.knownFingerprint == nil {
-          let fingerprint = connection.hostKeyFingerprint
-          await MainActor.run {
-            try? Vault.shared.personalVault.store?.trust(fingerprint: fingerprint, host: login.host, port: login.port)
-          }
-        }
         return Channel(connection: connection, channel: connection.open(command))
       } catch SSHTunnelError.authenticationFailed {
         throw GitEngineError(
@@ -37,11 +33,16 @@ enum DeviceKeySSH {
 
   /// `git` is the login repository hosts expect when the address names none.
   private static func server(for address: GitSSHAddress) throws -> SSHServer {
-    var server = SSHServer(
-      host: address.host, port: address.port ?? 22, user: address.user ?? "git", key: try key())
-    server.knownFingerprint = try? Vault.shared.personalVault.store?.knownFingerprint(
-      host: server.host, port: server.port)
-    return server
+    let personal = Vault.shared.personalVault
+    let port = address.port ?? 22
+    let known = try? personal.store?.knownFingerprint(host: address.host, port: port)
+    return SSHServer(
+      host: address.host, port: port, user: address.user ?? "git", key: try key(),
+      trust: .known(
+        known,
+        otherwise: .ask { key in
+          await VaultHostKeyRequest.shared.approve(key.fingerprint, keyType: key.type, host: key.host, port: key.port, in: personal)
+        }))
   }
 
   private static func key() throws -> SSHKey {
