@@ -125,6 +125,10 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
   Levels 3 and 4 need this device's key on the server first (Settings ▸ Security shows it). Repositories on your other
   devices use their own git and keys: Level 4 turns their fetch, pull and push off, Level 3 warns, and above Level 1 they
   get the token only after you accept the switch to HTTPS. Linux and Windows stay on Use git for now.
+- **Privacy.** Settings ▸ Privacy lists everyone Git talks to, and nothing goes to us. What reaches out on its own is off
+  until you turn it on: the update check (on the Mac) and auto-fetch, which fetches at startup, when you select a
+  repository, or both, at most once a day per repository unless you change it. It's an ordinary fetch at your security level, but from SSH only up
+  a repository with HTTPS remotes waits for you, and a failure stays quiet.
 - **The GitHub account stays in the app.** The token lives in a keychain item only the app can read without a prompt.
   In the app it's used directly, only over HTTPS. At Use git, `GitCredentials` passes git a helper through
   `GIT_CONFIG_COUNT` environment entries, clearing the configured helpers for that host first, so the token is never

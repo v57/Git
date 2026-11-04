@@ -44,6 +44,10 @@ struct RepositoriesView: View {
   /// Asks for the name and email at the first commit that needs them.
   @State private var profiles = VaultProfileRequest()
   @State private var groups = RemoteGroups()
+  /// Settings: on iPad in the detail until a repository is picked or Done, on iPhone pushed on the stack, the way the
+  /// kit then pushes its panes (`navigationDestination(isPresented:)`).
+  @State private var showsSettings = false
+  @State private var columnsBeforeSettings = NavigationSplitViewVisibility.all
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
 
@@ -64,7 +68,8 @@ struct RepositoriesView: View {
 
   var body: some View {
     root
-      .kitSheet(item: $sheet) { sheet in
+      // Settings isn't an overlay: it's pushed on iPhone and takes the detail on iPad (`showsSettings`).
+      .kitSheet(item: Binding(get: { sheet == .settings ? nil : sheet }, set: { sheet = $0 })) { sheet in
         switch sheet {
         case .clone: CloneSheet { selection = RepositorySource.local($0).id }
         case .create: NewRepositorySheet { selection = RepositorySource.local($0).id }
@@ -73,8 +78,13 @@ struct RepositoriesView: View {
             savedRevision += 1
             selection = "remote:saved:" + saved.id
           }
-        case .settings: SettingsSheet()
+        case .settings: EmptyView()
         }
+      }
+      .onChange(of: sheet) { _, picked in
+        guard picked == .settings else { return }
+        sheet = nil
+        showsSettings = true
       }
       .vaultProfileRequests(profiles)
       .environment(profiles)
@@ -88,6 +98,7 @@ struct RepositoriesView: View {
     Group {
       if idiom == .phone { stack } else { split }
     }
+    .task { Task { await AutoFetch.shared.fetchAtStartup(local.repositories) } }
     .task {
       #if DEBUG
         DebugLaunch.addGroupedProjects(to: vault)
@@ -117,6 +128,7 @@ struct RepositoriesView: View {
             RepositoryScreen(source: source).id(source.id)
           }
         }
+        .navigationDestination(isPresented: $showsSettings) { SettingsScreen() }
     }
     .onChange(of: selection) { _, selection in
       guard let selection else { return }
@@ -134,14 +146,30 @@ struct RepositoriesView: View {
         .toolbar(removing: .sidebarToggle)
         .kitSidebarColumn()
     } detail: {
-      NavigationStack {
-        if let source = sources.first(where: { $0.id == selection }) {
-          RepositoryScreen(source: source).id(source.id)
-        } else {
-          RepositoriesWelcome(sources: sources.filter(isListed), selection: $selection, sheet: $sheet)
+      if showsSettings {
+        NavigationStack { SettingsScreen { showsSettings = false } }
+      } else {
+        NavigationStack {
+          if let source = sources.first(where: { $0.id == selection }) {
+            RepositoryScreen(source: source).id(source.id)
+          } else {
+            RepositoriesWelcome(sources: sources.filter(isListed), selection: $selection, sheet: $sheet)
+          }
         }
+        .kitSidebarToggle(columnVisibility: $columnVisibility)
       }
-      .kitSidebarToggle(columnVisibility: $columnVisibility)
+    }
+    .onChange(of: selection) { _, selected in
+      if selected != nil { showsSettings = false }
+    }
+    // Settings brings its own sidebar: beside this one its columns don't fit an iPad in portrait, and were cut off.
+    .onChange(of: showsSettings) { _, shows in
+      if shows {
+        columnsBeforeSettings = columnVisibility
+        columnVisibility = .detailOnly
+      } else {
+        columnVisibility = columnsBeforeSettings
+      }
     }
   }
 

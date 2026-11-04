@@ -4,6 +4,7 @@ import GitKit
 import GitRemote
 import GitUI
 import SwiftUI
+import UpdateKit
 import VaultKit
 import VaultUI
 
@@ -15,6 +16,7 @@ enum SettingsKeys {
 }
 
 struct SettingsView: View {
+  let updater: AppUpdater
   @AppStorage(SettingsKeys.pane) private var pane = "General"
 
   var body: some View {
@@ -22,13 +24,11 @@ struct SettingsView: View {
       SettingsPane("General", systemImage: "gearshape") { GeneralSettingsView() }
       SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { AccountGitHubSettings() }
       #if os(macOS)
-        SettingsPane("Security", systemImage: "lock.shield", hue: .green) {
-          VStack(alignment: .leading, spacing: 18) {
-            SecuritySettingsCard()
-            DeviceSSHKeyCard()
-          }
-        }
+        SettingsPane("Security", systemImage: "lock.shield", hue: .green) { SecuritySettingsPane() }
       #endif
+      SettingsPane("Privacy", systemImage: "hand.raised", hue: .blue) {
+        PrivacySettingsPane { UpdateCheckCard(updater: updater) }
+      }
       SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
         VaultAccountsSettings()
       }

@@ -71,7 +71,7 @@ public struct GitApp: App {
     }
 
     Settings {
-      SettingsView()
+      SettingsView(updater: updater)
         .componentKit(accent: .accentColor)
     }
     .windowStyle(.hiddenTitleBar)

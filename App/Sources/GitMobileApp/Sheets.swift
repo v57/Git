@@ -221,22 +221,23 @@ struct NewBranchSheet: View {
   }
 }
 
-/// Settings: the GitHub sign-in for cloning private repositories and pushing, and the user's devices. Who commits is
-/// the vault's Your Name, asked at the first commit that needs it.
-struct SettingsSheet: View {
-  @Environment(\.kitDismiss) private var dismiss
+/// Settings: the kit's panes, rows pushed on iPhone and a sidebar on iPad. Who commits is the vault's Your Name, asked at
+/// the first commit that needs it. `close`, where nothing pushed the screen: iPad's Done.
+struct SettingsScreen: View {
+  var close: (() -> Void)?
+  @AppStorage("SettingsPane") private var pane = "GitHub"
 
   var body: some View {
-    // The sheet's body scrolls itself, fading under the header and over the footer.
-    KitSheet(title: "Settings", systemImage: "gearshape", hue: .gray) {
-      GitHubSettingsView()
-      SecuritySettingsCard()
-      DeviceSSHKeyCard()
-      VaultDevicesSettings()
-    } footer: {
-      Button("Done") { dismiss() }
-      .buttonStyle(.kitPrimary)
-      .keyboardShortcut(.defaultAction)
+    KitSettings(selection: $pane) {
+      SettingsPane("GitHub", systemImage: "cloud", hue: .indigo) { GitHubSettingsView() }
+      SettingsPane("Security", systemImage: "lock.shield", hue: .green) { SecuritySettingsPane() }
+      SettingsPane("Privacy", systemImage: "hand.raised", hue: .blue) { PrivacySettingsPane() }
+      SettingsPane("Devices", systemImage: "laptopcomputer", hue: .blue, section: "v57") { VaultDevicesSettings() }
     }
+    .kitPane(.content)
+    .kitToolbar("Settings", meta: ["Git"], systemImage: "gearshape", hue: .gray) {
+      if let close { Button("Done", action: close).buttonStyle(.kitPrimary) }
+    }
+    .navigationBarBackButtonHidden(true)
   }
 }
