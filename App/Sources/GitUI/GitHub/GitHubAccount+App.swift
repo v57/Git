@@ -36,7 +36,8 @@ extension GitHubAccount {
       if ProcessInfo.processInfo.arguments.contains("--in-memory") { return account }
     #endif
     if isPersonal { moveLegacyToken() }
-    account.restore()
+    // The profile loads when Settings ▸ GitHub or Publish opens: launching contacts nobody.
+    account.restore(refreshing: false)
     return account
   }
 
