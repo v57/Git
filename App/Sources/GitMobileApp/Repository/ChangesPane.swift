@@ -182,8 +182,7 @@ struct CommitComposer: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: 10) {
-      TextField(amend ? "Message of the last commit" : "Summary of the changes", text: $message, axis: .vertical)
-        .lineLimit(1...6)
+      KitMultilineField(amend ? "Message of the last commit" : "Summary of the changes", text: $message, lines: 1...6)
         .focused($focused)
         .kitFont(.body)
         .padding(10)

@@ -701,7 +701,7 @@ private struct SquashSheet: View {
         FormRow("Summary", systemImage: "character.cursor.ibeam", field: TextField("Summary", text: $summary))
         FormRow(
           "Description", systemImage: "text.alignleft",
-          field: TextField("Description", text: $details, axis: .vertical).lineLimit(4...12))
+          field: KitMultilineField("Description", text: $details, lines: 4...12))
       }
       if !commits.allSatisfy(session.isUnpushed) {
         Banner(
@@ -723,7 +723,8 @@ private struct SquashSheet: View {
         dismiss()
       }
       .buttonStyle(.kitPrimary)
-      .keyboardShortcut(.defaultAction)
+      // Return starts a new line in the description.
+      .keyboardShortcut(.return, modifiers: .command)
       .disabled(!isValid)
     }
   }
