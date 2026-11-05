@@ -1,9 +1,8 @@
 import Foundation
+import VaultKit
 
 #if canImport(Security)
   import Security
-#else
-  import VaultKit
 #endif
 
 /// Keeps the signed-in login and token.
@@ -23,6 +22,10 @@ public protocol TokenStore: Sendable {
 /// readable by every app signed by the team that lists the group, and synced through iCloud
 /// Keychain: one sign-in serves Git, Markdown and Dev on all the user's devices. A build that
 /// isn't entitled to the group (ad-hoc signed) keeps its own item instead.
+///
+/// While the user has iCloud off (`VaultICloud`), a sign-in made here stays on this device, in a twin item, and goes to
+/// iCloud Keychain when it's on again. Signing out deletes both: a sign-out sends nothing, and a token the user gave up
+/// shouldn't stay in iCloud.
 #if canImport(Security)
 public struct KeychainTokenStore: TokenStore {
   public let service: String
@@ -38,7 +41,31 @@ public struct KeychainTokenStore: TokenStore {
     service: "dev.v57.github", accessGroup: "AUCR797TMH.dev.v57.shared")
 
   public func load() throws -> GitHubCredential? {
-    var query = baseQuery
+    guard let twinQuery else { return try read(baseQuery) }
+    if VaultICloud.isOff { return try read(twinQuery) ?? read(baseQuery) }
+    // On again: what stayed on this device goes up.
+    if let kept = try read(twinQuery) {
+      try add(kept, to: baseQuery)
+      try remove(twinQuery)
+    }
+    return try read(baseQuery)
+  }
+
+  public func save(_ credential: GitHubCredential) throws {
+    if let twinQuery, VaultICloud.isOff {
+      try add(credential, to: twinQuery)
+    } else {
+      try add(credential, to: baseQuery)
+    }
+  }
+
+  public func delete() throws {
+    if let twinQuery { try remove(twinQuery) }
+    try remove(baseQuery)
+  }
+
+  private func read(_ base: [CFString: Any]) throws -> GitHubCredential? {
+    var query = base
     query[kSecReturnAttributes] = true
     query[kSecReturnData] = true
     query[kSecMatchLimit] = kSecMatchLimitOne
@@ -53,20 +80,33 @@ public struct KeychainTokenStore: TokenStore {
     return GitHubCredential(login: login, token: token, scopes: scopes)
   }
 
-  public func save(_ credential: GitHubCredential) throws {
-    try delete()
-    var item = baseQuery
+  private func add(_ credential: GitHubCredential, to base: [CFString: Any]) throws {
+    try remove(base)
+    var item = base
     item[kSecAttrAccount] = credential.login
     item[kSecAttrLabel] = "\(service) (\(credential.login))"
     item[kSecAttrComment] = credential.scopes.sorted().joined(separator: " ")
     item[kSecValueData] = Data(credential.token.utf8)
-    if item[kSecAttrSynchronizable] != nil { item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock }
+    if item[kSecAttrSynchronizable] as? Bool == true {
+      item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlock
+    } else if item[kSecAttrSynchronizable] != nil {
+      item[kSecAttrAccessible] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
+    }
     try check(SecItemAdd(item as CFDictionary, nil))
   }
 
-  public func delete() throws {
-    let status = SecItemDelete(baseQuery as CFDictionary)
+  private func remove(_ query: [CFString: Any]) throws {
+    let status = SecItemDelete(query as CFDictionary)
     if status != errSecItemNotFound { try check(status) }
+  }
+
+  /// The item a sign-in stays in while iCloud is off; nil when this build's item doesn't sync anyway.
+  private var twinQuery: [CFString: Any]? {
+    guard baseQuery[kSecAttrSynchronizable] != nil else { return nil }
+    var query = baseQuery
+    query[kSecAttrService] = service + ".icloud-off"
+    query[kSecAttrSynchronizable] = false
+    return query
   }
 
   private var baseQuery: [CFString: Any] {

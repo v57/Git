@@ -2,9 +2,11 @@ import ComponentKit
 import GitKit
 import GitRemote
 import SwiftUI
+import VaultKit
+import VaultUI
 
 /// Settings ▸ Privacy: what reaches the network on its own, each off until the user turns it on (`features`, then
-/// auto-fetch), and what Git sends. Every row of the list comes from `Ideas/Security/network-git.md`: change them together.
+/// auto-fetch), the switch for iCloud, which starts on, and what Git sends. Every row of the list comes from `Ideas/Security/network-git.md`: change them together.
 public struct PrivacySettingsPane<Features: View>: View {
   @ViewBuilder var features: Features
 
@@ -14,6 +16,7 @@ public struct PrivacySettingsPane<Features: View>: View {
     VStack(alignment: .leading, spacing: 18) {
       features
       AutoFetchCard()
+      VaultICloudCard()
       KitPrivacyParties("Git", footer: "Links you click open in your browser, which talks to those sites itself.") {
         KitPrivacyParty(
           "Your Git servers", systemImage: "server.rack", hue: .blue,
@@ -33,7 +36,8 @@ public struct PrivacySettingsPane<Features: View>: View {
         #endif
         #if os(macOS) || os(iOS)
           KitPrivacyParty(
-            "Apple", systemImage: "icloud", hue: .gray, when: "All the time, while iCloud is on for this device.",
+            "Apple", systemImage: "icloud", hue: .gray,
+            when: "All the time, while iCloud is on for this device and on above.",
             why: "It keeps your repository list, groups, security level and each repository’s last status (its branch "
               + "and the names of changed files) in your private iCloud, encrypted on this device first.")
         #endif

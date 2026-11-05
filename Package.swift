@@ -11,7 +11,7 @@ func v57(_ name: String) -> Package.Dependency {
 
 /// The libraries other repositories use (GitHubKit and GitHubUI: Markdown, Dev), hence macOS 14 / iOS 17. The apps are
 /// the package in App/ (App/Package.swift), so the libraries carry none of their dependencies but GitHubUI's
-/// ComponentKit.
+/// ComponentKit and GitHubKit's VaultKit (the iCloud switch; the Windows and Linux token store).
 let package = Package(
   name: "Git", platforms: [.macOS(.v14), .iOS(.v17)],
   products: [
@@ -20,10 +20,12 @@ let package = Package(
     .library(name: "GitHubUI", targets: ["GitHubUI"]),
     .library(name: "GitEngine", targets: ["GitEngine"]),
   ],
-  dependencies: [v57("Component")],
+  dependencies: [v57("Component"), v57("Vault")],
   targets: [
     .target(name: "GitKit", swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
-    .target(name: "GitHubKit", swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
+    .target(
+      name: "GitHubKit", dependencies: [.product(name: "VaultKit", package: "Vault")],
+      swiftSettings: [.enableUpcomingFeature("ApproachableConcurrency")], ),
     // The GitHub sign-in sheet (device flow) and its pieces, in ComponentKit: Git and Markdown show it.
     .target(
       name: "GitHubUI", dependencies: ["GitHubKit", .product(name: "ComponentKit", package: "Component")],
@@ -49,12 +51,12 @@ let package = Package(
 #if os(Windows) || os(Linux)
 // Off Apple platforms CryptoKit and os are v57/SwiftUI's stand-ins, and the GitHub token is kept by VaultKit's
 // keychain (the Windows Credential Manager).
-package.dependencies += [v57("SwiftUI"), v57("Vault")]
+package.dependencies += [v57("SwiftUI")]
 for target in package.targets {
   switch target.name {
   case "GitHubKit":
     target.dependencies += [
-      .product(name: "CryptoKit", package: "SwiftUI"), .product(name: "VaultKit", package: "Vault"),
+      .product(name: "CryptoKit", package: "SwiftUI"),
     ]
   case "GitHubUI":
     target.dependencies += [

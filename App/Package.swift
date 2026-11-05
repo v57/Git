@@ -59,6 +59,7 @@ let package = Package(
         "GitRemote", .product(name: "GitKit", package: kits), .product(name: "GitHubKit", package: kits),
         .product(name: "GitHubUI", package: kits), .product(name: "CodeHighlighting", package: "Code"),
         .product(name: "ComponentKit", package: "Component"), .product(name: "VaultKit", package: "Vault"),
+        .product(name: "VaultUI", package: "Vault"),
       ],
       swiftSettings: appSettings),
     .target(

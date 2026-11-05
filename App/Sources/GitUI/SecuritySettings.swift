@@ -2,6 +2,7 @@ import ComponentKit
 import GitKit
 import GitRemote
 import SwiftUI
+import VaultKit
 
 /// Settings ▸ Security: what protects the user's work, how strict network actions are, what that means next to other
 /// Git clients, and this device's key.
@@ -36,11 +37,7 @@ private struct SecurityProtectionCard: View {
       FormRow("Your GitHub sign-in", help: signIn(level), systemImage: "person.badge.key", hue: .indigo)
       FormRow("The servers you connect to", help: servers(level), systemImage: "checkmark.shield", hue: .teal)
       FormRow("Your repositories", help: repositories, systemImage: "folder", hue: .blue)
-      FormRow(
-        "What syncs",
-        help: "Your repository list, groups, this level and each repository’s last status (its branch and the names "
-          + "of changed files) go through iCloud, encrypted on this device first. Your code and commits don’t.",
-        systemImage: "icloud", hue: .gray)
+      FormRow("What syncs", help: syncs, systemImage: "icloud", hue: .gray)
     }
   }
 
@@ -51,8 +48,19 @@ private struct SecurityProtectionCard: View {
     return level == .useGit ? made + " At Use git, servers don’t see it: git signs in with your own keys." : made
   }
 
+  /// What goes through iCloud, or nothing since the user turned it off in Settings ▸ Privacy.
+  private var syncs: String {
+    VaultICloudStatus.shared.isOff
+      ? "Nothing goes through iCloud from this device: you turned it off in Privacy."
+      : "Your repository list, groups, this level and each repository’s last status (its branch and the names "
+        + "of changed files) go through iCloud, encrypted on this device first. Your code and commits don’t."
+  }
+
   private func signIn(_ level: GitSecurityLevel) -> String {
-    let kept = "Kept in the keychain the v57 apps share, and in iCloud Keychain."
+    let kept =
+      VaultICloudStatus.shared.isOff
+      ? "Kept in the keychain the v57 apps share, on this device only."
+      : "Kept in the keychain the v57 apps share, and in iCloud Keychain."
     return level == .useGit
       ? kept + " At Use git, git gets it while it runs, and so can anything git runs."
       : kept + " It’s used only inside the app, over HTTPS: git and anything git runs never get it, except git on "
