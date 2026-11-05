@@ -155,7 +155,7 @@ private struct SyncButtons: View {
     .effect(.send("arrow.up.circle.fill"), on: pushed)
     .kitContextMenu {
       Button("Force Push…", systemImage: "exclamationmark.arrow.triangle.2.circlepath") { confirmForcePush = true }
-        .kitMenuPreview(forcePushPreview) {
+        .kitMenuPreview(forcePushPreview, isDanger: (session.status?.behind ?? 0) > 0) {
           BranchPicture(
             .forcePush(
               yours: ahead, lost: session.status?.behind ?? 0,

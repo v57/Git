@@ -23,14 +23,11 @@ struct FileOpenItems: View {
     if !repository.isRemote, FileManager.default.fileExists(atPath: url.path) {
       let name = url.lastPathComponent
       let now = inCommit ? " as it is now, not as in this commit" : ""
+      let usual = KitDesktop.defaultApp(for: url)
       KitOpenWithRow(
-        [
-          KitOpenApp(
-            "Open", icon: KitDesktop.icon(forFile: url.path), words: "Open",
-            preview: "Opens \(name) in its usual app\(now).", id: "open"
-          ) { KitDesktop.open(url) }
-        ]
-          + KitDesktop.apps(toOpen: url, prefix: "dev.v57.").map { app in
+        [.defaultApp(opening: url, preview: "Opens \(name) in \(usual?.name ?? "its usual app")\(now).")]
+          + KitDesktop.apps(toOpen: url, prefix: "dev.v57.").filter { $0.bundleIdentifier != usual?.bundleIdentifier }
+          .map { app in
             KitOpenApp(
               app.name, icon: KitDesktop.icon(forFile: app.url.path), preview: "Opens \(name) in \(app.name)\(now).",
               id: app.bundleIdentifier
