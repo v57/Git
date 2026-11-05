@@ -284,7 +284,7 @@ struct RepositoryList: View {
       withKitAnimation { library.showsAllRepositories = true }
     }
     Divider()
-    KitMenuSection("Sort By") {
+    KitSubmenu("Sort By", value: sort.title) {
       KitMenuOptions(
         selection: Binding(
           get: { sort },
@@ -297,12 +297,12 @@ struct RepositoryList: View {
           }),
         options: RepositorySort.allCases.map { ($0.title, $0) })
     }
-    KitMenuSection("Show") {
-      Toggle("Hide Unused for a Week", isOn: $hidesUnused.animation(.kit))
-      Toggle("Only With Changes", isOn: $onlyWithChanges.animation(.kit))
-      Toggle("Group by Folder", isOn: $groupsByFolder.animation(.kit))
-    }
-    ProjectsLayoutMenu()
+    .kitMenuPreview("Changes the order of this list only; a date order turns off Group by Folder. Your repositories stay as they are.")
+    ProjectsLayoutMenu(asSubmenu: true)
+    Divider()
+    Toggle("Hide Unused for a Week", isOn: $hidesUnused.animation(.kit))
+    Toggle("Only With Changes", isOn: $onlyWithChanges.animation(.kit))
+    Toggle("Group by Folder", isOn: $groupsByFolder.animation(.kit))
   }
 
   /// What Show More brings back.
@@ -369,12 +369,13 @@ struct RepositoryList: View {
     let parent = layout.tree.parent(of: group.id)
     // Groups it can move into: not itself, not one inside it, not the one it is in.
     let destinations = layout.tree.groups.filter { !layout.tree.isWithin($0.id, group.id) && $0.id != parent }
-    remoteButtons(paths, suffix: " All", pushOnlyAhead: true)
+    remoteButtons(paths, suffix: " All", pushOnlyAhead: true, words: groupWords(paths))
     Divider()
     Button("Rename…", systemImage: "pencil") {
       renaming = group.id
     }
     Button("Ungroup", systemImage: "folder.badge.minus") { withAnimation(.kit) { library.ungroup(group) } }
+      .kitMenuPreview("Takes the group away; its \(repositoriesText(members.count)) stay in the list. Nothing changes on disk.")
     if !destinations.isEmpty {
       KitSubmenu("Move to Group", systemImage: "folder") {
         ForEach(destinations) { destination in
@@ -391,7 +392,12 @@ struct RepositoryList: View {
     }
     Divider()
     if let folder = group.paths[library.vault.deviceID] {
-      ShowInFileManager([URL(fileURLWithPath: folder, isDirectory: true)])
+      let url = URL(fileURLWithPath: folder, isDirectory: true)
+      KitOpenWithRow([
+        .app(codeBundleID, name: "Code", opening: [url], preview: "Opens the \(group.name) folder in Code."),
+        .fileManager(revealing: [url], preview: "Shows the \(group.name) folder in \(KitDesktop.fileManagerName)."),
+        .terminal(at: url, preview: "Opens Terminal in the \(group.name) folder."),
+      ])
       Divider()
     }
     if members.allSatisfy(\.isHidden) {
@@ -404,6 +410,7 @@ struct RepositoryList: View {
       selected.subtract(paths)
       withAnimation(.kit) { library.remove(group, members: members, from: context) }
     }
+    .kitMenuPreview("Takes its \(repositoriesText(members.count)) off this list. Their folders stay.")
   }
 
   /// "v57 › Agentus (Developer)": a group with the groups it is in, and its note.
@@ -467,34 +474,42 @@ struct RepositoryList: View {
     let targets = paths.compactMap { path in repositories.first { $0.path == path } }
     let suffix = targets.count > 1 ? " \(targets.count) Repositories" : ""
     let groups = layout.tree.groups
-    remoteButtons(paths, suffix: suffix)
+    let only = targets.count == 1 ? targets.first : nil
+    remoteButtons(paths, suffix: suffix, words: only.flatMap(repositoryWords))
     Divider()
-    KitSubmenu("Move to Group", systemImage: "folder") {
-      ForEach(groups) { group in
-        Button(groupTitle(group, layout: layout)) {
-          withAnimation(.kit) { library.move(paths, into: group.id, before: nil, context: context) }
-        }
-        .disabled(paths.allSatisfy { layout.groupID(of: $0) == group.id })
-      }
+    openWithRow(targets)
+    Divider()
+    // The group they are all in, checked.
+    let inGroups = Set(paths.map { layout.groupID(of: $0) })
+    let current = inGroups.count == 1 ? inGroups.first ?? nil : nil
+    KitSubmenu("Group", value: groups.first { $0.id == current }?.name, systemImage: "folder") {
+      KitMenuOptions(
+        selection: Binding(
+          get: { current },
+          set: { new in
+            guard let new, !paths.allSatisfy({ layout.groupID(of: $0) == new }) else { return }
+            withAnimation(.kit) { library.move(paths, into: new, before: nil, context: context) }
+          }),
+        segments: groups.map { group in
+          KitSegment(
+            groupTitle(group, layout: layout), value: Optional(group.id),
+            isEnabled: !paths.allSatisfy { layout.groupID(of: $0) == group.id })
+        })
       if !groups.isEmpty { Divider() }
       Button("New Group…", systemImage: "folder.badge.plus") {
         if let group = withAnimation(.kit, { library.newGroup(from: paths, context: context) }) {
           renaming = group.id
         }
       }
-    }
-    if paths.contains(where: { layout.groupID(of: $0) != nil }) {
-      Button("Remove from Group", systemImage: "folder.badge.minus") {
-        withAnimation(.kit) { library.moveOut(paths, context: context) }
+      if paths.contains(where: { layout.groupID(of: $0) != nil }) {
+        Button("Remove from Group", systemImage: "folder.badge.minus") {
+          withAnimation(.kit) { library.moveOut(paths, context: context) }
+        }
       }
     }
-    Divider()
-    ShowInFileManager(targets.map(\.url))
-    if let only = targets.first, targets.count == 1 {
-      Button("Open in Terminal", systemImage: "terminal") { RepositoryLibrary.openInTerminal(only.url) }
+    if let only {
       VaultOtherPlacesMenu(root: only.url)
     }
-    Divider()
     if targets.allSatisfy(\.isHidden) {
       Button("Unhide" + suffix, systemImage: "eye") { library.setHidden(paths, false, context: context) }
     } else {
@@ -505,14 +520,107 @@ struct RepositoryList: View {
       selected.subtract(paths)
       library.remove(targets, from: context)
     }
+    .kitMenuPreview(
+      only.map { "Takes \($0.name) off this list. Its folder stays." }
+        ?? "Takes these \(repositoriesText(targets.count)) off this list. Their folders stay.")
+  }
+
+  /// Open With for repositories: Xcode (when there's a project) and Code for one, Finder for all, Terminal for one.
+  @ViewBuilder
+  private func openWithRow(_ targets: [SavedRepository]) -> some View {
+    let only = targets.count == 1 ? targets.first : nil
+    let name = only?.name ?? ""
+    KitOpenWithRow([
+      only.flatMap { repository in
+        Self.xcodeProject(in: repository.url).flatMap {
+          .app("com.apple.dt.Xcode", name: "Xcode", opening: [$0], preview: "Opens \(name) in Xcode.")
+        }
+      },
+      only.flatMap { .app(codeBundleID, name: "Code", opening: [$0.url], preview: "Opens \(name) in Code.") },
+      .fileManager(
+        revealing: targets.map(\.url),
+        preview: only == nil
+          ? "Shows these \(repositoriesText(targets.count)) in \(KitDesktop.fileManagerName)."
+          : "Shows the \(name) folder in \(KitDesktop.fileManagerName)."),
+      only.flatMap { .terminal(at: $0.url, preview: "Opens Terminal in the \(name) folder.") },
+    ])
+  }
+
+  /// The Xcode workspace, project or Swift package at the top of a repository, for Open in Xcode.
+  private static func xcodeProject(in folder: URL) -> URL? {
+    let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+    let name =
+      names.first { $0.hasSuffix(".xcworkspace") } ?? names.first { $0.hasSuffix(".xcodeproj") }
+      ?? names.first { $0 == "Package.swift" }
+    return name.map { folder.appendingPathComponent($0) }
+  }
+
+  /// Fetch, Pull and Push for one repository: the commits to pull and push, from the sidebar's summary.
+  private func repositoryWords(_ repository: SavedRepository) -> RemoteActionWords? {
+    guard let summary = library.summaries[repository.path] else { return nil }
+    let branch = summary.branch ?? "this branch"
+    let upstream = library.loadedSession(for: repository.path)?.status?.upstream
+    let remote = upstream?.split(separator: "/").first.map(String.init)
+    let from = remote ?? "the remote"
+    let behind = summary.behind
+    let ahead = summary.ahead
+    let stay = ahead == 1 ? " Your 1 commit stays." : ahead > 1 ? " Your \(ahead) commits stay." : ""
+    return RemoteActionWords { action in
+      switch action {
+      case .fetch:
+        RemoteActionWords.Row(preview: "Checks \(from) for new commits. Nothing in \(branch) changes.")
+      case .pull:
+        behind > 0
+          ? RemoteActionWords.Row(
+            hint: counted(behind, "commit"), preview: "Brings \(counted(behind, "commit")) from \(from) into \(branch).\(stay)",
+            picture: BranchPicture(.pull(incoming: behind, yours: ahead, branch: branch, source: remote)))
+          : RemoteActionWords.Row(preview: "Brings any new commits from \(from) into \(branch).\(stay)")
+      case .push:
+        RemoteActionWords.Row(
+          hint: ahead > 0 ? counted(ahead, "commit") : nil,
+          preview: ahead > 0 ? "Sends your \(counted(ahead, "commit")) on \(branch) to \(from)." : "Sends \(branch) to \(from).")
+      }
+    }
+  }
+
+  /// Fetch All, Pull All and Push All for a group: the commits to pull and push, summed.
+  private func groupWords(_ paths: [String]) -> RemoteActionWords {
+    let summaries = paths.compactMap { library.summaries[$0] }
+    let behind = summaries.reduce(0) { $0 + $1.behind }
+    let ahead = paths.filter(hasCommitsToPush).compactMap { library.summaries[$0]?.ahead }.reduce(0, +)
+    let repositories = repositoriesText(paths.count)
+    return RemoteActionWords { action in
+      switch action {
+      case .fetch:
+        RemoteActionWords.Row(preview: "Checks the remotes of its \(repositories) for new commits. Nothing in them changes.")
+      case .pull:
+        RemoteActionWords.Row(
+          hint: behind > 0 ? counted(behind, "commit") : nil,
+          preview: behind > 0
+            ? "Brings \(counted(behind, "commit")) into its \(repositories), each from its own remote."
+            : "Brings any new commits into its \(repositories), each from its own remote.")
+      case .push:
+        RemoteActionWords.Row(
+          hint: ahead > 0 ? counted(ahead, "commit") : nil,
+          preview: ahead > 0
+            ? "Sends \(counted(ahead, "commit")) to their remotes, from the repositories that have some."
+            : "Sends the commits of the repositories that have some to their remotes.")
+      }
+    }
+  }
+
+  private func repositoriesText(_ count: Int) -> String {
+    count == 1 ? "1 repository" : "\(count) repositories"
   }
 
   /// Fetch, Pull and Push for `paths`; with `pushOnlyAhead`, Push leaves out the repositories
   /// with no commits for their upstream (a group's Push All).
   @ViewBuilder
-  private func remoteButtons(_ paths: [String], suffix: String, pushOnlyAhead: Bool = false) -> some View {
+  private func remoteButtons(
+    _ paths: [String], suffix: String, pushOnlyAhead: Bool = false, words: RemoteActionWords? = nil
+  ) -> some View {
     RemoteActionButtons(
-      paths: paths, pushPaths: pushOnlyAhead ? paths.filter(hasCommitsToPush) : paths, suffix: suffix)
+      paths: paths, pushPaths: pushOnlyAhead ? paths.filter(hasCommitsToPush) : paths, suffix: suffix, words: words)
   }
 
   private func hasCommitsToPush(_ path: String) -> Bool {
@@ -615,14 +723,42 @@ struct RemoteActionButtons: View {
   /// The ones Push goes to.
   let pushPaths: [String]
   let suffix: String
+  /// The rows' ends and sentences, when the menu knows the counts.
+  var words: RemoteActionWords? = nil
 
   var body: some View {
     ForEach([RemoteAction.fetch, .pull, .push], id: \.self) { action in
       let targets = action == .push ? pushPaths : paths
+      let row = words?.row(action)
       Button(action.title + suffix, systemImage: action.systemImage) { Task { await library.run(action, on: targets) } }
+        .kitMenuHint(row?.hint)
+        .kitMenuPreview(row?.preview, picture: row?.picture)
         .disabled(targets.allSatisfy {
           library.remoteActivity[$0] != nil || (RepositoryLibrary.isRemote($0) && GitSecurity.level.otherDeviceRefusal != nil)
         })
+    }
+  }
+}
+
+/// What Fetch, Pull and Push say in a menu that knows the counts: the end ("3 commits") and the panel's sentence.
+struct RemoteActionWords {
+  struct Row {
+    var hint: String?
+    var preview: String?
+    var picture: BranchPicture?
+  }
+
+  let row: (RemoteAction) -> Row
+}
+
+extension View {
+  /// The row's sentence, with its picture when there is one.
+  @ViewBuilder
+  func kitMenuPreview(_ text: String?, picture: BranchPicture?) -> some View {
+    if let text, let picture {
+      kitMenuPreview(text) { picture }
+    } else {
+      kitMenuPreview(text)
     }
   }
 }

@@ -155,6 +155,12 @@ private struct SyncButtons: View {
     .effect(.send("arrow.up.circle.fill"), on: pushed)
     .kitContextMenu {
       Button("Force Push…", systemImage: "exclamationmark.arrow.triangle.2.circlepath") { confirmForcePush = true }
+        .kitMenuPreview(forcePushPreview) {
+          BranchPicture(
+            .forcePush(
+              yours: ahead, lost: session.status?.behind ?? 0,
+              remote: session.status?.upstream?.split(separator: "/").first.map(String.init) ?? "the remote"))
+        }
         .disabled(!hasUpstream || session.isBusy || refusal != nil)
     }
     .effect(.failure, on: failed)
@@ -171,6 +177,15 @@ private struct SyncButtons: View {
   /// Counts a finished fetch, pull or push, so its effect plays (or the failure's).
   private func count(_ succeeded: Bool, into counter: Binding<Int>) {
     if succeeded { counter.wrappedValue += 1 } else { failed += 1 }
+  }
+
+  /// What Force Push does: `--force-with-lease`, so it refuses if the remote moved since the last fetch.
+  private var forcePushPreview: String {
+    let branch = session.status?.branch ?? "your branch"
+    let upstream = session.status?.upstream ?? "the remote branch"
+    let lost = session.status?.behind ?? 0
+    let gone = lost > 0 ? " Its \(counted(lost, "commit")) that \(branch) doesn’t have are lost;" : ""
+    return "Replaces \(upstream) with your \(branch).\(gone) It asks first."
   }
 
   private var pushHelp: String {
@@ -214,19 +229,18 @@ private struct MergeMenu: View {
       .disabled(session.isBusy || session.status?.branch == nil)
       .kitHelp("Merge", meta: "Merge a branch into \(current)", systemImage: "arrow.triangle.merge", hue: .orange)
       .kitMenu(isPresented: $isPresented) {
-        KitMenuSection("Merge into \(current)") {
-          ForEach(session.localBranches.filter { !$0.isCurrent }) { branch in
-            Button(branch.name, systemImage: "arrow.triangle.branch") { Task { await session.merge(branch) } }
-              .disabled((branch.aheadOfHead ?? 1) == 0)
-          }
+        KitMenuPreview("Merges a branch into \(current).")
+        ForEach(session.localBranches.filter { !$0.isCurrent }) { branch in
+          Button(branch.name, systemImage: "arrow.triangle.branch") { Task { await session.merge(branch) } }
+            .mergePreview(branch, into: current)
+            .disabled((branch.aheadOfHead ?? 1) == 0)
         }
         let remotes = session.remoteBranches
         if !remotes.isEmpty {
           Divider()
-          KitMenuSection("Remote Branches") {
-            ForEach(remotes) { branch in
-              Button(branch.name, systemImage: "cloud") { Task { await session.merge(branch) } }
-            }
+          ForEach(remotes) { branch in
+            Button(branch.name, systemImage: "cloud") { Task { await session.merge(branch) } }
+              .mergePreview(branch, into: current)
           }
         }
       }
@@ -364,12 +378,16 @@ struct BranchPopover: View {
           Task { await session.merge(branch) }
           isPresented = false
         }
+        .mergePreview(branch, into: current)
         .disabled((branch.aheadOfHead ?? 1) == 0)
-        Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = branch }
-          .disabled(worktree != nil)
         Divider()
       }
       Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(branch.name) }
+      if !branch.isCurrent, !branch.isRemote {
+        Divider()
+        Button("Delete…", systemImage: "trash", role: .destructive) { pendingDelete = branch }
+          .disabled(worktree != nil)
+      }
     }
   }
 }
@@ -404,19 +422,27 @@ struct StashMenu: View {
       .kitHelp("Stash", meta: "Stash changes", systemImage: "archivebox", hue: .indigo)
       .disabled(session.isBusy)
       .kitMenu(isPresented: $isPresented) {
+        let changed = session.status?.changeCount ?? 0
         Button("Stash Changes…", systemImage: "archivebox") { isStashing = true }
+          .kitMenuHint(changed > 0 ? counted(changed, "file") : nil)
+          .kitMenuPreview(
+            "Puts your changes to \(counted(changed, "file")) aside, so the working tree is clean. You can name the stash first.")
           .disabled(session.status?.isClean ?? true)
         if let latest = session.stashes.first {
           Button("Pop Latest Stash", systemImage: "tray.and.arrow.up") { Task { await session.popStash(latest) } }
+            .kitMenuPreview("Puts the changes from “\(latest.message)” back in your files and removes that stash.")
         }
         if !session.stashes.isEmpty {
           Divider()
           ForEach(session.stashes) { stash in
             KitSubmenu(stash.message) {
               Button("Apply") { Task { await session.applyStash(stash) } }
+                .kitMenuPreview("Puts its changes back in your files and keeps the stash.")
               Button("Pop") { Task { await session.popStash(stash) } }
+                .kitMenuPreview("Puts its changes back in your files and removes the stash.")
               Divider()
               Button("Drop…", role: .destructive) { pendingDrop = stash }
+                .kitMenuPreview("Deletes this stash and its changes. It asks first; you can’t undo this.")
             }
           }
         }

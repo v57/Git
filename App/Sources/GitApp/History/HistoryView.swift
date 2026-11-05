@@ -377,15 +377,19 @@ private struct CommitList: View {
   private func selectionMenu() -> some View {
     let selected = state.selectedCommits
     let run = Result { try session.squashRun(selected) }
+    if case .failure(let error) = run {
+      // Why Squash is off, in the panel while nothing else is highlighted.
+      KitMenuPreview((error as? GitError)?.message ?? error.localizedDescription)
+    }
     Button("Squash \(selected.count) Commits…", systemImage: "arrow.triangle.merge") {
       if case .success(let commits) = run { squashRequest = SquashRequest(commits: commits) }
     }
-    .disabled(session.isBusy || session.status?.operation != nil || (try? run.get()) == nil)
-    if case .failure(let error) = run {
-      // Why Squash is off, as a row that can't be picked.
-      Button((error as? GitError)?.message ?? error.localizedDescription) {}
-        .disabled(true)
+    .kitMenuPreview(
+      "Turns these \(selected.count) commits into one on \(session.status?.branch ?? "this branch"). You write its message first."
+    ) {
+      BranchPicture(.squash(commits: selected.count))
     }
+    .disabled(session.isBusy || session.status?.operation != nil || (try? run.get()) == nil)
     Divider()
     Button("Copy SHAs", systemImage: "doc.on.doc") {
       KitPasteboard.copy(
@@ -395,20 +399,25 @@ private struct CommitList: View {
 
   @ViewBuilder
   private func contextMenu(for commit: Commit) -> some View {
+    let branch = session.status?.branch ?? "HEAD"
     Button("Check Out", systemImage: "arrow.uturn.backward") { Task { await session.checkout(commit) } }
+      .kitMenuPreview("Puts you on \(commit.shortID) without a branch.")
       .disabled(session.isBusy)
-    Button("Revert Changes in Commit", systemImage: "arrow.uturn.left") { Task { await session.revert(commit) } }
+    Button("Revert Changes", systemImage: "arrow.uturn.left") { Task { await session.revert(commit) } }
+      .kitMenuPreview("Makes a new commit on \(branch) that undoes the changes of \(commit.shortID).")
       .disabled(session.isBusy)
     Button("Cherry-Pick", systemImage: "arrow.right.doc.on.clipboard") { Task { await session.cherryPick(commit) } }
+      .kitMenuPreview("Makes a new commit on \(branch) with the changes of \(commit.shortID).")
       .disabled(session.isBusy)
-    Button("Reset to This Commit…", systemImage: "clock.arrow.circlepath") { resetTarget = commit }
+    Button("Reset to Here…", systemImage: "clock.arrow.circlepath") { resetTarget = commit }
+      .kitMenuPreview(
+        "Moves \(branch) to this commit. The commits after it leave \(branch); their changes stay in your files. It asks first."
+      ) {
+        BranchPicture(.reset(branch: branch))
+      }
       .disabled(session.isBusy || commit.id == session.status?.headOID)
     Divider()
-    Button("Create Branch from Commit…", systemImage: "arrow.triangle.branch") { branchStart = commit }
-    Button("Create Tag…", systemImage: "tag") { tagTarget = commit }
-    Divider()
-    Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
-    Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
+    CommitCreateItems(commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
   }
 }
 

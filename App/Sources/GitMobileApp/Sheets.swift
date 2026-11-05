@@ -142,13 +142,10 @@ struct AddRemoteSheet: View {
             .buttonStyle(.kit)
             .kitMenu(isPresented: $showsHosts) {
               ForEach(hosts, id: \.id) { host in
-                Button {
-                  hostID = host.id
-                } label: {
-                  Label(
-                    host.isViaHub ? "\(host.displayName) (via Hub)" : host.displayName,
-                    systemImage: host.id == hostID ? "checkmark" : "desktopcomputer")
-                }
+                KitMenuOptions(
+                  selection: $hostID,
+                  segments: [KitSegment(host.displayName, value: Optional(host.id), systemImage: "desktopcomputer")])
+                  .kitMenuDetail(host.isViaHub ? "Through Hub" : nil)
               }
             }
           }

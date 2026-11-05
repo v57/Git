@@ -215,13 +215,16 @@ struct BranchTools: View {
       .disabled(model.isBusy)
       .kitMenu(isPresented: $showsBranches) {
         KitMenuSection("Branches") {
-          ForEach(model.localBranches) { branch in
-            Button {
-              if !branch.isCurrent { Task { await model.switchTo(branch) } }
-            } label: {
-              Label(branch.name, systemImage: branch.isCurrent ? "checkmark" : "arrow.triangle.branch")
-            }
-          }
+          KitMenuOptions(
+            selection: Binding(
+              get: { model.localBranches.first(where: \.isCurrent)?.name },
+              set: { name in
+                guard let branch = model.localBranches.first(where: { $0.name == name }), !branch.isCurrent else { return }
+                Task { await model.switchTo(branch) }
+              }),
+            segments: model.localBranches.map {
+              KitSegment($0.name, value: Optional($0.name), systemImage: "arrow.triangle.branch")
+            })
         }
         let local = Set(model.localBranches.map(\.name))
         let remoteOnly = model.remoteBranches.filter { !local.contains($0.localName) && $0.localName != "HEAD" }

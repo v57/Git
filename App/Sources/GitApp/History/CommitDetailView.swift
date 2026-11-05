@@ -64,11 +64,7 @@ private struct CommitDetail: View {
         Button("More Actions", systemImage: "ellipsis") { showsMore.toggle() }
           .labelStyle(.iconOnly)
           .kitMenu(isPresented: $showsMore) {
-            Button("Create Branch from Commit…", systemImage: "arrow.triangle.branch") { branchStart = commit }
-            Button("Create Tag…", systemImage: "tag") { tagTarget = commit }
-            Divider()
-            Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
-            Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
+            CommitCreateItems(commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
           }
       }
       diffPreview
@@ -248,6 +244,24 @@ private struct CommitDetail: View {
   }
 }
 
+/// A commit menu's Branch from Here…, Tag…, Copy SHA and Copy Message (History's context menu, the inspector's “…”).
+struct CommitCreateItems: View {
+  let commit: Commit
+  @Binding var branchStart: Commit?
+  @Binding var tagTarget: Commit?
+
+  var body: some View {
+    Button("Branch from Here…", systemImage: "arrow.triangle.branch") { branchStart = commit }
+      .kitMenuPreview("Starts a new branch at \(commit.shortID). You name it first.")
+    Button("Tag…", systemImage: "tag") { tagTarget = commit }
+      .kitMenuPreview("Tags \(commit.shortID). You name the tag first.")
+    Divider()
+    Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
+      .kitMenuHint(commit.shortID)
+    Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
+  }
+}
+
 /// A changed file in the inspector: its change's tile, name and folder, and its line counts. The selected one is
 /// raised, as the sidebar's current row; its context menu opens the file as it is in the working tree.
 private struct FileRow: View {
@@ -271,6 +285,6 @@ private struct FileRow: View {
     .action(select)
     .animation(.kit, value: isSelected)
     .help(file.originalPath.map { "\($0) → \(file.path)" } ?? file.path)
-    .kitContextMenu { FileOpenItems(repository: repository, path: file.path) }
+    .kitContextMenu { FileOpenItems(repository: repository, path: file.path, inCommit: true) }
   }
 }

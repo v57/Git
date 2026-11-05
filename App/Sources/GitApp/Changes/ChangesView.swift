@@ -164,17 +164,34 @@ private struct ChangeList: View {
   private func contextMenu(for change: FileChange) -> some View {
     if change.area == .staged {
       Button("Unstage", systemImage: "minus.circle") { Task { await session.unstage([change]) } }
+        .kitMenuPreview("Takes \(change.fileName) out of the next commit. Your changes stay.")
     } else {
       Button("Stage", systemImage: "plus.circle") { Task { await session.stage([change]) } }
-    }
-    Button("Discard Changes…", systemImage: "trash", role: .destructive) {
-      pendingDiscard = PendingDiscard(changes: [change], area: change.area)
+        .kitMenuPreview("Puts \(change.fileName) in the next commit.")
     }
     if change.kind != .deleted, change.path != ".gitignore" {
       ignoreMenu(for: change)
     }
+    Button("Discard Changes…", systemImage: "trash", role: .destructive) {
+      pendingDiscard = PendingDiscard(changes: [change], area: change.area)
+    }
+    .kitMenuPreview(discardPreview(change))
     Divider()
     FileOpenItems(repository: session.repository, path: change.path)
+  }
+
+  /// What Discard Changes… does to one file, as `discard` and `discardStaged` do it: tracked files go back to the index
+  /// (unstaged) or the last commit (staged), new files to the Trash.
+  private func discardPreview(_ change: FileChange) -> String {
+    let name = change.fileName
+    if change.kind == .untracked || (change.area == .staged && change.kind == .added) {
+      return "Moves \(name) to the Trash. It asks first."
+    }
+    let lines = session.lineCounts[change.id].map { ($0.added ?? 0) + ($0.removed ?? 0) } ?? 0
+    let these = lines > 0 ? "these \(counted(lines, "changed line"))" : "the changes"
+    return change.area == .staged
+      ? "Removes \(these) and puts \(name) back as it was in the last commit, unstaged changes too. It asks first; you can’t undo this."
+      : "Removes \(these) from \(name); what you staged stays. It asks first; you can’t undo this."
   }
 
   /// Add to .gitignore: the file itself, or a submenu that also offers its extension and folders.

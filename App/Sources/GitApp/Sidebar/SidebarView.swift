@@ -217,6 +217,7 @@ private struct RepositorySections: View {
                 state.mode = .history
                 state.selectedCommit = tag.commit
               }
+              .kitMenuPreview(tagPreview(tag))
               Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(tag.name) }
             }
         }
@@ -288,6 +289,12 @@ private struct RepositorySections: View {
     return ["Latest \(latest.name)", latest.date?.kitFormatted(.day) ?? ""]
   }
 
+  /// "Finds v2.4.0 in History: a1b2c3d, 3 days ago."
+  private func tagPreview(_ tag: Tag) -> String {
+    let when = tag.date.map { ", \($0.formatted(.relative(presentation: .named)))" } ?? ""
+    return "Finds \(tag.name) in History: \(tag.commit.prefix(7))\(when)."
+  }
+
   private var worktreesMeta: [String] {
     let detached = session.worktrees.count { $0.branch == nil }
     return ["\(session.worktrees.count) worktrees", detached > 0 ? "\(detached) detached" : ""]
@@ -316,6 +323,7 @@ private struct RepositorySections: View {
         Button("Merge into \(session.currentBranch?.name ?? "HEAD")", systemImage: "arrow.triangle.merge") {
           Task { await session.merge(branch) }
         }
+        .mergePreview(branch, into: session.currentBranch?.name ?? "HEAD")
         .disabled((branch.aheadOfHead ?? 1) == 0)
       }
       Button("New Branch from \(branch.name)…", systemImage: "plus") { branchStart = branch.name }
@@ -378,14 +386,22 @@ extension VaultProjectsLayout {
 
 /// The lists' header menu's choice of where the open repository's Workspace goes.
 struct ProjectsLayoutMenu: View {
+  /// A submenu with the layout at its end (the Repositories list's menu), else a section.
+  var asSubmenu = false
   @AppStorage(VaultProjectsLayout.gitKey) private var layout = VaultProjectsLayout.separate
 
   var body: some View {
-    KitMenuSection("Show the Project") {
-      KitMenuOptions(
-        selection: Binding(get: { layout }, set: { new in withKitAnimation { layout = new } }),
-        options: VaultProjectsLayout.allCases.map { ($0.title, $0) })
+    if asSubmenu {
+      KitSubmenu("Show the Project", value: layout.title) { options }
+    } else {
+      KitMenuSection("Show the Project") { options }
     }
+  }
+
+  private var options: some View {
+    KitMenuOptions(
+      selection: Binding(get: { layout }, set: { new in withKitAnimation { layout = new } }),
+      options: VaultProjectsLayout.allCases.map { ($0.title, $0) })
   }
 }
 

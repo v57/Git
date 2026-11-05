@@ -48,6 +48,7 @@ public struct HunkCards: View {
       )
       .kitContextMenu {
         Button("Discard Hunk…", systemImage: "trash", role: .destructive) { discard(PatchBuilder.lines(in: hunk)) }
+          .kitMenuPreview(discardPreview(hunk))
       }
     case .staged(let unstage):
       HunkCard(
@@ -70,6 +71,14 @@ public struct HunkCards: View {
     return Binding(
       get: { selection },
       set: { kit in selection = selection.filter { !ids.contains($0) }.union(kit.filter { ids.contains($0) }) })
+  }
+
+  /// What Discard Hunk… does, for the menu's panel (the Mac's; the Mac asks first).
+  private func discardPreview(_ hunk: DiffHunk) -> String {
+    let changed = hunk.lines.count { $0.kind == .added || $0.kind == .removed }
+    let name = content.diff.path.split(separator: "/").last.map(String.init) ?? content.diff.path
+    let lines = changed == 1 ? "this changed line" : "these \(changed) changed lines"
+    return "Removes \(lines) from \(name). It asks first; you can’t undo this."
   }
 
   /// "3 lines added, 1 removed", for a folded staged hunk.
