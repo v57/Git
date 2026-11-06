@@ -86,7 +86,7 @@ struct RepositoryCommands: Commands {
 
 /// View › Hide Whitespace Changes, for every diff.
 private struct HideWhitespaceToggle: View {
-  @AppStorage(DiffOptions.hideWhitespaceKey) private var hideWhitespace = false
+  @KitStorage(DiffOptions.hideWhitespaceKey) private var hideWhitespace = false
 
   var body: some View {
     Toggle("Hide Whitespace Changes", isOn: $hideWhitespace)

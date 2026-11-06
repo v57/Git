@@ -15,7 +15,7 @@ struct ChangeDetailView: View {
   @State private var selection: Set<Int> = []
   @State private var confirmDiscard: Set<Int>?
   @State private var confirmDiscardFile = false
-  @AppStorage(DiffOptions.hideWhitespaceKey) private var hideWhitespace = false
+  @KitStorage(DiffOptions.hideWhitespaceKey) private var hideWhitespace = false
 
   private var change: FileChange? {
     guard let status = session.status, let id = state.selectedChanges.first else { return nil }

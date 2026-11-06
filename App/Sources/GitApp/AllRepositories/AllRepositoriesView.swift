@@ -14,7 +14,7 @@ struct AllRepositoriesView: View {
   /// The window's account's repositories.
   private var repositories: [SavedRepository] { savedRepositories.filter(library.owns) }
   @Binding var selection: String?
-  @AppStorage("AllRepositoriesLayout") private var layout = AllRepositoriesLayout.grid
+  @KitStorage("AllRepositoriesLayout") private var layout = AllRepositoriesLayout.grid
   @State private var search = ""
 
   var body: some View {

@@ -36,15 +36,15 @@ struct RepositoryList: View {
   @State private var anchor: String?
   /// The group whose name is a field in its row.
   @State private var renaming: VaultProjectGroup.ID?
-  @AppStorage("RepositoriesCollapsed") private var storedCollapsed = false
+  @KitStorage("RepositoriesCollapsed") private var storedCollapsed = false
   /// The section's own state, saved to `storedCollapsed`: a defaults write drops the toggle's animation.
   @State private var isCollapsed = UserDefaults.standard.bool(forKey: "RepositoriesCollapsed")
-  @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
-  @AppStorage("RepositoriesSort") private var sort = RepositorySort.name
-  @AppStorage("RepositoriesHideUnused") private var hidesUnused = false
-  @AppStorage("RepositoriesOnlyWithChanges") private var onlyWithChanges = false
-  @AppStorage("RepositoriesGroupByFolder") private var groupsByFolder = true
-  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
+  @KitStorage("ShowsHiddenRepositories") private var showsHidden = false
+  @KitStorage("RepositoriesSort") private var sort = RepositorySort.name
+  @KitStorage("RepositoriesHideUnused") private var hidesUnused = false
+  @KitStorage("RepositoriesOnlyWithChanges") private var onlyWithChanges = false
+  @KitStorage("RepositoriesGroupByFolder") private var groupsByFolder = true
+  @KitStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
   /// Show More: the repositories the filters hide, until the list is filtered again.
   @State private var showsMore = false
   @State private var confirmsRemoveAll = false

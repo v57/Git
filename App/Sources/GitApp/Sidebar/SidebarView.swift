@@ -39,7 +39,7 @@ struct SidebarView: View {
     #endif
   }
   @State private var filter = ""
-  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
+  @KitStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
 
   /// The sidebar's one selection is the open repository's screen; the open repository is the
   /// raised row in Repositories.
@@ -388,7 +388,7 @@ extension VaultProjectsLayout {
 struct ProjectsLayoutMenu: View {
   /// A submenu with the layout at its end (the Repositories list's menu), else a section.
   var asSubmenu = false
-  @AppStorage(VaultProjectsLayout.gitKey) private var layout = VaultProjectsLayout.separate
+  @KitStorage(VaultProjectsLayout.gitKey) private var layout = VaultProjectsLayout.separate
 
   var body: some View {
     if asSubmenu {

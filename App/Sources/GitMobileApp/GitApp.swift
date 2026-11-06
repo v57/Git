@@ -264,7 +264,7 @@ struct RepositoriesSidebar: View {
   /// On Your Devices, folded at launch.
   @State private var isRemoteOpen = false
   /// One switch with the Mac's Show Hidden.
-  @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
+  @KitStorage("ShowsHiddenRepositories") private var showsHidden = false
   @Environment(\.kitIdiom) private var idiom
 
   /// What the groups' menus act on: all but the removed.

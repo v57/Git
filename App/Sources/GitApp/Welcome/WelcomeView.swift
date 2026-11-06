@@ -110,7 +110,7 @@ struct CloneSheet: View {
   @Environment(RepositoryLibrary.self) private var library
   @Environment(\.modelContext) private var context
   @Environment(\.kitDismiss) private var dismiss
-  @AppStorage("CloneLocation") private var location = Self.defaultLocation
+  @KitStorage("CloneLocation") private var location = Self.defaultLocation
   @State private var remote = ""
   @State private var name = ""
   @State private var isNameEdited = false

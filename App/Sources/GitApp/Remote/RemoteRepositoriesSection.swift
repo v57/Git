@@ -22,9 +22,9 @@ struct RemoteRepositoriesSection: View {
   @State private var collapsedGroups: Set<String> = []
   /// Folded at launch.
   @State private var isExpanded = false
-  @AppStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
+  @KitStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
   /// One switch with the Repositories list's Show Hidden.
-  @AppStorage("ShowsHiddenRepositories") private var showsHidden = false
+  @KitStorage("ShowsHiddenRepositories") private var showsHidden = false
 
   private func matches(_ name: String) -> Bool { filter.isEmpty || name.localizedCaseInsensitiveContains(filter) }
 

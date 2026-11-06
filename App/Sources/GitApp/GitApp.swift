@@ -10,7 +10,7 @@ import VaultKit
 import VaultUI
 
 public struct GitApp: App {
-  @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
+  @KitStorage(SettingsKeys.gitPath) private var gitPath = ""
 
   /// Updates from GitHub Releases (Git.zip, built by Dev's release tool from release.env): checked
   /// daily once the user turns on automatic checks (never before), installed in place with a relaunch.

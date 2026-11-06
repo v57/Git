@@ -17,7 +17,7 @@ enum SettingsKeys {
 
 struct SettingsView: View {
   let updater: AppUpdater
-  @AppStorage(SettingsKeys.pane) private var pane = "General"
+  @KitStorage(SettingsKeys.pane) private var pane = "General"
 
   var body: some View {
     KitSettings(selection: $pane, window: .hiddenTitleBar) {
@@ -42,7 +42,7 @@ struct SettingsView: View {
 }
 
 private struct GeneralSettingsView: View {
-  @AppStorage(SettingsKeys.gitPath) private var gitPath = ""
+  @KitStorage(SettingsKeys.gitPath) private var gitPath = ""
   @State private var resolved: String?
   @State private var version: String?
 

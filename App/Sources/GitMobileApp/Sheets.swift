@@ -222,7 +222,7 @@ struct NewBranchSheet: View {
 /// the first commit that needs it. `close`, where nothing pushed the screen: iPad's Done.
 struct SettingsScreen: View {
   var close: (() -> Void)?
-  @AppStorage("SettingsPane") private var pane = "GitHub"
+  @KitStorage("SettingsPane") private var pane = "GitHub"
 
   var body: some View {
     KitSettings(selection: $pane) {
