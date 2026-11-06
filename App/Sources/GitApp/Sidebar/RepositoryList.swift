@@ -49,6 +49,8 @@ struct RepositoryList: View {
   @State private var showsMore = false
   @State private var confirmsRemoveAll = false
   @State private var confirmsRemoveProjects = false
+  /// What the rows do, filled as the list updates (`RepositoryRowActions`).
+  @State private var rowActions = RepositoryRowActions()
 
   private var layout: SidebarLayout { SidebarLayout(repositories: repositories, vault: library.vault) }
 
@@ -157,7 +159,11 @@ struct RepositoryList: View {
 
   /// Repository paths in screen order, for ⇧-click ranges and the context menu.
   private func order(_ layout: SidebarLayout) -> [String] {
-    visible(nodes(layout)).compactMap { item in
+    order(visible(nodes(layout)))
+  }
+
+  private func order(_ visible: [SidebarItem]) -> [String] {
+    visible.compactMap { item in
       if case .repository(let repository) = item { repository.path } else { nil }
     }
   }
@@ -165,8 +171,16 @@ struct RepositoryList: View {
   var body: some View {
     let layout = layout
     let nodes = nodes(layout)
+    let visibleIDs = visible(nodes).map(\.id)
     let hiddenCount = repositories.count { $0.isHidden }
     let more = filteredOut(layout)
+    let actions = rowActions.configured(
+      click: { click($0, layout: layout) },
+      menu: { AnyView(repositoryMenu(targets(for: $0, layout: layout), layout: layout)) },
+      groupMenu: { group, members in AnyView(groupMenu(group, members: members, layout: layout)) },
+      toggle: { group in withAnimation(.kit) { library.toggleCollapsed(group) } },
+      rename: { group, name in library.rename(group, to: name) },
+      endRename: { renaming = nil })
     KitSection(
       "Repositories", meta: meta(layout, more: more), systemImage: "folder", hue: .indigo,
       status: library.isImporting ? .working : .idle,
@@ -180,8 +194,8 @@ struct RepositoryList: View {
           move: { id, parent, index in move([id], into: parent, at: index, nodes: nodes) }
         ) { node in
           switch node.item {
-          case .repository(let repository): repositoryRow(repository, layout: layout)
-          case .group(let group): groupHeader(group, layout: layout)
+          case .repository(let repository): repositoryRow(repository, layout: layout, actions: actions)
+          case .group(let group): groupHeader(group, layout: layout, actions: actions)
           }
         }
         .dragsTogether(selected.count > 1 ? selected : []) { ids, parent, index in
@@ -198,7 +212,9 @@ struct RepositoryList: View {
       } else {
         // One list in the sort's order: dragging would move repositories out of their folders.
         ForEach(nodes) { node in
-          if case .repository(let repository) = node.item { repositoryRow(repository, layout: layout) }
+          if case .repository(let repository) = node.item {
+            repositoryRow(repository, layout: layout, actions: actions)
+          }
         }
       }
       if more > 0 || showsMore {
@@ -246,7 +262,7 @@ struct RepositoryList: View {
     }
     // A filter turned on again hides what Show More showed.
     .onChange(of: [hidesUnused, onlyWithChanges]) { showsMore = false }
-    .animation(.kit, value: visible(nodes).map(\.id))
+    .animation(.kit, value: visibleIDs)
     .onChange(of: isCollapsed) { storedCollapsed = isCollapsed }
     // `.folding`: a picked repository folds the list, as does choosing it with one open; the others open it again.
     .onChange(of: selection) { _, new in
@@ -328,7 +344,9 @@ struct RepositoryList: View {
 
   // MARK: Groups
 
-  private func groupHeader(_ group: VaultProjectGroup, layout: SidebarLayout) -> some View {
+  private func groupHeader(_ group: VaultProjectGroup, layout: SidebarLayout, actions: RepositoryRowActions)
+    -> some View
+  {
     let members = layout.repositories(in: group.id)
     let visible = members.filter { !$0.isHidden }
     let summaries = visible.compactMap { library.summaries[$0.path] }
@@ -336,14 +354,10 @@ struct RepositoryList: View {
       group: group, isCollapsed: library.collapsedGroups.contains(group.id) && filter.isEmpty,
       summary: RepositorySummary(combining: summaries),
       isBusy: members.contains { library.remoteActivity[$0.path] != nil },
-      help: groupHelp(group, members: visible, layout: layout)
-    ) {
-      withAnimation(.kit) { library.toggleCollapsed(group) }
-    }
-    .kitRename(isRenaming: .init(get: { renaming == group.id }, set: { if !$0 { renaming = nil } })) {
-      library.rename(group, to: $0)
-    }
-    .kitContextMenu { groupMenu(group, members: members, layout: layout) }
+      help: groupHelp(group, members: visible, layout: layout), actions: actions
+    )
+    .equatable()
+    .modifier(GroupExtras(group: group, members: members, isRenaming: renaming == group.id, actions: actions))
     .transition(.row)
   }
 
@@ -422,18 +436,20 @@ struct RepositoryList: View {
 
   // MARK: Repositories
 
-  private func repositoryRow(_ repository: SavedRepository, layout: SidebarLayout) -> some View {
+  private func repositoryRow(_ repository: SavedRepository, layout: SidebarLayout, actions: RepositoryRowActions)
+    -> some View
+  {
     let isMulti = selected.count > 1 && selected.contains(repository.path)
     return VStack(alignment: .leading, spacing: 2) {
       RepositoryRow(
         repository: repository, icon: layout.icon(of: repository.path), summary: library.summaries[repository.path],
         isCurrent: repository.path == selection, isSelected: isMulti,
-        activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path]
-      ) {
-        click(repository.path, layout: layout)
-      }
+        activity: library.remoteActivity[repository.path], outcome: library.remoteOutcomes[repository.path],
+        actions: actions
+      )
+      .equatable()
       .opacity(repository.isHidden ? 0.5 : 1)
-      .kitContextMenu { repositoryMenu(targets(for: repository.path, layout: layout), layout: layout) }
+      .modifier(RepositoryRowMenu(path: repository.path, actions: actions))
       if projectsLayout == .inline, repository.path == shown, let session = library.loadedSession(for: repository.path) {
         InlineWorkspaceRows(session: session, steps: groupsByFolder ? 2 : 1)
       }
@@ -689,13 +705,23 @@ struct RepositoryList: View {
 
 /// A group, laid out like a repository row: the kit's disclosure, a folder tile, the name over its
 /// note, and the summed state of the repositories in it. Click collapses it.
-private struct GroupHeader: View {
+private struct GroupHeader: View, Equatable {
   let group: VaultProjectGroup
   let isCollapsed: Bool
   let summary: RepositorySummary
   let isBusy: Bool
   let help: GroupHelp
-  let toggle: () -> Void
+  let actions: RepositoryRowActions
+
+  /// The actions box stays the same; the rest is what the header draws.
+  nonisolated static func == (a: Self, b: Self) -> Bool {
+    MainActor.assumeIsolated {
+      a.group == b.group && a.isCollapsed == b.isCollapsed && a.summary == b.summary && a.isBusy == b.isBusy
+        && a.help == b.help && a.actions === b.actions
+    }
+  }
+
+  private func toggle() { actions.toggle(group) }
 
   var body: some View {
     SidebarRow(group.name, subtitle: group.note?.isEmpty == false ? group.note : nil) {
@@ -764,8 +790,8 @@ extension View {
 }
 
 /// What a group's tooltip says: where it is and how many repositories it holds, then those that need attention.
-struct GroupHelp {
-  struct Line {
+struct GroupHelp: Equatable {
+  struct Line: Equatable {
     let path: String
     let name: String
     let summary: RepositorySummary
@@ -803,7 +829,7 @@ struct GroupHelpDetail: View {
 
 /// A repository: its project's icon (or letter tile), name and state. The open one is the kit's current row; others
 /// selected with it are tinted.
-struct RepositoryRow: View {
+struct RepositoryRow: View, Equatable {
   let repository: SavedRepository
   /// The vault's PNG of the project's app icon.
   var icon: Data?
@@ -813,8 +839,16 @@ struct RepositoryRow: View {
   var activity: RemoteAction?
   /// How the last fetch, pull or push from the sidebar ended: the row plays its effect.
   var outcome: RemoteOutcome?
-  /// What a click does: open it, or (⌘, ⇧) select it with others.
-  let action: () -> Void
+  /// What a click does: open it, or (⌘, ⇧) select it with others (`RepositoryRowActions.click`).
+  let actions: RepositoryRowActions
+
+  /// The actions box stays the same; the rest is what the row draws (the repository's own values are observed).
+  nonisolated static func == (a: Self, b: Self) -> Bool {
+    MainActor.assumeIsolated {
+      a.repository === b.repository && a.icon == b.icon && a.summary == b.summary && a.isCurrent == b.isCurrent
+        && a.isSelected == b.isSelected && a.activity == b.activity && a.outcome == b.outcome && a.actions === b.actions
+    }
+  }
 
   var body: some View {
     SidebarRow(repository.name) {
@@ -832,7 +866,7 @@ struct RepositoryRow: View {
       }
     }
     .isCurrent(isCurrent && !isSelected)
-    .action(action)
+    .action { [actions, repository] in actions.click(repository.path) }
     .background {
       if isSelected {
         RoundedRectangle(cornerRadius: KitMetrics.radius, style: .continuous).fill(Hue.accent.soft())
@@ -846,5 +880,58 @@ struct RepositoryRow: View {
       meta: [repository.path, summary.map(StatusMarks.description)].compactMap { $0 }.filter { !$0.isEmpty }
         .joined(separator: "\n"))
     .accessibilityAddTraits(isCurrent || isSelected ? .isSelected : [])
+  }
+}
+
+/// What the Repositories list's rows and group headers do, in a box the list fills each time it updates: the rows and
+/// their menus hold the box rather than closures, so a row whose state didn't change keeps the same inputs and isn't
+/// built again (new closures made every row, its menu and its tooltip update on each click or selection change).
+@MainActor final class RepositoryRowActions {
+  var click: (String) -> Void = { _ in }
+  var menu: (String) -> AnyView = { _ in AnyView(EmptyView()) }
+  var groupMenu: (VaultProjectGroup, [SavedRepository]) -> AnyView = { _, _ in AnyView(EmptyView()) }
+  var toggle: (VaultProjectGroup) -> Void = { _ in }
+  var rename: (VaultProjectGroup, String) -> Void = { _, _ in }
+  var endRename: () -> Void = {}
+
+  func configured(
+    click: @escaping (String) -> Void, menu: @escaping (String) -> AnyView,
+    groupMenu: @escaping (VaultProjectGroup, [SavedRepository]) -> AnyView,
+    toggle: @escaping (VaultProjectGroup) -> Void, rename: @escaping (VaultProjectGroup, String) -> Void,
+    endRename: @escaping () -> Void
+  ) -> Self {
+    self.click = click
+    self.menu = menu
+    self.groupMenu = groupMenu
+    self.toggle = toggle
+    self.rename = rename
+    self.endRename = endRename
+    return self
+  }
+}
+
+/// A repository row's context menu, built from the box when it opens.
+private struct RepositoryRowMenu: ViewModifier {
+  let path: String
+  let actions: RepositoryRowActions
+
+  func body(content: Content) -> some View {
+    content.kitContextMenu { [actions, path] in actions.menu(path) }
+  }
+}
+
+/// A group header's rename field and context menu, from the box.
+private struct GroupExtras: ViewModifier {
+  let group: VaultProjectGroup
+  let members: [SavedRepository]
+  let isRenaming: Bool
+  let actions: RepositoryRowActions
+
+  func body(content: Content) -> some View {
+    content
+      .kitRename(isRenaming: .init(get: { isRenaming }, set: { [actions] in if !$0 { actions.endRename() } })) {
+        [actions, group] in actions.rename(group, $0)
+      }
+      .kitContextMenu { [actions, group, members] in actions.groupMenu(group, members) }
   }
 }

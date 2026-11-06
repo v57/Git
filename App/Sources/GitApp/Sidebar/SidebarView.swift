@@ -41,26 +41,10 @@ struct SidebarView: View {
   @State private var filter = ""
   @KitStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
 
-  /// The sidebar's one selection is the open repository's screen; the open repository is the
-  /// raised row in Repositories.
-  private var mode: Binding<RepositoryMode?> {
-    Binding(
-      get: { shown.map { library.viewState(for: $0).mode } },
-      set: { mode in
-        guard let mode, let path = shown else { return }
-        let state = library.viewState(for: path)
-        withKitAnimation {
-          library.showsAllRepositories = false
-          state.mode = mode
-          // Changes again leaves the "Merge complete" screen.
-          if mode == .changes { state.completedOperation = nil }
-        }
-      })
-  }
-
   var body: some View {
     @Bindable var library = library
-    KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
+    let repositories = repositories
+    RepositorySidebar(shown: shown, filter: $filter, columns: $columns) {
       // The window's account, while there is more than Personal.
       VaultAccountPicker(meta: repositories.count == 1 ? "1 repository" : "\(repositories.count) repositories")
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
@@ -105,7 +89,7 @@ struct SidebarView: View {
     }
     .kitNotice(item: $library.remoteFailure, title: \.title, message: \.message)
     .task(id: repositories.filter { !$0.isHidden }.map(\.path)) {
-      let shown = repositories.filter { !$0.isHidden }.map(\.path)
+      let shown = self.repositories.filter { !$0.isHidden }.map(\.path)
       library.watchSummaries(of: shown)
       #if DEBUG
         // --add-folder <path> (repeatable) imports folders at launch (or a screenshot scene's), for testing. With
@@ -142,6 +126,56 @@ struct SidebarView: View {
       #endif
       if let first = added.first { selection = first }
     }
+  }
+}
+
+/// The kit's sidebar with the open repository's screen as its selection. A view of its own: making a
+/// `Binding(get:set:)` reads its value at once, so in `SidebarView`'s body the screen's mode made that body (the
+/// repository list and every section with it) run again on each switch between Changes, History and Stashes. Here the
+/// content comes in built and stays the same value when only the mode changes.
+private struct RepositorySidebar<Content: View, BottomBar: View>: View {
+  /// The repository on screen, whose mode is the selection.
+  let shown: String?
+  @Binding var filter: String
+  @Binding var columns: NavigationSplitViewVisibility
+  let content: Content
+  let bottomBar: BottomBar
+  @Environment(RepositoryLibrary.self) private var library
+
+  init(
+    shown: String?, filter: Binding<String>, columns: Binding<NavigationSplitViewVisibility>,
+    @ViewBuilder content: () -> Content, @ViewBuilder bottomBar: () -> BottomBar
+  ) {
+    self.shown = shown
+    _filter = filter
+    _columns = columns
+    self.content = content()
+    self.bottomBar = bottomBar()
+  }
+
+  var body: some View {
+    KitSidebar(selection: mode, searchText: $filter, searchPrompt: "Filter", columnVisibility: $columns) {
+      content
+    } bottomBar: {
+      bottomBar
+    }
+  }
+
+  /// The sidebar's one selection is the open repository's screen; the open repository is the
+  /// raised row in Repositories.
+  private var mode: Binding<RepositoryMode?> {
+    Binding(
+      get: { shown.map { library.viewState(for: $0).mode } },
+      set: { mode in
+        guard let mode, let path = shown else { return }
+        let state = library.viewState(for: path)
+        withKitAnimation {
+          library.showsAllRepositories = false
+          state.mode = mode
+          // Changes again leaves the "Merge complete" screen.
+          if mode == .changes { state.completedOperation = nil }
+        }
+      })
   }
 }
 

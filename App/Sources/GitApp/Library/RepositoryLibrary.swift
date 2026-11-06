@@ -224,7 +224,7 @@ struct CompletedOperation: Equatable {
   private var checkedRemotes: Set<String> = []
 
   func checked(_ key: String, _ summary: RepositorySummary) {
-    summaries[key] = summary
+    setSummary(summary, for: key)
     checkedRemotes.insert(key)
   }
 
@@ -357,7 +357,7 @@ struct CompletedOperation: Equatable {
 
   func updateSummary(_ path: String, from session: RepositorySession) {
     guard let status = session.status else { return }
-    summaries[path] = RepositorySummary(status)
+    setSummary(RepositorySummary(status), for: path)
     rememberState()
     // The dates are read here, from git on this Mac.
     guard !Self.isRemote(path) else { return }
@@ -397,6 +397,14 @@ struct CompletedOperation: Equatable {
     summaryWatcher = watcher
   }
 
+  /// Sets a repository's summary only when it changed: every view reading `summaries` (the whole Repositories list)
+  /// updates on any write to it, and a refresh of all of them (each time the app becomes active) mostly finds the
+  /// same values.
+  private func setSummary(_ summary: RepositorySummary?, for key: String) {
+    guard summaries[key] != summary else { return }
+    summaries[key] = summary
+  }
+
   /// Reloads every watched repository's summary, e.g. when the app becomes active.
   func refreshAllSummaries() async {
     await refreshSummaries(watchedPaths)
@@ -432,8 +440,7 @@ struct CompletedOperation: Equatable {
       }
       for _ in 0..<6 { addNext() }
       for await (path, status, activity) in group {
-        let summary = status.map(RepositorySummary.init)
-        if let summary { summaries[path] = summary } else { summaries[path] = nil }
+        setSummary(status.map(RepositorySummary.init), for: path)
         if activities[path] != activity { activities[path] = activity }
         // The open repository's session keeps its own (its files list an untracked folder's files, these don't).
         if let status, !(activeSession.map { !$0.repository.isRemote && $0.repository.url.path == path } ?? false) {
