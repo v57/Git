@@ -31,6 +31,8 @@ private struct ChangeList: View {
   let session: RepositorySession
   @Bindable var state: RepositoryViewState
   @State private var pendingDiscard: PendingDiscard?
+  /// What the rows do, filled as the list updates (`ChangeRowActions`).
+  @State private var rowActions = ChangeRowActions()
 
   /// Changes waiting for the user to confirm discarding them, all from one area.
   private struct PendingDiscard {
@@ -41,6 +43,18 @@ private struct ChangeList: View {
   private var status: WorkingTreeStatus? { session.status }
 
   var body: some View {
+    let actions = rowActions.configured(
+      toggle: { change in
+        Task {
+          if change.area == .staged {
+            await session.unstage([change])
+          } else {
+            await session.stage([change])
+          }
+        }
+      },
+      select: { state.selectedChanges = [$0.id] },
+      menu: { AnyView(contextMenu(for: $0)) })
     ScrollView {
       VStack(alignment: .leading, spacing: KitMetrics.gutter) {
         if let status {
@@ -62,7 +76,7 @@ private struct ChangeList: View {
                 .padding(.vertical, 8)
             }
             ForEach(status.staged) { change in
-              row(change).transition(.row)
+              row(change, actions: actions).transition(.row)
             }
           }
           ChangeCard(
@@ -75,7 +89,7 @@ private struct ChangeList: View {
             pendingDiscard = PendingDiscard(changes: status.unstaged, area: .unstaged)
           } rows: {
             ForEach(status.unstaged) { change in
-              row(change).transition(.row)
+              row(change, actions: actions).transition(.row)
             }
           }
         } else {
@@ -142,22 +156,14 @@ private struct ChangeList: View {
       : "Discard \(area) changes to \(pending.changes.count) files?"
   }
 
-  private func row(_ change: FileChange) -> some View {
+  /// The row takes the actions box rather than closures, so picking another file builds only the two rows it changes.
+  private func row(_ change: FileChange, actions: ChangeRowActions) -> some View {
     ChangeRow(
       change: change, lines: session.lineCounts[change.id],
-      isSelected: state.selectedChanges.contains(change.id)
-    ) {
-      Task {
-        if change.area == .staged {
-          await session.unstage([change])
-        } else {
-          await session.stage([change])
-        }
-      }
-    } select: {
-      state.selectedChanges = [change.id]
-    }
-    .kitContextMenu { contextMenu(for: change) }
+      isSelected: state.selectedChanges.contains(change.id), actions: actions
+    )
+    .equatable()
+    .modifier(ChangeRowMenu(change: change, actions: actions))
   }
 
   @ViewBuilder
@@ -268,12 +274,21 @@ private struct ChangeCard<Rows: View>: View {
 
 /// A changed file: checkbox, status, name over folder, and line counts. The selected one is raised, as the
 /// sidebar's current row.
-private struct ChangeRow: View {
+private struct ChangeRow: View, Equatable {
   let change: FileChange
   let lines: GitKit.LineCounts?
   let isSelected: Bool
-  let toggle: () -> Void
-  let select: () -> Void
+  /// Stage or unstage, and select (`ChangeRowActions`).
+  let actions: ChangeRowActions
+
+  nonisolated static func == (a: Self, b: Self) -> Bool {
+    MainActor.assumeIsolated {
+      a.change == b.change && a.lines == b.lines && a.isSelected == b.isSelected && a.actions === b.actions
+    }
+  }
+
+  private func toggle() { actions.toggle(change) }
+  private func select() { actions.select(change) }
 
   var body: some View {
     let folder = change.originalPath.map { "from \($0)" } ?? (change.directory.isEmpty ? nil : change.directory)
@@ -301,5 +316,34 @@ private struct ChangeRow: View {
     .truncationMode(.middle)
     .animation(.kit, value: isSelected)
     .help(change.path)
+  }
+}
+
+/// What the change list's rows do, in a box the list fills each time it updates: the rows and their menus hold the box
+/// rather than closures, so a row whose state didn't change keeps the same inputs (new closures made every row and its
+/// menu update on each file picked).
+@MainActor private final class ChangeRowActions {
+  var toggle: (FileChange) -> Void = { _ in }
+  var select: (FileChange) -> Void = { _ in }
+  var menu: (FileChange) -> AnyView = { _ in AnyView(EmptyView()) }
+
+  func configured(
+    toggle: @escaping (FileChange) -> Void, select: @escaping (FileChange) -> Void,
+    menu: @escaping (FileChange) -> AnyView
+  ) -> Self {
+    self.toggle = toggle
+    self.select = select
+    self.menu = menu
+    return self
+  }
+}
+
+/// A change row's context menu, built from the box when it opens.
+private struct ChangeRowMenu: ViewModifier {
+  let change: FileChange
+  let actions: ChangeRowActions
+
+  func body(content: Content) -> some View {
+    content.kitContextMenu { [actions, change] in actions.menu(change) }
   }
 }
