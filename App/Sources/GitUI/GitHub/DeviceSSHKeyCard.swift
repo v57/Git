@@ -41,3 +41,19 @@ public struct DeviceSSHKeyCard: View {
     }
   }
 }
+
+/// Settings' sidebar: Copy Public Key, this device's SSH key (`ssh-…` line) for a server's or GitHub's key list, from
+/// any pane. Nothing shows until the vault has published the device's key.
+public struct DeviceKeyCopyButton: View {
+  @State private var vault = Vault.shared
+
+  public init() {}
+
+  public var body: some View {
+    if let key = vault.deviceKeys.first(where: { $0.id == vault.deviceID }) {
+      KitCopyButton("Copy Public Key", systemImage: "key", value: key.publicKey)
+        .buttonStyle(.kit)
+        .help("Copies this device’s SSH key, to add to GitHub or a server")
+    }
+  }
+}

@@ -34,6 +34,8 @@ struct SettingsView: View {
       }
       // Your devices, and Git on iPhone and iPad runs this Mac's git over SSH: which can sign in, and the other keys.
       SettingsPane("Remote", systemImage: "network", hue: .teal, section: "v57") { VaultRemoteSettings() }
+    } footer: {
+      DeviceKeyCopyButton()
     }
     .frame(width: 680, height: 460)
   }

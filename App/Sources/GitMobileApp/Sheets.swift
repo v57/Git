@@ -230,6 +230,8 @@ struct SettingsScreen: View {
       SettingsPane("Security", systemImage: "lock.shield", hue: .green) { SecuritySettingsPane() }
       SettingsPane("Privacy", systemImage: "hand.raised", hue: .blue) { PrivacySettingsPane() }
       SettingsPane("Devices", systemImage: "laptopcomputer", hue: .blue, section: "v57") { VaultDevicesSettings() }
+    } footer: {
+      DeviceKeyCopyButton()
     }
     .kitPane(.content)
     .kitToolbar("Settings", meta: ["Git"], systemImage: "gearshape", hue: .gray) {
