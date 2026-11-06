@@ -56,11 +56,14 @@ private struct HistoryLayout {
   var rest: [Commit] = []
   var graph: [Commit.ID: GraphRow] = [:]
   var showsGraph = true
+  /// How many people wrote the loaded commits, for the filter bar (counted here, not on every update).
+  var authors = 0
 
   init() {}
 
   init(commits: [Commit], sync: SyncCommits, showsGraph: Bool) {
     self.showsGraph = showsGraph
+    authors = Set(commits.map(\.authorEmail)).count
     guard showsGraph else {
       rest = commits
       return
@@ -116,6 +119,8 @@ private struct CommitList: View {
   /// Where ⇧ ranges start: the commit last selected without ⇧.
   @State private var anchor: Commit.ID?
   @FocusState private var isFocused: Bool
+  /// What the rows and the arrow keys do, filled as the list updates (`CommitRowActions`).
+  @State private var rowActions = CommitRowActions()
 
   private struct LayoutKey: Hashable {
     var count: Int
@@ -132,11 +137,19 @@ private struct CommitList: View {
   }
 
   var body: some View {
+    let actions = rowActions.configured(
+      click: { click($0) }, menu: { AnyView(menu(for: $0)) },
+      appeared: { commit, kind in
+        if kind == .history, commit.id == session.commits.last?.id {
+          Task { await session.loadMoreCommits() }
+        }
+      },
+      move: { move($0, extending: $1) })
     ScrollViewReader { proxy in
       ScrollView {
         LazyVStack(alignment: .leading, spacing: 0) {
           filterBar
-          cards
+          cards(actions)
         }
         .padding(.horizontal, KitMetrics.gutter)
         .padding(.bottom, KitMetrics.gutter)
@@ -144,11 +157,15 @@ private struct CommitList: View {
       .focusable()
       .focusEffectDisabled()
       .focused($isFocused)
-      .onKeyPress(keys: [.upArrow, .downArrow]) { press in
-        move(press.key == .downArrow ? 1 : -1, extending: press.modifiers.contains(.shift))
-      }
+      .modifier(CommitKeys(actions: actions))
       .onChange(of: state.selectedCommit) { _, id in
-        if let id { withKitAnimation { proxy.scrollTo(id) } }
+        guard let id else { return }
+        // A clicked row is on screen already: a scroll, even one that doesn't move, updates the whole list again.
+        if actions.clicked == id {
+          actions.clicked = nil
+          return
+        }
+        withKitAnimation { proxy.scrollTo(id) }
       }
     }
     .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width = $0 }
@@ -208,7 +225,7 @@ private struct CommitList: View {
           }),
         options: [("All Branches", true), ("Current Branch", false)])
       Spacer()
-      let authors = Set(session.commits.map(\.authorEmail)).count
+      let authors = layout.authors
       Text(
         "\(session.commits.count)\(session.hasMoreCommits ? "+" : "") commit\(session.commits.count == 1 ? "" : "s") · \(authors) author\(authors == 1 ? "" : "s")"
       )
@@ -225,7 +242,7 @@ private struct CommitList: View {
   /// To pull, To push and the history, each a card over lazy rows (the header, the commits and,
   /// while more load, the loading row), so a long history lays out only the rows on screen.
   @ViewBuilder
-  private var cards: some View {
+  private func cards(_ actions: CommitRowActions) -> some View {
     let layout = layout
     let upstream = session.status?.upstream ?? "the upstream"
     if !layout.toPull.isEmpty {
@@ -240,7 +257,7 @@ private struct CommitList: View {
           .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
       }
       .kitCardSlice(0, of: count)
-      rows(layout.toPull, layout: layout, kind: .toPull, cardSize: count)
+      rows(layout.toPull, layout: layout, kind: .toPull, cardSize: count, actions: actions)
       LaneGap(lanes: layout.lanes(into: layout.toPush.first ?? layout.rest.first), dashed: true)
     }
     if !layout.toPush.isEmpty {
@@ -256,7 +273,7 @@ private struct CommitList: View {
           .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
       }
       .kitCardSlice(0, of: count)
-      rows(layout.toPush, layout: layout, kind: .toPush, cardSize: count)
+      rows(layout.toPush, layout: layout, kind: .toPush, cardSize: count, actions: actions)
       LaneGap(lanes: layout.lanes(into: layout.rest.first), dashed: false)
     }
     if !layout.rest.isEmpty || session.isLoadingCommits {
@@ -268,7 +285,7 @@ private struct CommitList: View {
         EmptyView()
       }
       .kitCardSlice(0, of: count)
-      rows(layout.rest, layout: layout, kind: .history, cardSize: count)
+      rows(layout.rest, layout: layout, kind: .history, cardSize: count, actions: actions)
       if session.isLoadingCommits {
         HStack(spacing: 8) {
           LiveIcon(systemImage: "clock", hue: .gray, status: .working, size: 18)
@@ -308,29 +325,33 @@ private struct CommitList: View {
   }
 
   /// The commits as rows 1… of a card of `cardSize` rows (row 0 is its header).
-  private func rows(_ commits: [Commit], layout: HistoryLayout, kind: CommitRow.Kind, cardSize: Int) -> some View {
-    ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
+  /// Each row takes the actions box rather than closures, so a selection change builds only the rows it changes.
+  private func rows(
+    _ commits: [Commit], layout: HistoryLayout, kind: CommitRow.Kind, cardSize: Int, actions: CommitRowActions
+  ) -> some View {
+    let headOID = session.status?.headOID
+    let maxRefs = width < 720 ? 1 : 2
+    return ForEach(Array(commits.enumerated()), id: \.element.id) { index, commit in
       CommitRow(
         commit: commit, graph: layout.graph[commit.id], graphWidth: layout.graphWidth, kind: kind,
-        isHead: commit.id == session.status?.headOID, isUnpushed: kind == .toPush,
+        isHead: commit.id == headOID, isUnpushed: kind == .toPush,
         isSelected: state.selectedCommit == commit.id || state.selectedCommits.contains(commit.id),
-        isFocused: isFocused, maxRefs: width < 720 ? 1 : 2
+        isFocused: isFocused, maxRefs: maxRefs
       )
-      .onTapGesture { click(commit) }
+      .equatable()
+      .modifier(CommitRowExtras(commit: commit, kind: kind, actions: actions))
       .kitCardSlice(index + 1, of: cardSize)
       .id(commit.id)
-      .kitContextMenu {
-        if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
-          selectionMenu()
-        } else {
-          contextMenu(for: commit)
-        }
-      }
-      .onAppear {
-        if kind == .history, commit.id == session.commits.last?.id {
-          Task { await session.loadMoreCommits() }
-        }
-      }
+    }
+  }
+
+  /// A row's context menu: Squash for several selected commits that include it, else the commit's own.
+  @ViewBuilder
+  private func menu(for commit: Commit) -> some View {
+    if state.selectedCommits.count > 1, state.selectedCommits.contains(commit.id) {
+      selectionMenu()
+    } else {
+      contextMenu(for: commit)
     }
   }
 
@@ -348,6 +369,7 @@ private struct CommitList: View {
 
   /// Click selects one commit; ⇧-click selects every commit from the anchor to this one.
   private func click(_ commit: Commit) {
+    rowActions.clicked = commit.id
     let flags = KitDesktop.modifierKeys
     if flags.contains(.shift) { extendSelection(to: commit.id) } else { select(commit.id) }
     isFocused = true
@@ -487,9 +509,57 @@ private struct LaneLines: View {
   }
 }
 
+/// What the history's rows and arrow keys do, in a box the list fills each time it updates: the rows, their menus and
+/// the key handler hold the box rather than closures, so a new selection updates only the rows whose selection changed
+/// (new closures made every row and its menu update, and a new key handler wrote the environment of the whole list).
+@MainActor private final class CommitRowActions {
+  var click: (Commit) -> Void = { _ in }
+  var menu: (Commit) -> AnyView = { _ in AnyView(EmptyView()) }
+  var appeared: (Commit, CommitRow.Kind) -> Void = { _, _ in }
+  var move: (Int, Bool) -> KeyPress.Result = { _, _ in .ignored }
+  /// The commit a click just selected: it's on screen, so the list doesn't scroll to it.
+  var clicked: Commit.ID?
+
+  func configured(
+    click: @escaping (Commit) -> Void, menu: @escaping (Commit) -> AnyView,
+    appeared: @escaping (Commit, CommitRow.Kind) -> Void, move: @escaping (Int, Bool) -> KeyPress.Result
+  ) -> Self {
+    self.click = click
+    self.menu = menu
+    self.appeared = appeared
+    self.move = move
+    return self
+  }
+}
+
+/// ↑ and ↓ move the selection, ⇧ extends it.
+private struct CommitKeys: ViewModifier {
+  let actions: CommitRowActions
+
+  func body(content: Content) -> some View {
+    content.onKeyPress(keys: [.upArrow, .downArrow]) { [actions] press in
+      actions.move(press.key == .downArrow ? 1 : -1, press.modifiers.contains(.shift))
+    }
+  }
+}
+
+/// A row's click, context menu and the history's next page as the last row comes in, from the box.
+private struct CommitRowExtras: ViewModifier {
+  let commit: Commit
+  let kind: CommitRow.Kind
+  let actions: CommitRowActions
+
+  func body(content: Content) -> some View {
+    content
+      .onTapGesture { [actions, commit] in actions.click(commit) }
+      .kitContextMenu { [actions, commit] in actions.menu(commit) }
+      .onAppear { [actions, commit, kind] in actions.appeared(commit, kind) }
+  }
+}
+
 /// One 46-point commit row: the graph with the author as the node, the message over the author,
 /// date and short sha, and the refs at the end.
-private struct CommitRow: View {
+private struct CommitRow: View, Equatable {
   enum Kind { case toPull, toPush, history }
 
   let commit: Commit
@@ -502,6 +572,14 @@ private struct CommitRow: View {
   let isFocused: Bool
   let maxRefs: Int
   @State private var isHovered = false
+
+  nonisolated static func == (a: Self, b: Self) -> Bool {
+    MainActor.assumeIsolated {
+      a.commit == b.commit && a.graph == b.graph && a.graphWidth == b.graphWidth && a.kind == b.kind
+        && a.isHead == b.isHead && a.isUnpushed == b.isUnpushed && a.isSelected == b.isSelected
+        && a.isFocused == b.isFocused && a.maxRefs == b.maxRefs
+    }
+  }
 
   var body: some View {
     HStack(spacing: 0) {
