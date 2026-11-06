@@ -15,6 +15,7 @@ struct RepositoryScreen: View {
   @State private var showsNewBranch = false
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
+  @Environment(\.openURL) private var openURL
   @Environment(VaultProfileRequest.self) private var profiles
 
   enum Pane: Hashable {
@@ -63,7 +64,11 @@ struct RepositoryScreen: View {
     .navigationDestination(for: DiffRoute.self) { route in DiffScreen(model: model, route: route) }
     .navigationDestination(for: Commit.self) { commit in CommitScreen(model: model, commit: commit) }
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
-    .kitNotice(item: $model.failure, title: \.title, message: \.message)
+    .kitNotice(item: $model.failure, title: \.title, message: \.message) { failure in
+      // The security level kept a remote off HTTPS and its move to SSH didn't work: what to do instead.
+      guard let refusal = failure.refusal else { return [] }
+      return RefusalChoices.buttons(refusal, retry: failure.retryOverHTTPS, openURL: openURL)
+    }
     .kitConfirmation(
       "Couldn’t \(model.httpsOffer?.action.title ?? "Sync") over SSH",
       isPresented: .init(get: { model.httpsOffer != nil }, set: { if !$0 { model.httpsOffer = nil } }),

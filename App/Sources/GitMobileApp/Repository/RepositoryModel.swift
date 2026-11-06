@@ -44,6 +44,10 @@ enum RepositorySource: Hashable, Identifiable {
     let id = UUID()
     var title: String
     var message: String
+    /// What the security level refused, when that's why: the notice offers what to do instead.
+    var refusal: GitNetworkRefusal?
+    /// The same action again over HTTPS, this time only, when `refusal` offers it.
+    var retryOverHTTPS: (@MainActor @Sendable () async -> Void)?
   }
 
   /// A sync git's ssh couldn't sign in for, and the HTTPS address that could take over.
@@ -216,6 +220,19 @@ enum RepositorySource: Hashable, Identifiable {
       try await action(backend)
       await refresh()
       return true
+    } catch let refusal as GitNetworkRefusal {
+      var retry: (@MainActor @Sendable () async -> Void)?
+      if refusal.offersHTTPS, !GitNetwork.allowsHTTPS {
+        retry = { @MainActor [weak self] in
+          await GitNetwork.$allowsHTTPS.withValue(true) {
+            _ = await self?.perform(title, failure: failureTitle, action)
+          }
+        }
+      }
+      failure = Failure(
+        title: failureTitle, message: RefusalChoices.message(refusal), refusal: refusal, retryOverHTTPS: retry)
+      await refresh()
+      return false
     } catch {
       report(error, title: failureTitle)
       await refresh()

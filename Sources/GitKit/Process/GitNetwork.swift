@@ -11,7 +11,8 @@ public enum GitSecurityLevel: Int, Sendable, CaseIterable, Identifiable {
   case inAppFirst = 2
   /// In the app; HTTPS remotes move to SSH; else `git` over SSH with the user's own keys. HTTPS is refused.
   case sshOnly = 3
-  /// Never the `git` command, and only the vault's key signs in. What it can't do it refuses, saying why.
+  /// Never the `git` command, and only the vault's key signs in; HTTPS remotes move to SSH as at `sshOnly`. What it
+  /// can't do it refuses, saying why.
   case vaultKeyOnly = 4
 
   /// What an unset level means.
@@ -99,18 +100,47 @@ public struct GitNetworkRequest: Sendable {
   public var hasGit: Bool
   public var sshClientAddress: (@Sendable (String) async -> SSHClientAddress?)?
   public var progress: (@Sendable (String) -> Void)?
+  /// The user chose HTTPS for this one action (`GitNetworkRefusal.httpsRemotes`): from SSH only up, HTTPS remotes
+  /// neither move nor are refused, and sign in with the token. The level's other rules stay.
+  public var allowsHTTPS: Bool
 
   public init(
     level: GitSecurityLevel, settings: [GitSetting]? = nil, hasGit: Bool = false,
     sshClientAddress: (@Sendable (String) async -> SSHClientAddress?)? = nil,
-    progress: (@Sendable (String) -> Void)? = nil
+    progress: (@Sendable (String) -> Void)? = nil, allowsHTTPS: Bool = GitNetwork.allowsHTTPS
   ) {
     self.level = level
     self.settings = settings
     self.hasGit = hasGit
     self.sshClientAddress = sshClientAddress
     self.progress = progress
+    self.allowsHTTPS = allowsHTTPS
   }
+}
+
+/// What the security level refused, in words to show as they are. When remotes stayed on HTTPS because their move to
+/// SSH didn't work, the app asks what to do instead: HTTPS for this action (`GitNetwork.$allowsHTTPS`), or, when the
+/// server refused this device's key, adding the key there and trying again.
+public struct GitNetworkRefusal: Error, LocalizedError, CustomStringConvertible, Sendable, Hashable {
+  public var message: String
+  /// The remotes left on `https://` addresses (never plain HTTP), or "The address" for a clone.
+  public var httpsRemotes: [String]
+  /// The hosts of those addresses.
+  public var httpsHosts: [String]
+  /// Whether a server refused this device's key while checking the SSH address.
+  public var keyRefused: Bool
+
+  public init(_ message: String, httpsRemotes: [String] = [], httpsHosts: [String] = [], keyRefused: Bool = false) {
+    self.message = message
+    self.httpsRemotes = httpsRemotes
+    self.httpsHosts = httpsHosts
+    self.keyRefused = keyRefused
+  }
+
+  /// Whether HTTPS for this action is an alternative worth offering.
+  public var offersHTTPS: Bool { !httpsRemotes.isEmpty }
+  public var errorDescription: String? { message }
+  public var description: String { message }
 }
 
 /// How a network action the engine was given ended.
@@ -121,7 +151,7 @@ public enum GitNetworkOutcome: Sendable, Equatable {
   case fetched
   /// The engine can't do this (`reason`), and the level lets `git` try with the user's own credentials. `remotes` or
   /// `url` narrow what git works on; `refusal` is what still has to be said afterwards (remotes the level refused).
-  case useGit(reason: String, remotes: [String]? = nil, url: String? = nil, refusal: String? = nil)
+  case useGit(reason: String, remotes: [String]? = nil, url: String? = nil, refusal: GitNetworkRefusal? = nil)
 }
 
 /// The app's own git on the network: GitEngine, which needs GitKit's models and so can't be called from here.
@@ -164,6 +194,10 @@ public enum GitNetwork {
   static var configuration: Configuration? { scoped ?? store.withLock { $0 } }
 
   static var engine: (any GitNetworkEngine)? { configuration?.engine }
+
+  /// Set around one action the user chose HTTPS for, after a `GitNetworkRefusal` that offered it. Read by
+  /// `GitNetworkRequest`'s initializer, so every path to the engine (Mac, iPhone and iPad, clones) sees it.
+  @TaskLocal public static var allowsHTTPS = false
 
   /// The level network actions follow now.
   public static func level() async -> GitSecurityLevel {

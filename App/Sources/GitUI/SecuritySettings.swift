@@ -144,14 +144,14 @@ public struct SecuritySettingsCard: View {
       case .sshOnly:
         "Network actions run in the app, and HTTPS remotes move to SSH when you next use them. If that can’t work they run git over SSH with your own keys. HTTPS is refused."
       case .vaultKeyOnly:
-        "Network actions never run git and only this device’s key signs in. Off here: pre-push hooks, ~/.ssh/config, submodules, LFS and folder remotes. What it can’t do, it refuses and says why."
+        "Network actions never run git and only this device’s key signs in. HTTPS remotes move to SSH when you next use them. Off here: pre-push hooks, ~/.ssh/config, submodules, LFS and folder remotes. What it can’t do, it refuses and says why."
       }
     #else
       switch level {
       case .useGit, .inAppFirst: "Repositories here sign in with this device’s key or your GitHub token. All your devices share this level."
       case .sshOnly: "HTTPS remotes move to SSH when you next use them, and sign in with this device’s key. All your devices share this level."
       case .vaultKeyOnly:
-        "Only this device’s key signs in: HTTPS is refused. Fetch, pull and push are off for repositories on your other devices. All your devices share this level."
+        "Only this device’s key signs in, and HTTPS remotes move to SSH when you next use them. Fetch, pull and push are off for repositories on your other devices. All your devices share this level."
       }
     #endif
   }

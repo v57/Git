@@ -363,9 +363,13 @@ import Testing
       let https = httpsAddress(scene.served)
       let folder = try scene.served.clone(url: https)
       let config = try String(contentsOf: folder.appendingPathComponent(".git/config"), encoding: .utf8)
-      await at(.sshOnly, scene.served, login: login) {
-        await #expect(throws: GitEngineError.self) { try await scene.repository(folder).fetch() }
+      let refusal = await at(.sshOnly, scene.served, login: login) {
+        await #expect(throws: GitNetworkRefusal.self) { try await scene.repository(folder).fetch() }
       }
+      // The app offers HTTPS for this action, and adding the key when the server refused it.
+      #expect(refusal?.httpsRemotes == ["origin"])
+      #expect(refusal?.httpsHosts == ["example.invalid"])
+      #expect(refusal?.keyRefused == (login == .refused))
       #expect(try String(contentsOf: folder.appendingPathComponent(".git/config"), encoding: .utf8) == config)
       #expect(!scene.usedGitsSSH)
     }
@@ -384,9 +388,11 @@ import Testing
     let other = try second.served.clone()
     try git(["remote", "add", "web", "git://example.invalid/repo.git"], in: other)
     try second.served.commitUpstream("new.txt", "new\n")
-    await at(.sshOnly, second.served) {
-      await #expect(throws: GitEngineError.self) { try await second.repository(other).fetch() }
+    let refusal = await at(.sshOnly, second.served) {
+      await #expect(throws: GitNetworkRefusal.self) { try await second.repository(other).fetch() }
     }
+    // Plain git:// is never offered for this action.
+    #expect(refusal?.offersHTTPS == false)
     #expect(try second.served.revision("origin/main", in: other) == (try second.served.revision("main")))
   }
 
@@ -420,6 +426,62 @@ import Testing
     #expect(try scene.served.revision("main") == (try scene.served.revision("HEAD", in: folder)))
   }
 
+  @Test func vaultKeyOnlyMovesRemotesAsSSHOnlyDoes() async throws {
+    let scene = try Scene()
+    let https = httpsAddress(scene.served)
+    let folder = try scene.served.clone(url: https)
+    try commit("mine.txt", "mine\n", in: folder)
+    try await at(.vaultKeyOnly, scene.served) { try await scene.repository(folder).push() }
+    #expect(try git(["config", "remote.origin.url"], in: folder) == "git@example.invalid:\(scene.served.bare.path.dropFirst())\n")
+    #expect(try scene.served.revision("main") == (try scene.served.revision("HEAD", in: folder)))
+    #expect(!scene.usedGitsSSH)
+    // It stays moved while the level is SSH only or above.
+    try await at(.sshOnly, scene.served) { try await scene.repository(folder).fetch() }
+    #expect(try git(["config", "remote.origin.v57-https-url"], in: folder) == https + "\n")
+  }
+
+  /// HTTPS for one action, the user's choice after a refusal: no move, no refusal, and the remote as it was.
+  @Test func httpsThisTimeNeitherMovesNorRefuses() async throws {
+    let scene = try Scene()
+    let https = httpsAddress(scene.served)
+    let folder = try scene.served.clone(url: https)
+    let config = try String(contentsOf: folder.appendingPathComponent(".git/config"), encoding: .utf8)
+    for level in [GitSecurityLevel.sshOnly, .vaultKeyOnly] {
+      let tried = await at(level, scene.served) {
+        await GitNetwork.$allowsHTTPS.withValue(true) {
+          // example.invalid doesn't answer HTTPS: what fails is the network, not the level.
+          await #expect(throws: GitEngineError.self) { try await scene.repository(folder).fetch() }
+        }
+      }
+      #expect(tried?.kind != .refused)
+      #expect(try String(contentsOf: folder.appendingPathComponent(".git/config"), encoding: .utf8) == config)
+    }
+    #expect(scene.served.log.commands.isEmpty)
+  }
+
+  /// The app's notice: a refused push keeps the refusal and a retry over HTTPS, which runs the push again with HTTPS
+  /// allowed and offers nothing more.
+  @MainActor @Test func aSessionOffersHTTPSThisTime() async throws {
+    let scene = try Scene()
+    let https = httpsAddress(scene.served)
+    let folder = try scene.served.clone(url: https)
+    try commit("mine.txt", "mine\n", in: folder)
+    let session = RepositorySession(repository: scene.repository(folder))
+    try await at(.vaultKeyOnly, scene.served, login: .refused) {
+      #expect(await !session.push())
+      let first = try #require(session.failure)
+      #expect(first.refusal?.keyRefused == true)
+      let retry = try #require(first.retryOverHTTPS)
+      session.failure = nil
+      await retry()
+      // example.invalid doesn't answer HTTPS: the network failed, the level didn't refuse it.
+      let second = try #require(session.failure)
+      #expect(second.refusal == nil)
+      #expect(second.retryOverHTTPS == nil)
+    }
+    #expect(try git(["config", "remote.origin.url"], in: folder) == https + "\n")
+  }
+
   func refusal(_ level: GitSecurityLevel, _ scene: Scene, ssh: SSHClientAddress? = nil, _ action: () async throws -> Void) async -> String {
     do {
       try await at(level, scene.served, ssh: ssh) { try await action() }
@@ -432,13 +494,18 @@ import Testing
   }
 
   @Test func vaultKeyOnlyRefusesAndSaysWhy() async throws {
-    // HTTPS, untouched.
+    // HTTPS that can't move: the key refused, untouched.
     var scene = try Scene()
     let https = httpsAddress(scene.served)
     var folder = try scene.served.clone(url: https)
-    var message = await refusal(.vaultKeyOnly, scene) { try await scene.repository(folder).fetch() }
-    #expect(message.contains("SSH"))
+    let stayed = await at(.vaultKeyOnly, scene.served, login: .refused) {
+      await #expect(throws: GitNetworkRefusal.self) { try await scene.repository(folder).fetch() }
+    }
+    #expect(stayed?.message.contains("Vault key only") == true)
+    #expect(stayed?.offersHTTPS == true)
+    #expect(stayed?.keyRefused == true)
     #expect(try git(["config", "remote.origin.url"], in: folder) == https + "\n")
+    var message: String
 
     // A folder.
     scene = try Scene()
@@ -519,20 +586,26 @@ import Testing
     }
     #expect(try git(["config", "remote.origin.url"], in: third).hasPrefix("git@example.invalid:"))
 
-    // Vault key only: not HTTPS, not a folder.
+    // Vault key only: not a folder, and HTTPS only once it moved to SSH.
     let fourth = scene.served.fixture.sibling("fourth")
-    for address in [httpsAddress(scene.served), scene.served.bare.path] {
-      await at(.vaultKeyOnly, scene.served) {
-        await #expect(throws: GitEngineError.self) {
-          try await Repository.clone(address, to: fourth, runner: scene.runner)
-        }
+    await at(.vaultKeyOnly, scene.served) {
+      await #expect(throws: GitNetworkRefusal.self) {
+        try await Repository.clone(scene.served.bare.path, to: fourth, runner: scene.runner)
       }
-      #expect(!FileManager.default.fileExists(atPath: fourth.path))
     }
+    let refused = await at(.vaultKeyOnly, scene.served, login: .refused) {
+      await #expect(throws: GitNetworkRefusal.self) {
+        try await Repository.clone(httpsAddress(scene.served), to: fourth, runner: scene.runner)
+      }
+    }
+    #expect(refused?.offersHTTPS == true)
+    #expect(refused?.keyRefused == true)
+    #expect(!FileManager.default.fileExists(atPath: fourth.path))
     _ = try await at(.vaultKeyOnly, scene.served) {
-      try await Repository.clone(scene.served.url, to: fourth, runner: scene.runner)
+      try await Repository.clone(httpsAddress(scene.served), to: fourth, runner: scene.runner)
     }
     #expect(try git(["status", "--porcelain"], in: fourth) == "")
+    #expect(try git(["config", "remote.origin.url"], in: fourth).hasPrefix("git@example.invalid:"))
 
     // An empty repository has nothing to check out.
     let empty = scene.served.fixture.sibling("empty.git")
@@ -546,7 +619,7 @@ import Testing
 
   // MARK: iPhone and iPad
 
-  /// No git: always the app, levels 1 and 2 alike. Level 3 moves, level 4 refuses HTTPS.
+  /// No git: always the app, levels 1 and 2 alike. Levels 3 and 4 move HTTPS remotes to SSH, or refuse them.
   @Test func onADeviceWithoutGit() async throws {
     let engine = GitEngineNetwork()
     let scene = try Scene()
@@ -577,16 +650,19 @@ import Testing
 
     let https = httpsAddress(scene.served)
     let moving = try scene.served.clone("moving", url: https)
-    await GitSSH.$scoped.withValue(scene.served.connector) {
-      await #expect(throws: GitEngineError.self) {
+    await GitSSH.$scoped.withValue(refused) {
+      await #expect(throws: GitNetworkRefusal.self) {
         _ = try await engine.perform(.fetch, in: moving, request: GitNetworkRequest(level: .vaultKeyOnly))
       }
     }
     #expect(try git(["config", "remote.origin.url"], in: moving) == https + "\n")
-    _ = try await GitSSH.$scoped.withValue(scene.served.connector) {
-      try await engine.perform(.fetch, in: moving, request: GitNetworkRequest(level: .sshOnly))
+    for level in [GitSecurityLevel.sshOnly, .vaultKeyOnly] {
+      try git(["remote", "set-url", "origin", https], in: moving)
+      _ = try await GitSSH.$scoped.withValue(scene.served.connector) {
+        try await engine.perform(.fetch, in: moving, request: GitNetworkRequest(level: level))
+      }
+      #expect(try git(["config", "remote.origin.url"], in: moving).hasPrefix("git@example.invalid:"))
     }
-    #expect(try git(["config", "remote.origin.url"], in: moving).hasPrefix("git@example.invalid:"))
     let cloned = scene.served.fixture.sibling("cloned")
     _ = try await GitSSH.$scoped.withValue(scene.served.connector) {
       try await engine.clone(https, to: cloned, request: GitNetworkRequest(level: .sshOnly))

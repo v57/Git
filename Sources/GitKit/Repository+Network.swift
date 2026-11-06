@@ -40,16 +40,18 @@ extension Repository {
       // git's checkout runs the repository's filters, line endings and hooks. An empty repository has nothing to check out.
       if try await repository.hasHead() { try await repository.git(["checkout", "--progress"], progress: progress) }
     case .useGit(_, _, let url, let refusal):
-      try await gitClone(url ?? remote, environment: fallbackEnvironment(level))
-      if let refusal { throw GitError(message: refusal) }
+      try await gitClone(url ?? remote, environment: fallbackEnvironment(level, https: request.allowsHTTPS))
+      if let refusal { throw refusal }
     }
     return repository
   }
 
   /// `git` as the user's own setup has it, and at `sshOnly` unable to use anything but SSH (and plain paths, which
-  /// aren't the network). Submodules and redirects included: git checks this itself.
-  private static func fallbackEnvironment(_ level: GitSecurityLevel) -> [String: String] {
-    level == .sshOnly ? ["GIT_ALLOW_PROTOCOL": "ssh:file"] : [:]
+  /// aren't the network), or HTTPS too for an action the user chose it for. Submodules and redirects included: git
+  /// checks this itself.
+  private static func fallbackEnvironment(_ level: GitSecurityLevel, https: Bool) -> [String: String] {
+    guard level == .sshOnly else { return [:] }
+    return ["GIT_ALLOW_PROTOCOL": https ? "ssh:file:https" : "ssh:file"]
   }
 
   public func fetch(progress: (@Sendable (String) -> Void)? = nil) async throws {
@@ -169,8 +171,8 @@ extension Repository {
       try await engine.perform(action, in: URL(fileURLWithPath: top, isDirectory: true), request: request)
     }
     guard case .useGit(_, let remotes, _, let refusal) = outcome else { return outcome }
-    try await git(arguments(remotes), environment: Self.fallbackEnvironment(level), progress: progress)
-    if let refusal { throw GitError(message: refusal) }
+    try await git(arguments(remotes), environment: Self.fallbackEnvironment(level, https: request.allowsHTTPS), progress: progress)
+    if let refusal { throw refusal }
     return .done
   }
 

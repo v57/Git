@@ -52,10 +52,19 @@ public final class RepositorySession {
     public let id = UUID()
     public var title: String
     public var message: String
+    /// What the security level refused, when that's why: the app offers what to do instead.
+    public var refusal: GitNetworkRefusal?
+    /// Runs the same action again over HTTPS, this time only, when `refusal` offers it.
+    public var retryOverHTTPS: (@MainActor @Sendable () async -> Void)?
 
-    public init(title: String, message: String) {
+    public init(
+      title: String, message: String, refusal: GitNetworkRefusal? = nil,
+      retryOverHTTPS: (@MainActor @Sendable () async -> Void)? = nil
+    ) {
       self.title = title
       self.message = message
+      self.refusal = refusal
+      self.retryOverHTTPS = retryOverHTTPS
     }
   }
 
@@ -348,6 +357,18 @@ public final class RepositorySession {
     var succeeded = true
     do {
       try await work(repository)
+    } catch let refusal as GitNetworkRefusal {
+      succeeded = false
+      // Over HTTPS this time, if the user picks it: the same work, which reads `allowsHTTPS` from the task.
+      var retry: (@MainActor @Sendable () async -> Void)?
+      if refusal.offersHTTPS, !GitNetwork.allowsHTTPS {
+        retry = { @MainActor [weak self] in
+          await GitNetwork.$allowsHTTPS.withValue(true) {
+            _ = await self?.perform(activity, failureTitle: failureTitle, work)
+          }
+        }
+      }
+      failure = Failure(title: failureTitle, message: refusal.message, refusal: refusal, retryOverHTTPS: retry)
     } catch {
       succeeded = false
       report(error, title: failureTitle)

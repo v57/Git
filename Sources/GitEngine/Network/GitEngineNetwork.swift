@@ -67,6 +67,12 @@ enum RemoteAddress {
       self = text.contains("::") ? .helper : .local
     }
   }
+
+  /// The host of an `https://` address; nil for anything else.
+  static func httpsHost(_ url: String) -> String? {
+    guard case .https(let address) = RemoteAddress(url) else { return nil }
+    return address.host
+  }
 }
 
 /// What the user's own SSH setup makes of an address, which only their `ssh` can follow. Shared by actions and clones.
@@ -247,10 +253,9 @@ private struct Route {
     body: ([String]) async throws -> GitNetworkOutcome
   ) async throws -> GitNetworkOutcome {
     var allowed = names
-    var refusals: [String] = []
-    if level >= .sshOnly { (allowed, refusals) = await enforce(names, direction) }
-    let refusal = refusals.isEmpty ? nil : refusals.joined(separator: "\n\n")
-    if allowed.isEmpty, let refusal { throw GitEngineError.refused(refusal) }
+    var refusal: GitNetworkRefusal?
+    if level >= .sshOnly { (allowed, refusal) = await enforce(names, direction) }
+    if allowed.isEmpty, let refusal { throw refusal }
     let limited = refusal == nil ? nil : allowed
     if canUseGit, let reason = await obstacle.asyncOr({ await addressReason(allowed, direction) }) {
       return .useGit(reason: reason, remotes: limited, refusal: refusal)
@@ -262,7 +267,7 @@ private struct Route {
     } catch where canUseGit && GitEngineNetwork.gitMightDoBetter(error) {
       return .useGit(reason: "\(error)", remotes: limited, refusal: refusal)
     }
-    if let refusal { throw GitEngineError.refused(refusal) }
+    if let refusal { throw refusal }
     return outcome
   }
 
@@ -281,17 +286,25 @@ private struct Route {
     return nil
   }
 
-  /// `sshOnly` and `vaultKeyOnly`: which remotes may be used, and why the others may not.
-  private func enforce(_ names: [String], _ direction: Direction) async -> (allowed: [String], refusals: [String]) {
+  /// `sshOnly` and `vaultKeyOnly`: which remotes may be used, and why the others may not. HTTPS remotes move to SSH
+  /// first; one that can't stays as it was, and the refusal says so, for the app to offer HTTPS for this action instead.
+  private func enforce(_ names: [String], _ direction: Direction) async -> (allowed: [String], refusal: GitNetworkRefusal?) {
     var allowed: [String] = []
     var refusals: [String] = []
+    var https: [(remote: String, host: String)] = []
+    var keyRefused = false
     remotes: for name in names {
-      if level == .sshOnly {
+      if !request.allowsHTTPS {
         do {
           try await RemoteMover(context: context).moveToSSH(name, progress: request.progress)
         } catch {
           refusals.append(
-            "\(name) stays on HTTPS, which SSH only refuses: \(error.localizedDescription) Nothing was changed.")
+            "\(name) stays on HTTPS, which \(level.title) refuses: \(error.localizedDescription.sentence) Nothing was changed.")
+          if (error as? GitEngineError)?.kind == .authentication { keyRefused = true }
+          // Only an https:// address can be offered for this action: plain HTTP never.
+          if let host = ((try? urls(of: name, direction)) ?? []).lazy.compactMap(RemoteAddress.httpsHost).first {
+            https.append((name, host))
+          }
           continue
         }
       }
@@ -310,7 +323,11 @@ private struct Route {
       }
       allowed.append(name)
     }
-    return (allowed, refusals)
+    guard !refusals.isEmpty else { return (allowed, nil) }
+    let refusal = GitNetworkRefusal(
+      refusals.joined(separator: "\n\n"), httpsRemotes: https.map(\.remote), httpsHosts: https.map(\.host),
+      keyRefused: keyRefused)
+    return (allowed, refusal)
   }
 
   private func refusal(of url: String, remote: String) async -> String? {
@@ -326,13 +343,23 @@ enum AddressRules {
     case .ssh(let address):
       guard level == .vaultKeyOnly, let alias = await SSHSetup.aliasReason(address, request) else { return nil }
       return "\(name): \(alias) Vault key only doesn’t read that config: use the server’s real address."
-    case .https, .unencrypted:
+    case .https:
+      return request.allowsHTTPS ? nil : "\(name) uses \(url), which \(level.title) refuses. Use its SSH address."
+    case .unencrypted:
       return "\(name) uses \(url), which \(level.title) refuses. Use its SSH address."
     case .local:
       return level == .vaultKeyOnly ? "\(name) is a folder on this machine (\(url)), which Vault key only doesn’t reach." : nil
     case .helper:
       return "\(name) goes through a helper (\(url)), which \(level.title) doesn’t run."
     }
+  }
+}
+
+extension String {
+  /// Ends with a full stop, as a sentence followed by another needs: errors from the network often have none.
+  fileprivate var sentence: String {
+    let text = trimmingCharacters(in: .whitespacesAndNewlines)
+    return text.last.map { ".!?".contains($0) } == true ? text : text + "."
   }
 }
 
@@ -352,17 +379,20 @@ private struct CloneRoute {
 
   func run(_ remote: String, to destination: URL) async throws -> GitNetworkOutcome {
     var address = remote
-    if level == .sshOnly, let ssh = SSHRemote(httpsURL: remote) {
+    if level >= .sshOnly, !request.allowsHTTPS, let ssh = SSHRemote(httpsURL: remote) {
       do {
         try await RemoteMover.check(ssh.url)
       } catch {
-        throw GitEngineError.refused(
-          "\(remote) is HTTPS, which SSH only refuses, and \(ssh.url) didn’t work: \(error.localizedDescription)")
+        let host = RemoteAddress.httpsHost(remote)
+        throw GitNetworkRefusal(
+          "\(remote) is HTTPS, which \(level.title) refuses, and \(ssh.url) didn’t work: \(error.localizedDescription)",
+          httpsRemotes: host == nil ? [] : ["The address"], httpsHosts: host.map { [$0] } ?? [],
+          keyRefused: (error as? GitEngineError)?.kind == .authentication)
       }
       address = ssh.url
     }
     if level >= .sshOnly, let refusal = await AddressRules.refusal(of: address, named: "The address", request: request) {
-      throw GitEngineError.refused(refusal)
+      throw GitNetworkRefusal(refusal)
     }
     let settings = GitConfig(settings: request.settings ?? [])
     if canUseGit {

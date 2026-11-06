@@ -119,8 +119,13 @@ sheets, buttons and badges. Screens, panels and selections change with the kit's
      straight to git.
   3. **SSH only:** as above, and HTTPS remotes move to SSH the next time you use them, once SSH was seen to work. They
      move back if you lower the level. HTTPS is refused.
-  4. **Vault key only:** never git on the network, and only this device's key signs in. `pre-push` hooks don't run,
-     `~/.ssh/config` isn't read, and submodules, LFS and folder remotes are refused, saying why.
+  4. **Vault key only:** never git on the network, and only this device's key signs in. HTTPS remotes move to SSH as
+     at SSH only. `pre-push` hooks don't run, `~/.ssh/config` isn't read, and submodules, LFS and folder remotes are
+     refused, saying why.
+
+  When a remote can't move (the server doesn't know this device's key yet, say), levels 3 and 4 ask what to do
+  instead: Use HTTPS This Time signs in with your GitHub account for that one action and leaves the remote on HTTPS,
+  and Add Key on GitHub copies the key and opens GitHub's page for it.
 
   Levels 3 and 4 need this device's key on the server first (Settings ▸ Security shows it). Repositories on your other
   devices use their own git and keys: Level 4 turns their fetch, pull and push off, Level 3 warns, and above Level 1 they

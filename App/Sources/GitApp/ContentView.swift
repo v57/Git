@@ -182,6 +182,7 @@ struct RepositoryScreen: View {
   @State private var search = ""
   @State private var gitHubSignIn: GitHubSignInRequest?
   @Environment(GitHubAccount.self) private var gitHub
+  @Environment(\.openURL) private var openURL
 
   private var kind: RepositoryScreenKind {
     switch state.mode {
@@ -219,8 +220,12 @@ struct RepositoryScreen: View {
       .onChange(of: session.repository.url) { search = session.logQuery.search ?? "" }
       .kitSheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
       .kitNotice(
-        item: .init(get: { session.failure }, set: { session.failure = $0 }), title: \.title, message: \.message
+        item: .init(get: { session.failure }, set: { session.failure = $0 }), title: \.title, message: \.shownMessage
       ) { failure in
+        // The security level kept a remote off HTTPS and its move to SSH didn't work: what to do instead.
+        if let refusal = failure.refusal {
+          return RefusalChoices.buttons(refusal, retry: failure.retryOverHTTPS, openURL: openURL)
+        }
         // GitHub refuses pushes that change workflows from a token without the workflow scope.
         guard failure.message.contains("workflow"), failure.message.contains("scope") else { return [] }
         return [
@@ -341,4 +346,9 @@ enum OperationText {
     default: operation.title
     }
   }
+}
+
+extension RepositorySession.Failure {
+  /// The message, with what the notice's choices do when the security level refused.
+  fileprivate var shownMessage: String { refusal.map(RefusalChoices.message) ?? message }
 }
