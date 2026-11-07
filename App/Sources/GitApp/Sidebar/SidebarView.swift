@@ -10,8 +10,8 @@ import VaultUI
 /// Workspace (Changes, History, Stashes), Branches, Remotes and Tags, each a card whose header
 /// sums it up, and the bottom bar with the filter and Add.
 ///
-/// Dropping a folder (or picking one with +) adds every git repository inside it, grouped by
-/// the folder each is in. Repository states come from a file watcher over the shown ones.
+/// Dropping a folder (or picking one with +'s From Directory) adds every git repository inside it, grouped by
+/// the folder each is in; a folder with none asks to start one there. Repository states come from a file watcher over the shown ones.
 ///
 /// The lists' headers pick where the open repository's Workspace goes (`VaultProjectsLayout`): its own card under the
 /// lists, the same with the lists folded once a repository is picked, or under the repository's row.
@@ -58,14 +58,13 @@ struct SidebarView: View {
           filter: filter)
       }
     } bottomBar: {
-      Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
-        .kitHelp("Add Repository", shortcut: "⇧⌘O", meta: "Add the Git repositories in a folder", systemImage: "plus")
+      AddRepositoryButton()
     }
     .overlay {
       if repositories.isEmpty, library.remoteRepositories.isEmpty {
         EmptyState(
           systemImage: "externaldrive.badge.plus", title: "No Repositories",
-          message: "Drop a folder here. Every Git repository inside it is added."
+          message: "Drop a folder here. Every Git repository inside it is added, or a new one is started in it."
         ) {
           Button("Add Folder…") { library.isImporterPresented = true }.buttonStyle(.kitPrimary)
         }
@@ -83,6 +82,11 @@ struct SidebarView: View {
       }
     }
     .kitNotice("Nothing to Add", message: $library.importMessage, systemImage: "folder", hue: .gray)
+    // A picked or dropped folder without a repository: start one there, or go on without it.
+    .kitConfirmation(
+      library.initializeRequest?.title ?? "", isPresented: initializeAsked, message: library.initializeRequest?.message,
+      systemImage: "plus.square", confirm: "Create Repository", role: nil
+    ) { library.answerInitialize(true) }
     // The import goes on when it closes, adding what Add ticked with its repositories.
     .kitSheet(item: $library.importOffer, onDismiss: { library.offerClosed() }) { offer in
       VaultImportSheet(offer, vault: library.vault, app: "Git", decide: { library.offerPicks = $0 })
@@ -99,6 +103,11 @@ struct SidebarView: View {
       #endif
       await library.refreshSummaries(shown)
     }
+  }
+
+  /// The question about folders without a repository is up; closing it answers no.
+  private var initializeAsked: Binding<Bool> {
+    Binding(get: { library.initializeRequest != nil }, set: { if !$0 { library.answerInitialize(false) } })
   }
 
   /// A drop outside the list: repositories move to the end, folders are added.

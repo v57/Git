@@ -232,8 +232,7 @@ struct RepositoryList: View {
         .padding(.leading, 4)
       }
     } accessory: {
-      Button("Add Repository", systemImage: "plus") { library.isImporterPresented = true }
-        .kitHelp("Add Repository", shortcut: "⇧⌘O", meta: "Add the Git repositories in a folder", systemImage: "plus")
+      AddRepositoryButton()
     }
     .headerMenu {
       optionsMenu

@@ -98,6 +98,10 @@ struct CompletedOperation: Equatable {
   private var offerDecision: CheckedContinuation<[URL], Never>?
   /// Shown after an import that found nothing.
   var importMessage: String?
+  /// Folders an import found no repository in, asked about before going on: a repository can be started in each
+  /// (`git init`), which Publish then puts on GitHub. Answered with `answerInitialize`.
+  var initializeRequest: InitializeRequest?
+  private var initializeDecision: CheckedContinuation<Bool, Never>?
   /// Repositories with a fetch, pull or push started from the sidebar.
   var remoteActivity: [String: RemoteAction] = [:]
   /// How each repository's last sidebar fetch, pull or push ended, for its row's effect.
@@ -479,7 +483,33 @@ struct CompletedOperation: Equatable {
     defer { isImporting = false }
 
     // Files too: a database dropped here is offered as a connection.
-    let results = await VaultProjectDiscovery.scan(files)
+    var results = await VaultProjectDiscovery.scan(files)
+    // A folder with no repository in it or around it can become one: asked first, then scanned again as one.
+    let untracked = folders.filter { folder in
+      results.first { $0.root == folder.standardizedFileURL }?.repositories.isEmpty ?? true
+    }.filter { !Self.isInsideRepository($0) }
+    var askedToInitialize = false
+    if !untracked.isEmpty {
+      askedToInitialize = true
+      isImporting = false
+      let initialize = await withCheckedContinuation { decision in
+        initializeDecision = decision
+        initializeRequest = InitializeRequest(folders: untracked)
+      }
+      isImporting = true
+      if initialize {
+        var failures: [String] = []
+        for folder in untracked {
+          do {
+            _ = try await Repository.initialize(at: folder)
+          } catch {
+            failures.append((error as? GitError)?.message ?? error.localizedDescription)
+          }
+        }
+        if !failures.isEmpty { importMessage = failures.joined(separator: "\n") }
+        results = await VaultProjectDiscovery.scan(files)
+      }
+    }
     let found = Dictionary(results.map { ($0.root, $0.repositories) }) { first, _ in first }
     let all = (try? context.fetch(FetchDescriptor<SavedRepository>())) ?? []
     let existing = Dictionary(all.map { ($0.path, $0) }) { first, _ in first }
@@ -517,7 +547,7 @@ struct CompletedOperation: Equatable {
       }
       isImporting = true
       databases = offer.databases.filter { picked.contains($0.url) }
-    } else if results.allSatisfy(\.repositories.isEmpty) {
+    } else if results.allSatisfy(\.repositories.isEmpty), !askedToInitialize {
       let names = folders.map(\.lastPathComponent).formatted()
       importMessage = "No Git repositories were found in \(names)."
     }
@@ -536,6 +566,24 @@ struct CompletedOperation: Equatable {
     try? context.save()
     await refreshSummaries(paths)
     return paths
+  }
+
+  /// The question about starting repositories was answered (`false`: Cancel, or it closed).
+  func answerInitialize(_ initialize: Bool) {
+    let decision = initializeDecision
+    initializeDecision = nil
+    initializeRequest = nil
+    decision?.resume(returning: initialize)
+  }
+
+  /// Whether `folder` is inside a repository's working tree (a folder there is never started as one of its own).
+  private nonisolated static func isInsideRepository(_ folder: URL) -> Bool {
+    var url = folder.standardizedFileURL
+    while url.pathComponents.count > 1 {
+      if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) { return true }
+      url = url.deletingLastPathComponent()
+    }
+    return false
   }
 
   /// The import's offer closed: it goes on with what Add ticked (nothing after Not Now).
@@ -652,5 +700,26 @@ struct CompletedOperation: Equatable {
 
   static func openInTerminal(_ url: URL) {
     KitDesktop.openTerminal(at: url)
+  }
+}
+
+/// Folders an import found no repository in, for the question whether to start one in each.
+struct InitializeRequest: Identifiable {
+  let id = UUID()
+  let folders: [URL]
+
+  var title: String {
+    folders.count == 1
+      ? "Create a Git repository in “\(folders[0].lastPathComponent)”?"
+      : "Create Git repositories in \(folders.count) folders?"
+  }
+
+  var message: String {
+    let places = folders.map { ($0.path as NSString).abbreviatingWithTildeInPath }.formatted()
+    return folders.count == 1
+      ? "\(places) isn't a Git repository yet. Create one there to track its files; once it has a commit, "
+        + "Publish puts it on GitHub."
+      : "\(places) aren't Git repositories yet. Create one in each to track their files; once they have a commit, "
+        + "Publish puts them on GitHub."
   }
 }
