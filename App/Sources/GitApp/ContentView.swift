@@ -53,7 +53,7 @@ struct ContentView: View {
       }
       .kitSidebarToggle(columnVisibility: $columns)
     }
-    .frame(minWidth: 1100, minHeight: 600)
+    .kitWindowMinimum(width: 1100, height: 600)
     .onChange(of: library.requestedSelection, initial: true) { _, path in
       guard let path else { return }
       selectedPath = path
