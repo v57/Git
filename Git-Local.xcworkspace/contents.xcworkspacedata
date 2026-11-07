@@ -22,4 +22,7 @@
    <FileRef
       location = "group:../SSH">
    </FileRef>
+   <FileRef
+      location = "group:../Platform">
+   </FileRef>
 </Workspace>
