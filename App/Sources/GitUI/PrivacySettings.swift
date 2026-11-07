@@ -21,13 +21,17 @@ public struct PrivacySettingsPane<Features: View>: View {
         KitPrivacyParty(
           "Your Git servers", systemImage: "server.rack", hue: .blue,
           when: "When you clone, fetch, pull or push, and when auto-fetch runs if it’s on.",
-          why: "The servers your remotes name, such as GitHub, GitLab or your own. Each sees your IP address and how "
-            + "you sign in, and receives what you push.")
+          why: """
+            The servers your remotes name, such as GitHub, GitLab or your own. Each sees your IP address and how \
+            you sign in, and receives what you push.
+            """)
         KitPrivacyParty(
           "GitHub", systemImage: "cloud", hue: .indigo,
           when: "When you sign in, open Settings ▸ GitHub or publish a repository.",
-          why: "It needs your sign-in to do that. Git reads your name, picture and organizations, and creates the "
-            + "repository you asked for.")
+          why: """
+            It needs your sign-in to do that. Git reads your name, picture and organizations, and creates the \
+            repository you asked for.
+            """)
         #if !os(iOS)
           KitPrivacyParty(
             "GitHub, for updates", systemImage: "arrow.down.circle", hue: .indigo,
@@ -38,14 +42,18 @@ public struct PrivacySettingsPane<Features: View>: View {
           KitPrivacyParty(
             "Apple", systemImage: "icloud", hue: .gray,
             when: "All the time, while iCloud is on for this device and on above.",
-            why: "It keeps your repository list, groups, security level and each repository’s last status (its branch "
-              + "and the names of changed files) in your private iCloud, encrypted on this device first.")
+            why: """
+              It keeps your repository list, groups, security level and each repository’s last status (its branch \
+              and the names of changed files) in your private iCloud, encrypted on this device first.
+              """)
         #endif
         KitPrivacyParty(
           "Your other devices", systemImage: "laptopcomputer", hue: .teal,
           when: "When you open a repository on one, or Git reopens it at launch, and when you act on one.",
-          why: "Git connects straight to that device over SSH and runs git there. Its git then talks to its servers "
-            + "with its own keys.")
+          why: """
+            Git connects straight to that device over SSH and runs git there. Its git then talks to its servers \
+            with its own keys.
+            """)
         #if !os(iOS)
           KitPrivacyParty(
             "Whatever your git setup names", systemImage: "terminal", hue: .gray,
@@ -67,7 +75,7 @@ private struct AutoFetchCard: View {
 
   var body: some View {
     @Bindable var auto = auto
-    FormCard("Auto-fetch", footer: footer) {
+    FormCard("Auto-fetch", footer: footer.map { "\($0)" }) {
       FormRow(
         "Fetch automatically", help: auto.isOn ? "On this device" : "Off: Git only fetches when you ask",
         systemImage: "arrow.clockwise", hue: .blue
@@ -99,17 +107,18 @@ private struct AutoFetchCard: View {
 
   private var footer: String? {
     guard auto.isOn else { return nil }
-    let moment =
+    let moment: String.LocalizationValue =
       switch auto.schedule.moment {
       case .startup: "Fetches the repositories on this device when Git starts."
       case .selection: "Fetches a repository when you select it."
       case .both: "Fetches the repositories on this device when Git starts, and any repository when you select it."
       }
-    return moment + " " + levelNote + " A failed fetch stays quiet."
+    return String(localized: moment) + " " + String(localized: levelNote) + " "
+      + String(localized: "A failed fetch stays quiet.")
   }
 
   /// What the Security level means for a fetch nobody just asked for.
-  private var levelNote: String {
+  private var levelNote: String.LocalizationValue {
     #if os(macOS)
       switch GitSecurity.level {
       case .useGit: "At Use git it runs git with your own setup, so a key that needs a passphrase or Touch ID may ask."

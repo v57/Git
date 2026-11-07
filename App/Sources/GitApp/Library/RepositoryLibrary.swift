@@ -708,18 +708,22 @@ struct InitializeRequest: Identifiable {
   let id = UUID()
   let folders: [URL]
 
-  var title: String {
+  var title: LocalizedStringKey {
     folders.count == 1
       ? "Create a Git repository in “\(folders[0].lastPathComponent)”?"
       : "Create Git repositories in \(folders.count) folders?"
   }
 
-  var message: String {
+  var message: LocalizedStringKey {
     let places = folders.map { ($0.path as NSString).abbreviatingWithTildeInPath }.formatted()
     return folders.count == 1
-      ? "\(places) isn't a Git repository yet. Create one there to track its files; once it has a commit, "
-        + "Publish puts it on GitHub."
-      : "\(places) aren't Git repositories yet. Create one in each to track their files; once they have a commit, "
-        + "Publish puts them on GitHub."
+      ? """
+        \(places) isn't a Git repository yet. Create one there to track its files; once it has a commit, \
+        Publish puts it on GitHub.
+        """
+      : """
+        \(places) aren't Git repositories yet. Create one in each to track their files; once they have a commit, \
+        Publish puts them on GitHub.
+        """
   }
 }

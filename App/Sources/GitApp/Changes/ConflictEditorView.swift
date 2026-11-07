@@ -532,7 +532,7 @@ private struct WholeFileCard: View {
     let isResolved = choice != nil || content == .text
     VStack(alignment: .leading, spacing: 8) {
       RichHeader(
-        change.conflict?.title ?? "Conflict", meta: choice.map(choiceDescription) ?? message,
+        change.conflict.map { "\($0.title)" } ?? "Conflict", meta: choice.map(choiceDescription) ?? message,
         systemImage: "exclamationmark.triangle", hue: .orange, status: isResolved ? .done : .idle)
       HStack(spacing: 8) {
           Spacer()
@@ -571,24 +571,25 @@ private struct WholeFileCard: View {
 
   private var message: String {
     switch change.conflict {
-    case .deletedByThem: return "\(currentName) changed this file and \(incomingName) deleted it."
-    case .deletedByUs: return "\(currentName) deleted this file and \(incomingName) changed it."
-    case .bothDeleted: return "Both sides deleted this file."
+    case .deletedByThem: return String(localized: "\(currentName) changed this file and \(incomingName) deleted it.")
+    case .deletedByUs: return String(localized: "\(currentName) deleted this file and \(incomingName) changed it.")
+    case .bothDeleted: return String(localized: "Both sides deleted this file.")
     default:
       switch content {
-      case .binary: return "This file is binary. Keep one side's version."
-      case .text: return "No conflict markers are left. It is staged when you continue."
-      default: return "The file is missing from the working tree."
+      case .binary: return String(localized: "This file is binary. Keep one side's version.")
+      case .text: return String(localized: "No conflict markers are left. It is staged when you continue.")
+      default: return String(localized: "The file is missing from the working tree.")
       }
     }
   }
 
   private func choiceDescription(_ side: GitKit.ConflictSide) -> String {
     switch (change.conflict, side) {
-    case (.deletedByThem, .incoming), (.deletedByUs, .current), (.bothDeleted, _): "The file is deleted."
-    case (.deletedByThem, .current), (.deletedByUs, .incoming): "The file is kept."
-    case (_, .current): "Kept Current (\(currentName))."
-    case (_, .incoming): "Kept Incoming (\(incomingName))."
+    case (.deletedByThem, .incoming), (.deletedByUs, .current), (.bothDeleted, _):
+      String(localized: "The file is deleted.")
+    case (.deletedByThem, .current), (.deletedByUs, .incoming): String(localized: "The file is kept.")
+    case (_, .current): String(localized: "Kept Current (\(currentName)).")
+    case (_, .incoming): String(localized: "Kept Incoming (\(incomingName)).")
     }
   }
 }

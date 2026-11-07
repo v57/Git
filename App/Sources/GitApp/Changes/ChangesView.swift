@@ -131,12 +131,13 @@ private struct ChangeList: View {
     }
   }
 
-  private var discardMessage: String {
+  private var discardMessage: LocalizedStringKey {
     guard let pending = pendingDiscard else { return "" }
-    let files = pending.changes.count == 1 ? "the file" : "these files"
-    return pending.area == .staged
-      ? "Staged and unstaged changes to \(files) are lost. New files are moved to the Trash."
-      : "Unstaged changes are lost; staged changes are kept. New files are moved to the Trash."
+    switch (pending.area == .staged, pending.changes.count == 1) {
+    case (true, true): return "Staged and unstaged changes to the file are lost. New files are moved to the Trash."
+    case (true, false): return "Staged and unstaged changes to these files are lost. New files are moved to the Trash."
+    case (false, _): return "Unstaged changes are lost; staged changes are kept. New files are moved to the Trash."
+    }
   }
 
   private func fileCount(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
@@ -148,12 +149,12 @@ private struct ChangeList: View {
     return (counts.compactMap(\.added).reduce(0, +), counts.compactMap(\.removed).reduce(0, +))
   }
 
-  private var discardTitle: String {
+  private var discardTitle: LocalizedStringKey {
     guard let pending = pendingDiscard else { return "" }
-    let area = pending.area == .staged ? "staged" : "unstaged"
-    return pending.changes.count == 1
-      ? "Discard changes to \(pending.changes[0].fileName)?"
-      : "Discard \(area) changes to \(pending.changes.count) files?"
+    if pending.changes.count == 1 { return "Discard changes to \(pending.changes[0].fileName)?" }
+    return pending.area == .staged
+      ? "Discard staged changes to \(pending.changes.count) files?"
+      : "Discard unstaged changes to \(pending.changes.count) files?"
   }
 
   /// The row takes the actions box rather than closures, so picking another file builds only the two rows it changes.

@@ -32,7 +32,7 @@ struct StashesScreen: View {
     .kitConfirmation(
       "Drop this stash?",
       isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
-      message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
+      message: pendingDrop.map { "\($0.message)" }, systemImage: "trash", confirm: "Drop"
     ) {
       if let stash = pendingDrop { Task { await session.dropStash(stash) } }
     }

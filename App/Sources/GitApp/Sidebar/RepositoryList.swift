@@ -220,7 +220,7 @@ struct RepositoryList: View {
       if more > 0 || showsMore {
         SidebarShowMoreRow(
           count: more, isShowing: $showsMore, reason: moreReason,
-          help: "Show \(more) repositories \(moreReason)",
+          help: moreHelp(more),
           hideHelp: "Hide the repositories the filters leave out")
       }
       if hiddenCount > 0 && filter.isEmpty {
@@ -321,11 +321,20 @@ struct RepositoryList: View {
   }
 
   /// What Show More brings back.
-  private var moreReason: String {
+  private var moreReason: LocalizedStringKey {
     switch (hidesUnused, onlyWithChanges) {
     case (true, true): "unused or unchanged"
     case (true, false): "unused for a week"
     default: "without changes"
+    }
+  }
+
+  /// Show More's tooltip.
+  private func moreHelp(_ more: Int) -> LocalizedStringKey {
+    switch (hidesUnused, onlyWithChanges) {
+    case (true, true): "Show \(more) repositories unused or unchanged"
+    case (true, false): "Show \(more) repositories unused for a week"
+    default: "Show \(more) repositories without changes"
     }
   }
 

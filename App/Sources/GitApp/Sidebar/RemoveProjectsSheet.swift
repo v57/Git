@@ -34,7 +34,7 @@ struct RemoveProjectsSheet: View {
     let sections = sections
     let items = sections.flatMap(\.items)
     KitSheet(
-      title: items.count == 1 ? "Remove 1 Project?" : "Remove All \(items.count) Projects?", meta: meta(items),
+      title: items.count == 1 ? "Remove 1 Project?" : "Remove All \(items.count) Projects?", meta: "\(meta(items))",
       systemImage: "trash", hue: .red, width: 520
     ) {
       ForEach(sections) { section in
@@ -83,10 +83,18 @@ struct RemoveProjectsSheet: View {
     let changed = summaries.count { $0.changeCount > 0 }
     let ahead = summaries.reduce(0) { $0 + $1.ahead }
     var unsaved: [String] = []
-    if changed > 0 { unsaved.append(changed == 1 ? "1 has changes" : "\(changed) have changes") }
-    if ahead > 0 { unsaved.append(ahead == 1 ? "1 commit isn't pushed" : "\(ahead) commits aren't pushed") }
-    let kept = unsaved.isEmpty ? "" : " " + unsaved.joined(separator: " and ").capitalizedFirst + ": they stay there."
-    return "They leave Code, Dev, Markdown and the other v57 apps on this Mac. Their folders stay on disk." + kept
+    if changed > 0 {
+      unsaved.append(changed == 1 ? String(localized: "1 has changes") : String(localized: "\(changed) have changes"))
+    }
+    if ahead > 0 {
+      unsaved.append(
+        ahead == 1 ? String(localized: "1 commit isn't pushed") : String(localized: "\(ahead) commits aren't pushed"))
+    }
+    let left = String(
+      localized: "They leave Code, Dev, Markdown and the other v57 apps on this Mac. Their folders stay on disk.")
+    guard !unsaved.isEmpty else { return left }
+    let kept = unsaved.joined(separator: String(localized: " and ")).capitalizedFirst
+    return left + " " + String(localized: "\(kept): they stay there.")
   }
 
   /// The projects by the top-level group they are in, in the sidebar's order, then those in none.

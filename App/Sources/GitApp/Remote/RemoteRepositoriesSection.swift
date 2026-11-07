@@ -113,7 +113,7 @@ struct RemoteRepositoriesSection: View {
             }
             .isCurrent(selection == RepositoryLibrary.remoteKey(repository))
             .action { select(repository) }
-            .kitHelp(repository.name, meta: repository.targets.first.map { "\($0.directory) on \($0.name)" })
+            .kitHelp("\(repository.name)", meta: repository.targets.first.map { "\($0.directory) on \($0.name)" })
             inlineWorkspace(repository)
           }
         }
@@ -270,12 +270,12 @@ struct RemoteConnectionScreen: View {
 
   var body: some View {
     let repository = library.remoteRepository(key)
-    let name = repository?.name ?? "Repository"
+    let name = repository?.name ?? String(localized: "Repository")
     let lastSeen = repository?.lastSeen
     ZStack {
       switch library.remoteStates[key] {
       case .failed(let message)?:
-        EmptyState(systemImage: "exclamationmark.triangle", title: "Couldn’t Open \(name)", message: message) {
+        EmptyState(systemImage: "exclamationmark.triangle", title: "Couldn’t Open \(name)", message: "\(message)") {
           lastSeenDetail(lastSeen)
         } actions: {
           Button("Try Again") { Task { await library.reconnect(key) } }
@@ -289,7 +289,7 @@ struct RemoteConnectionScreen: View {
         .transition(.page)
       case nil:
         EmptyState(
-          systemImage: "desktopcomputer", title: name,
+          systemImage: "desktopcomputer", title: "\(name)",
           message: repository.map { "Connecting to \($0.targets.first?.name ?? "the device")…" }, status: .working
         ) {
           lastSeenDetail(lastSeen)

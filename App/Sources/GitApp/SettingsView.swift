@@ -29,7 +29,7 @@ struct SettingsView: View {
       SettingsPane("Privacy", systemImage: "hand.raised", hue: .blue) {
         PrivacySettingsPane { UpdateCheckCard(updater: updater) }
       }
-      SettingsPane(SettingsKeys.accountsPane, systemImage: "person.2", hue: .indigo, section: "v57") {
+      SettingsPane("Accounts", systemImage: "person.2", hue: .indigo, section: "v57", id: SettingsKeys.accountsPane) {
         VaultAccountsSettings()
       }
       // Your devices, and Git on iPhone and iPad runs this Mac's git over SSH: which can sign in, and the other keys.
@@ -56,14 +56,18 @@ private struct GeneralSettingsView: View {
   private var gitCard: some View {
     FormCard(
       "Git",
-      footer: "Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). "
-        + "Settings ▸ Security decides what network actions use."
+      footer: """
+        Leave empty to use Homebrew git, then /usr/bin/git (which needs the Command Line Tools). \
+        Settings ▸ Security decides what network actions use.
+        """
     ) {
       FormRow(
         "git executable", help: "Automatic when empty", systemImage: "terminal", hue: .gray,
         field: TextField("Automatic", text: $gitPath))
       if let resolved {
-        FormRow("Using", help: [resolved, version].compactMap { $0 }.joined(separator: " · "), systemImage: "checkmark", hue: .green)
+        FormRow(
+          "Using", help: "\([resolved, version].compactMap { $0 }.joined(separator: " · "))", systemImage: "checkmark",
+          hue: .green)
       } else {
         FormRow("Using", systemImage: "xmark", error: "git not found")
       }
@@ -91,8 +95,8 @@ private struct TerminalIdentityCard: View {
       footer: "Git in Terminal, scripts and agents read ~/.gitconfig. The app commits with your name either way."
     ) {
       FormRow(
-        "Commits as", help: current.isEmpty ? "Nobody yet: git there can't commit" : current,
-        systemImage: "terminal", hue: .gray, error: failure
+        "Commits as", help: current.isEmpty ? "Nobody yet: git there can't commit" : "\(current)",
+        systemImage: "terminal", hue: .gray, error: failure.map { "\($0)" }
       ) {
         if profile.isComplete, global.name != profile.name || global.email != profile.email {
           Button("Use \(profile.name)") { Task { await use(profile) } }

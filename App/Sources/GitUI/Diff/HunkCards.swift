@@ -102,13 +102,13 @@ public struct DiffPlaceholder: View {
 
   public var body: some View {
     if diff.isBinary {
-      EmptyState(systemImage: "doc.zipper", title: "Binary File", message: diff.path)
+      EmptyState(systemImage: "doc.zipper", title: "Binary File", message: "\(diff.path)")
     } else if diff.isRename && diff.hunks.isEmpty {
       EmptyState(systemImage: "arrow.right", title: "Renamed", message: "\(diff.oldPath ?? "") → \(diff.newPath ?? "")")
     } else if diff.isModeChangeOnly {
       EmptyState(systemImage: "lock.shield", title: "Mode Changed", message: "\(diff.oldMode ?? "") → \(diff.newMode ?? "")")
     } else {
-      EmptyState(systemImage: "equal", title: "No Changes", message: diff.path)
+      EmptyState(systemImage: "equal", title: "No Changes", message: "\(diff.path)")
     }
   }
 }

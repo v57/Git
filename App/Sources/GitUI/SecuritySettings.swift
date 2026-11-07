@@ -41,47 +41,73 @@ private struct SecurityProtectionCard: View {
     }
   }
 
-  private func key(_ level: GitSecurityLevel) -> String {
-    let made =
-      "Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs while "
-      + "the device is unlocked, without asking for Face ID or Touch ID."
-    return level == .useGit ? made + " At Use git, servers don’t see it: git signs in with your own keys." : made
+  private func key(_ level: GitSecurityLevel) -> LocalizedStringKey {
+    level == .useGit
+      ? """
+        Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
+        while the device is unlocked, without asking for Face ID or Touch ID. At Use git, servers don’t see it: git \
+        signs in with your own keys.
+        """
+      : """
+        Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
+        while the device is unlocked, without asking for Face ID or Touch ID.
+        """
   }
 
   /// What goes through iCloud, or nothing since the user turned it off in Settings ▸ Privacy.
-  private var syncs: String {
+  private var syncs: LocalizedStringKey {
     VaultICloudStatus.shared.isOff
       ? "Nothing goes through iCloud from this device: you turned it off in Privacy."
-      : "Your repository list, groups, this level and each repository’s last status (its branch and the names "
-        + "of changed files) go through iCloud, encrypted on this device first. Your code and commits don’t."
+      : """
+        Your repository list, groups, this level and each repository’s last status (its branch and the names \
+        of changed files) go through iCloud, encrypted on this device first. Your code and commits don’t.
+        """
   }
 
-  private func signIn(_ level: GitSecurityLevel) -> String {
-    let kept =
-      VaultICloudStatus.shared.isOff
-      ? "Kept in the keychain the v57 apps share, on this device only."
-      : "Kept in the keychain the v57 apps share, and in iCloud Keychain."
-    return level == .useGit
-      ? kept + " At Use git, git gets it while it runs, and so can anything git runs."
-      : kept + " It’s used only inside the app, over HTTPS: git and anything git runs never get it, except git on "
-        + "another device once you accept switching a repository there to HTTPS."
+  private func signIn(_ level: GitSecurityLevel) -> LocalizedStringKey {
+    switch (VaultICloudStatus.shared.isOff, level == .useGit) {
+    case (true, true):
+      """
+      Kept in the keychain the v57 apps share, on this device only. At Use git, git gets it while it runs, and so can \
+      anything git runs.
+      """
+    case (false, true):
+      """
+      Kept in the keychain the v57 apps share, and in iCloud Keychain. At Use git, git gets it while it runs, and so \
+      can anything git runs.
+      """
+    case (true, false):
+      """
+      Kept in the keychain the v57 apps share, on this device only. It’s used only inside the app, over HTTPS: git \
+      and anything git runs never get it, except git on another device once you accept switching a repository there \
+      to HTTPS.
+      """
+    case (false, false):
+      """
+      Kept in the keychain the v57 apps share, and in iCloud Keychain. It’s used only inside the app, over HTTPS: \
+      git and anything git runs never get it, except git on another device once you accept switching a repository \
+      there to HTTPS.
+      """
+    }
   }
 
-  private func servers(_ level: GitSecurityLevel) -> String {
+  private func servers(_ level: GitSecurityLevel) -> LocalizedStringKey {
     switch level {
     case .useGit: "Your own ssh setup checks them."
     case .vaultKeyOnly: "A server’s key is remembered the first time, and a changed key is refused."
     default:
       #if os(macOS)
-        "In the app, a server’s key is remembered the first time and a changed key is refused. Where git takes over, "
-          + "your own ssh setup checks it."
+        """
+        In the app, a server’s key is remembered the first time and a changed key is refused. Where git takes over, \
+        your own ssh setup checks it.
+        """
       #else
         "A server’s key is remembered the first time, and a changed key is refused."
       #endif
     }
   }
 
-  private var repositories: String {
+  private var repositories: LocalizedStringKey {
     #if os(macOS)
       "They stay in their folders, as git keeps them. Git doesn’t encrypt them: FileVault, in System Settings, does."
     #else
@@ -118,8 +144,10 @@ public struct SecuritySettingsCard: View {
     .kitConfirmation(
       "Turn on \(raisingTo?.title ?? "")?",
       isPresented: Binding(get: { raisingTo != nil }, set: { if !$0 { raisingTo = nil } }),
-      message: "Fetching and pushing over SSH stop working until this device’s key below is on each server. "
-        + "Add it first if it isn’t there yet.",
+      message: """
+        Fetching and pushing over SSH stop working until this device’s key below is on each server. \
+        Add it first if it isn’t there yet.
+        """,
       systemImage: "lock.shield", confirm: "Turn On", role: nil
     ) {
       if let raisingTo { GitSecurity.level = raisingTo }
@@ -134,7 +162,7 @@ public struct SecuritySettingsCard: View {
     }
   }
 
-  private func footer(_ level: GitSecurityLevel) -> String {
+  private func footer(_ level: GitSecurityLevel) -> LocalizedStringKey {
     #if os(macOS)
       switch level {
       case .useGit:
@@ -165,8 +193,10 @@ private struct SecurityComparisonCard: View {
     #if os(macOS)
       KitSecurityComparison(
         "Git",
-        footer: "Any program you run can read a key file, and only a passphrase keeps what’s in it safe. "
-          + "From each app’s documentation, November 2026."
+        footer: """
+          Any program you run can read a key file, and only a passphrase keeps what’s in it safe. \
+          From each app’s documentation, November 2026.
+          """
       ) {
         KitComparisonRow(
           "Your SSH key", systemImage: "key", here: key(level),
@@ -200,7 +230,7 @@ private struct SecurityComparisonCard: View {
   }
 
   #if os(macOS)
-    private func key(_ level: GitSecurityLevel) -> String {
+    private func key(_ level: GitSecurityLevel) -> LocalizedStringKey {
       switch level {
       case .useGit: "Your own keys and ssh setup, as in the apps below."
       case .vaultKeyOnly: "Only this device’s key, in its Secure Enclave, which nothing can copy. Key files aren’t used."
@@ -208,13 +238,13 @@ private struct SecurityComparisonCard: View {
       }
     }
 
-    private func token(_ level: GitSecurityLevel) -> String {
+    private func token(_ level: GitSecurityLevel) -> LocalizedStringKey {
       level == .useGit
         ? "A long-lived GitHub token, in git’s environment while it runs."
         : "A long-lived GitHub token, used only inside the app. git on this Mac never gets it."
     }
 
-    private func setup(_ level: GitSecurityLevel) -> String {
+    private func setup(_ level: GitSecurityLevel) -> LocalizedStringKey {
       switch level {
       case .useGit: "git runs with all of it, and hooks can read your token."
       case .vaultKeyOnly: "Left out of network actions: pre-push hooks don’t run and ~/.ssh/config isn’t read."
@@ -235,7 +265,8 @@ public struct OtherDeviceSecurityBanner: View {
         "Fetch, pull and push are off here", message: "Vault key only is on, and git on that device signs in with its own keys.",
         systemImage: "lock.shield", hue: .orange)
     } else if let warning = level.otherDeviceWarning {
-      Banner("SSH only isn’t enforced here", message: warning, systemImage: "exclamationmark.shield", hue: .orange)
+      Banner(
+        "SSH only isn’t enforced here", message: "\(warning)", systemImage: "exclamationmark.shield", hue: .orange)
     }
   }
 }

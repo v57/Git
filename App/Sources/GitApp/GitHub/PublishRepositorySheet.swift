@@ -81,7 +81,7 @@ struct PublishRepositorySheet: View {
         }
       }
       if let error {
-        Banner("Couldn’t publish", message: error, systemImage: "exclamationmark.triangle", hue: .red)
+        Banner("Couldn’t publish", message: "\(error)", systemImage: "exclamationmark.triangle", hue: .red)
       }
     } footer: {
       if creating != nil {
@@ -122,7 +122,7 @@ struct PublishRepositorySheet: View {
     return lines.isEmpty ? nil : lines.joined(separator: " ")
   }
 
-  private var visibilityText: String {
+  private var visibilityText: LocalizedStringKey {
     switch (isPrivate, organization) {
     case (true, nil): "Only you and people you invite can see it."
     case (true, let organization?): "Only members of \(organization) with access can see it."
@@ -159,7 +159,7 @@ struct PublishRepositorySheet: View {
 
 /// A missing permission's explanation with Grant…, under the control that needs it.
 private struct GrantHint: View {
-  let text: String
+  let text: LocalizedStringKey
   let grant: () -> Void
 
   var body: some View {

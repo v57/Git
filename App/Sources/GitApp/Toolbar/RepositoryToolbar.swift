@@ -117,7 +117,8 @@ private struct SyncButtons: View {
     }
     .disabled(!hasRemote || session.isBusy || refusal != nil)
     .kitHelp(
-      "Fetch", shortcut: "⇧⌘F", meta: refusal ?? fetchHelp, systemImage: "arrow.clockwise", hue: .blue,
+      "Fetch", shortcut: "⇧⌘F", meta: refusal.map { "\($0)" } ?? fetchHelp, systemImage: "arrow.clockwise",
+      hue: .blue,
       status: session.activity == .fetching ? session.workStatus : .idle)
     .effect(.shimmer, on: fetched)
     Button(session.activity == .pulling ? "Pulling…" : "Pull", systemImage: "arrow.down.to.line") {
@@ -125,7 +126,9 @@ private struct SyncButtons: View {
     }
     .disabled(!hasUpstream || session.isBusy || refusal != nil)
     .kitHelp(
-      "Pull", shortcut: "⇧⌘P", meta: refusal ?? (hasUpstream ? "From \(session.status?.upstream ?? "")" : "This branch has no upstream"),
+      "Pull", shortcut: "⇧⌘P",
+      meta: refusal.map { "\($0)" }
+        ?? (hasUpstream ? "From \(session.status?.upstream ?? "")" : "This branch has no upstream"),
       systemImage: "arrow.down.to.line", hue: .blue,
       status: session.activity == .pulling ? session.workStatus : .idle)
     .effect(.receive("arrow.down.circle.fill"), on: pulled)
@@ -149,7 +152,7 @@ private struct SyncButtons: View {
     }
     .disabled(!canPush || session.isBusy || refusal != nil)
     .kitHelp(
-      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: refusal ?? pushHelp,
+      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: refusal.map { "\($0)" } ?? pushHelp,
       systemImage: "arrow.up.to.line", hue: .blue,
       status: session.activity == .pushing ? session.workStatus : .idle)
     .effect(.send("arrow.up.circle.fill"), on: pushed)
@@ -166,8 +169,10 @@ private struct SyncButtons: View {
     .effect(.failure, on: failed)
     .kitConfirmation(
       "Force push \(session.status?.branch ?? "")?", isPresented: $confirmForcePush,
-      message: "Replaces \(session.status?.upstream ?? "the remote branch") with your branch. It refuses "
-        + "if someone else pushed since your last fetch.",
+      message: """
+        Replaces \(session.status?.upstream ?? String(localized: "the remote branch")) with your branch. It refuses \
+        if someone else pushed since your last fetch.
+        """,
       systemImage: "arrow.up.to.line", confirm: "Force Push"
     ) {
       Task { await count(session.push(force: true), into: $pushed) }
@@ -188,16 +193,20 @@ private struct SyncButtons: View {
     return "Replaces \(upstream) with your \(branch).\(gone) It asks first."
   }
 
-  private var pushHelp: String {
-    let branch = session.status?.branch ?? "this branch"
+  private var pushHelp: LocalizedStringKey {
+    let branch = session.status?.branch ?? String(localized: "this branch")
     if session.headCommit == nil { return "Commit something first" }
     if session.remotes.isEmpty { return "Create a repository on GitHub and push \(branch) to it" }
     if !hasUpstream { return "Push \(branch) and track it" }
-    return ahead > 0 ? "Push \(ahead) commit\(ahead == 1 ? "" : "s")" : "Push"
+    switch ahead {
+    case ...0: return "Push"
+    case 1: return "Push 1 commit"
+    default: return "Push \(ahead) commits"
+    }
   }
 
-  private var fetchHelp: String {
-    if let progress = session.progress { return progress }
+  private var fetchHelp: LocalizedStringKey {
+    if let progress = session.progress { return "\(progress)" }
     if session.remotes.isEmpty { return "This repository has no remote" }
     guard let date = session.lastFetched else { return "Never fetched" }
     return "Last fetched \(date.formatted(.relative(presentation: .named)))"
@@ -453,7 +462,7 @@ struct StashMenu: View {
       .kitConfirmation(
         "Drop this stash?",
         isPresented: .init(get: { pendingDrop != nil }, set: { if !$0 { pendingDrop = nil } }),
-        message: pendingDrop?.message, systemImage: "trash", confirm: "Drop"
+        message: pendingDrop.map { "\($0.message)" }, systemImage: "trash", confirm: "Drop"
       ) {
         if let stash = pendingDrop { Task { await session.dropStash(stash) } }
       }
@@ -639,10 +648,14 @@ private struct BranchDeletion: ViewModifier {
     return buttons
   }
 
-  private var message: String {
-    let message = "Delete refuses a branch that isn't merged; Force Delete removes it anyway."
-    guard let branch, let upstream = session.upstream(of: branch) else { return message }
-    return message + " Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name)."
+  private var message: LocalizedStringKey {
+    guard let branch, let upstream = session.upstream(of: branch) else {
+      return "Delete refuses a branch that isn't merged; Force Delete removes it anyway."
+    }
+    return """
+      Delete refuses a branch that isn't merged; Force Delete removes it anyway. \
+      Delete Local and \(upstream.remoteName ?? "Remote") also deletes \(upstream.name).
+      """
   }
 }
 
@@ -681,8 +694,8 @@ private struct DeleteEverywhereSheet: View {
       systemImage: "trash", hue: .red
     ) {
       FormCard {
-        FormRow("Local", help: branch.name, systemImage: "arrow.triangle.branch", hue: .orange)
-        FormRow("On \(remote)", help: upstream.name, systemImage: "cloud", hue: .blue)
+        FormRow("Local", help: "\(branch.name)", systemImage: "arrow.triangle.branch", hue: .orange)
+        FormRow("On \(remote)", help: "\(upstream.name)", systemImage: "cloud", hue: .blue)
         ForEach(warnings, id: \.self) { warning in
           FormRow(warning, systemImage: "exclamationmark.triangle", hue: .orange)
         }

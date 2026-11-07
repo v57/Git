@@ -237,7 +237,7 @@ private struct RepositorySections: View {
             if let date = session.lastFetched { Text("fetched \(date.kitFormatted(.ago))") }
           }
           .action { if GitSecurity.refusal(for: session.repository) == nil { Task { await session.fetch() } } }
-          .kitHelp(remote, meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
+          .kitHelp("\(remote)", meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
         }
       } accessory: {
         Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
@@ -358,7 +358,7 @@ private struct RepositorySections: View {
       }
     }
     .disabled(isDeleting)
-    .kitHelp(branch.name, meta: branch.isCurrent ? "Checked out" : "Switch to \(branch.name)", hue: .orange)
+    .kitHelp("\(branch.name)", meta: branch.isCurrent ? "Checked out" : "Switch to \(branch.name)", hue: .orange)
     .kitContextMenu {
       if !branch.isCurrent {
         Button("Switch to \(branch.name)", systemImage: "arrow.right.circle") { Task { await session.switchTo(branch) } }

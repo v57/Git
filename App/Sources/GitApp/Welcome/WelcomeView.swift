@@ -150,14 +150,16 @@ struct CloneSheet: View {
           "Name", systemImage: "character.cursor.ibeam",
           error: name.contains("/") ? "A name can't contain “/”" : nil,
           field: TextField("repository", text: .init(get: { name }, set: { name = $0; isNameEdited = true })))
-        FormRow("Location", help: (location as NSString).abbreviatingWithTildeInPath, systemImage: "folder", hue: .teal) {
+        FormRow(
+          "Location", help: "\((location as NSString).abbreviatingWithTildeInPath)", systemImage: "folder", hue: .teal
+        ) {
           Button("Choose…", action: chooseLocation).buttonStyle(.kit)
         }
       }
       .disabled(cloning != nil)
     } footer: {
       if cloning != nil {
-        SheetStatus(progress.line ?? "Starting…", systemImage: "arrow.down", status: cloneStatus)
+        SheetStatus(progress.line.map { "\($0)" } ?? "Starting…", systemImage: "arrow.down", status: cloneStatus)
       } else if let error {
         SheetStatus(error, systemImage: "exclamationmark.triangle", hue: .red, status: .failed)
       }
