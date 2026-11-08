@@ -9,8 +9,9 @@ import VaultUI
 @MainActor
 enum TerminalIdentity {
   static let option = VaultProfileOption(
-    title: "Use in Terminal too", help: "Writes them to ~/.gitconfig, so git in Terminal and your agents commit as you.",
-    systemImage: "terminal", accept: "Use in Terminal", decline: "Only in Git")
+    title: String(localized: "Use in Terminal too"),
+    help: String(localized: "Writes them to ~/.gitconfig, so git in Terminal and your agents commit as you."),
+    systemImage: "terminal", accept: String(localized: "Use in Terminal"), decline: String(localized: "Only in Git"))
 
   private static let askedKey = "TerminalIdentityAsked"
 
