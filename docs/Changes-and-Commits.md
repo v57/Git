@@ -50,8 +50,8 @@ Discarded changes to tracked files can't be got back, so Git asks first.
 
 - A file's menu has **Discard Changes…**.
 - A card's menu has **Discard All…**.
-- On the Mac, a diff's header has **Discard…**, and selected lines can be thrown away with **Discard Lines…**. A
-  card's menu has **Discard Hunk…**, which asks first.
+- On the Mac, a diff's header has **Discard…**, and selected lines can be thrown away with **Discard Lines…**.
+- A hunk card's menu has **Discard Hunk…** (on iPhone and iPad, in a repository on your Mac), which asks first.
 
 On the Mac, new files you discard are moved to the Trash, so you can get them back. On iPhone and iPad:
 

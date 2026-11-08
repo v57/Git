@@ -73,7 +73,7 @@ public struct HunkCards: View {
       set: { kit in selection = selection.filter { !ids.contains($0) }.union(kit.filter { ids.contains($0) }) })
   }
 
-  /// What Discard Hunk… does, for the menu's panel (the Mac's; the Mac asks first).
+  /// What Discard Hunk… does, for the menu's panel (the Mac's). Every app asks first.
   private func discardPreview(_ hunk: DiffHunk) -> String {
     let changed = hunk.lines.count { $0.kind == .added || $0.kind == .removed }
     let name = content.diff.path.split(separator: "/").last.map(String.init) ?? content.diff.path

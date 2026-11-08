@@ -17,6 +17,8 @@ struct DiffScreen: View {
   @State private var error: String?
   @State private var selection: Set<Int> = []
   @State private var pendingDiscard = false
+  /// The hunk's lines Discard Hunk… asked to discard, until the confirmation answers (G-007).
+  @State private var pendingDiscardLines: Set<Int>?
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dismiss) private var dismiss
 
@@ -83,6 +85,17 @@ struct DiffScreen: View {
         }
       }
     }
+    .kitConfirmation(
+      "Discard this hunk?",
+      isPresented: .init(get: { pendingDiscardLines != nil }, set: { if !$0 { pendingDiscardLines = nil } }),
+      message: "The working-tree changes on these lines in \(name) are lost.", systemImage: "trash",
+      confirm: "Discard Hunk"
+    ) {
+      if let lines = pendingDiscardLines, let diff = content?.diff {
+        Task { await model.discardLines(lines, of: diff) }
+        selection = []
+      }
+    }
     .task(id: LoadKey(route: route, revision: model.revision, dark: colorScheme == .dark)) { await load() }
   }
 
@@ -109,7 +122,7 @@ struct DiffScreen: View {
     }
     return .unstaged(
       stage: { lines in Task { await model.stageLines(lines, of: diff) } },
-      discard: { lines in Task { await model.discardLines(lines, of: diff) } })
+      discard: { lines in pendingDiscardLines = lines })
   }
 
   private struct LoadKey: Hashable {
