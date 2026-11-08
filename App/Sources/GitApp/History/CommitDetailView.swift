@@ -1,5 +1,6 @@
 import ComponentKit
 import GitKit
+import GitRemote
 import GitUI
 import SwiftUI
 
@@ -64,7 +65,7 @@ private struct CommitDetail: View {
         Button("More Actions", systemImage: "ellipsis") { showsMore.toggle() }
           .labelStyle(.iconOnly)
           .kitMenu(isPresented: $showsMore) {
-            CommitCreateItems(commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
+            CommitCreateItems(session: session, commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
           }
       }
       diffPreview
@@ -244,8 +245,10 @@ private struct CommitDetail: View {
   }
 }
 
-/// A commit menu's Branch from Here…, Tag…, Copy SHA and Copy Message (History's context menu, the inspector's “…”).
+/// A commit menu's Branch from Here…, Tag…, Push Tag for its tags, Copy SHA and Copy Message (History's context
+/// menu, the inspector's “…”).
 struct CommitCreateItems: View {
+  let session: RepositorySession
   let commit: Commit
   @Binding var branchStart: Commit?
   @Binding var tagTarget: Commit?
@@ -255,10 +258,45 @@ struct CommitCreateItems: View {
       .kitMenuPreview("Starts a new branch at \(commit.shortID). You name it first.")
     Button("Tag…", systemImage: "tag") { tagTarget = commit }
       .kitMenuPreview("Tags \(commit.shortID). You name the tag first.")
+    ForEach(session.tags.filter { $0.commit == commit.id }) { tag in
+      PushTagButton(session: session, tag: tag, namesTag: true)
+    }
     Divider()
     Button("Copy SHA", systemImage: "doc.on.doc") { KitPasteboard.copy(commit.id) }
       .kitMenuHint(commit.shortID)
     Button("Copy Message", systemImage: "text.quote") { KitPasteboard.copy(commit.message) }
+  }
+}
+
+/// Push Tag: sends a tag to the push remote, never moving one already there (the sidebar's tag menu, a commit's).
+struct PushTagButton: View {
+  let session: RepositorySession
+  let tag: Tag
+  /// “Push Tag v1.0” where the menu isn't the tag's own.
+  var namesTag = false
+
+  /// Where it goes, when that's plain: the only remote, or origin, which a branch without its own push remote uses.
+  private var remote: String? {
+    if session.remotes.count == 1 { return session.remotes[0] }
+    return session.remotes.contains("origin") ? "origin" : nil
+  }
+
+  var body: some View {
+    Button(title, systemImage: "arrow.up.circle") {
+      Task { await session.pushTag(tag) }
+    }
+    .kitMenuPreview(preview)
+    .disabled(session.isBusy || session.remotes.isEmpty || GitSecurity.refusal(for: session.repository) != nil)
+  }
+
+  private var title: LocalizedStringKey { namesTag ? "Push Tag \(tag.name)" : "Push Tag" }
+
+  private var preview: LocalizedStringKey {
+    if session.remotes.isEmpty { return "This repository has no remote to push \(tag.name) to." }
+    if let remote {
+      return "Sends \(tag.name) to \(remote), with the commits it needs. A tag \(remote) already has is never moved."
+    }
+    return "Sends \(tag.name) to the branch's push remote, with the commits it needs. A tag already there is never moved."
   }
 }
 

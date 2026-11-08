@@ -261,6 +261,7 @@ private struct RepositorySections: View {
                 state.selectedCommit = tag.commit
               }
               .kitMenuPreview(tagPreview(tag))
+              PushTagButton(session: session, tag: tag)
               Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(tag.name) }
             }
         }

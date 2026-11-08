@@ -439,7 +439,7 @@ private struct CommitList: View {
       }
       .disabled(session.isBusy || commit.id == session.status?.headOID)
     Divider()
-    CommitCreateItems(commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
+    CommitCreateItems(session: session, commit: commit, branchStart: $branchStart, tagTarget: $tagTarget)
   }
 }
 
