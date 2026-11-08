@@ -187,10 +187,12 @@ final class GitContext {
   /// new file's stat.
   @discardableResult
   func writeWorktreeFile(_ path: String, mode: FileMode, data: Data) throws -> FileStat {
+    try checkWorktreePath(path)
     let target = url(path)
     let fileManager = FileManager.default
     do {
       try createParentFolders(of: path)
+      try checkParentInside(path)
       if let existing = FileStat.of(target.path) {
         if existing.isDirectory { try fileManager.removeItem(at: target) } else { unlink(target.path) }
       }
@@ -211,6 +213,34 @@ final class GitContext {
     return stat
   }
 
+  /// Creates the folder at `path` (a submodule's place), inside the working tree.
+  func createWorktreeFolder(_ path: String) throws {
+    try checkWorktreePath(path)
+    try createParentFolders(of: path)
+    try checkParentInside(path)
+    if FileStat.of(url(path).path) == nil {
+      try FileManager.default.createDirectory(at: url(path), withIntermediateDirectories: false)
+    }
+  }
+
+  /// Refuses a path with a component git wouldn't check out (`TreeObject.isSafeName`): `..`, `.git` and the like
+  /// (security audit H3).
+  func checkWorktreePath(_ path: String) throws {
+    for component in path.split(separator: "/", omittingEmptySubsequences: false)
+    where !TreeObject.isSafeName(String(component), mode: .regular) {
+      throw GitEngineError.refused("“\(path)” can’t be written: it would leave the working tree or go into .git.")
+    }
+  }
+
+  /// Refuses a path whose folder, with every symlink followed, isn't inside the working tree (security audit H3).
+  private func checkParentInside(_ path: String) throws {
+    let root = worktree.resolvingSymlinksInPath().path
+    let parent = url(path).deletingLastPathComponent().resolvingSymlinksInPath().path
+    guard parent == root || parent.hasPrefix(root.hasSuffix("/") ? root : root + "/") else {
+      throw GitEngineError.refused("“\(path)” can’t be written: its folder leads outside the working tree.")
+    }
+  }
+
   /// Creates the folders above `path`, removing files that are in the way (they were checked before).
   private func createParentFolders(of path: String) throws {
     var folder = worktree
@@ -225,6 +255,7 @@ final class GitContext {
 
   /// Removes a working-tree file and then the folders it leaves empty.
   func removeWorktreeFile(_ path: String) {
+    guard (try? checkWorktreePath(path)) != nil, (try? checkParentInside(path)) != nil else { return }
     let target = url(path)
     if let stat = FileStat.of(target.path) {
       if stat.isDirectory { try? FileManager.default.removeItem(at: target) } else { unlink(target.path) }

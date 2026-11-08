@@ -74,7 +74,7 @@ struct Checkout {
     for path in changed.sorted(by: pathPrecedes) {
       guard let target = new[path] else { continue }
       if target.mode == .gitlink {
-        try? FileManager.default.createDirectory(at: context.url(path), withIntermediateDirectories: true)
+        try context.createWorktreeFolder(path)
         updated.append(IndexEntry(path: path, mode: target.mode, id: target.id))
         continue
       }
