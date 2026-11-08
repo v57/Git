@@ -377,6 +377,50 @@ struct TempRepo {
     _ = parent
   }
 
+  /// Tags reach a bare remote through git: lightweight and annotated, again without change, never moved.
+  @Test func pushesTagsWithoutMovingOne() async throws {
+    let remote = try await TempRepo(bare: true)
+    let clone = try await TempRepo(cloning: remote.root, name: "clone")
+    try clone.write("a.txt", "a\n")
+    try await clone.commitAll("init")
+    try await clone.repo.push()
+    try clone.write("b.txt", "b\n")
+    try await clone.commitAll("unpushed")
+    try await clone.repo.createTag("light")
+    try await clone.repo.createTag("release", message: "Release")
+    try await clone.repo.git(["config", "push.followTags", "true"])
+    try await clone.repo.createTag("other", message: "Not asked for")
+
+    func remoteRef(_ name: String) async throws -> String {
+      try await remote.repo.git(["rev-parse", "--verify", "--quiet", name], allowedExitCodes: [0, 1]).output
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    func localRef(_ name: String) async throws -> String {
+      try await clone.repo.output(["rev-parse", name]).trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    try await clone.repo.pushTag("light")
+    try await clone.repo.pushTag("release")
+    #expect(try await remoteRef("refs/tags/light") == (try await localRef("refs/tags/light")))
+    #expect(try await remoteRef("refs/tags/release") == (try await localRef("refs/tags/release")))
+    #expect(try await remote.repo.output(["cat-file", "-t", "refs/tags/release"]) == "tag\n")
+    #expect(try await remoteRef("refs/tags/other") == "")
+    // Only the tags: main stays where it was pushed.
+    #expect(try await remoteRef("main") == (try await localRef("HEAD~1")))
+
+    // Again: nothing to do, and that's fine.
+    try await clone.repo.pushTag("release")
+
+    // Moved here: refused, and the remote's stays.
+    let before = try await remoteRef("refs/tags/light")
+    try await clone.repo.git(["tag", "-f", "light", "HEAD~1"])
+    await #expect {
+      try await clone.repo.pushTag("light")
+    } throws: { error in
+      (error as? GitError)?.message.contains("already has a tag light") == true
+    }
+    #expect(try await remoteRef("refs/tags/light") == before)
+  }
+
   @Test func activityHasTheLastCommitPushAndChange() async throws {
     let remote = try await TempRepo(bare: true)
     let clone = try await TempRepo(cloning: remote.root, name: "clone")

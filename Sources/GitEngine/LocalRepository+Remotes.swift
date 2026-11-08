@@ -84,6 +84,14 @@ extension LocalRepository {
     try await Pusher(context: try context()).push(force: force, progress: progress)
   }
 
+  /// Pushes tag `name` to `remote` (`git push <remote> refs/tags/<name>`), the tag object too when it's annotated. A
+  /// remote that has the tag at this object already is left alone; one that has it at another object is refused.
+  @concurrent public func pushTag(
+    _ name: String, to remote: String, progress: (@Sendable (String) -> Void)? = nil
+  ) async throws {
+    try await Pusher(context: try context()).pushTag(name, to: remote, progress: progress)
+  }
+
   /// Deletes `branch` on `remote`, as long as it's still at `expected`: what was last fetched
   /// (`--force-with-lease=<ref>:<expected> --delete`). Its remote-tracking branch goes too.
   @concurrent public func deleteRemoteBranch(

@@ -75,6 +75,8 @@ public enum GitNetworkAction: Sendable, Hashable {
   case pull
   case push(force: Bool)
   case deleteBranch(name: String, remote: String, expected: String)
+  /// Sends `refs/tags/<name>` to `remote`: a new tag there, never one moved.
+  case pushTag(name: String, remote: String)
 }
 
 /// Where a host's SSH address really leads, as the user's `ssh` would read it (`ssh -G`, which connects to nothing).

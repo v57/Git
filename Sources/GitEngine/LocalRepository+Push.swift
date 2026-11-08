@@ -84,6 +84,76 @@ struct Pusher {
     }
   }
 
+  /// Sends tag `name` to every address of `remote`, as `git push <remote> refs/tags/<name>`: the tag object of an
+  /// annotated tag, and whatever it tags that the remote lacks. A remote that already has the tag at this object is
+  /// left as it is; one that has it at another object is refused, never moved.
+  func pushTag(_ name: String, to remote: String, progress: (@Sendable (String) -> Void)?) async throws {
+    let ref = "refs/tags/\(name)"
+    guard let local = context.refs.resolve(ref) else {
+      throw GitEngineError.refused("There's no tag \(name) in this repository.")
+    }
+    guard remote != "." else { throw GitEngineError.unsupported("This tag pushes to this repository itself.") }
+    // The tag objects down to what they tag: an annotated tag can tag another tag.
+    var tagObjects: [ObjectID] = []
+    var target = local
+    for _ in 0..<32 {
+      let object = try context.objects.read(target)
+      guard object.type == .tag else { break }
+      tagObjects.append(target)
+      target = try TagObject(object.data).object
+    }
+    let targetType = try context.objects.read(target).type
+    for url in try context.pushURLs(remote) {
+      let receivePack = try await ReceivePack.connect(url)
+      defer { receivePack.transport.close() }
+      if let format = receivePack.advertisement.capabilities["object-format"], format != "sha1" {
+        throw GitEngineError.unsupported("\(remote) uses \(format) object IDs, which Git in the app doesn't read yet.")
+      }
+      let advertised = receivePack.advertisement.refs
+      if let old = advertised.first(where: { $0.name == ref })?.id {
+        guard old == local else { throw refusal(name, remote: remote, theirs: old, ours: local) }
+        progress?("\(name) is already on \(remote).")
+        continue
+      }
+      // Commits the remote has, so they and their files aren't sent again.
+      let haves = advertised.compactMap { ref -> ObjectID? in
+        guard context.objects.contains(ref.id) else { return nil }
+        return try? context.objects.commitID(peeling: ref.id)
+      }
+      var objects = tagObjects
+      switch targetType {
+      case .commit: objects += try PackWriter.objectsMissing(from: haves, toReach: target, store: context.objects)
+      case .tree: objects += try Self.everything(inTree: target, store: context.objects)
+      default: objects.append(target)
+      }
+      progress?("Counting objects: \(objects.count), done.")
+      let pack = try PackWriter.pack(objects, from: context.objects, progress: progress)
+      try await receivePack.push(ref: ref, old: .zero, new: local, pack: pack, progress: progress)
+    }
+  }
+
+  /// Why a tag isn't sent: the remote's has the same name and another object.
+  private func refusal(_ name: String, remote: String, theirs: ObjectID, ours: ObjectID) -> GitEngineError {
+    let short = String(theirs.hex.prefix(7))
+    if context.objects.contains(theirs), let theirCommit = try? context.objects.commitID(peeling: theirs),
+      theirCommit == (try? context.objects.commitID(peeling: ours))
+    {
+      return .refused(
+        "\(remote) already has a tag \(name) on the same commit, made another way (\(short)). Tags there aren't replaced.")
+    }
+    return .refused(
+      "\(remote) already has a tag \(name) on another commit (\(short)). Tags there aren't moved: give this one another name.")
+  }
+
+  /// A tree and everything in it, for a tag that tags a tree.
+  private static func everything(inTree tree: ObjectID, store: ObjectStore) throws -> [ObjectID] {
+    var result = [tree]
+    for entry in try store.tree(tree) where entry.mode != .gitlink {
+      result += entry.mode == .tree ? try everything(inTree: entry.id, store: store) : [entry.id]
+    }
+    return result
+  }
+
   /// Deletes `branch` on every address of `remote`, unless it moved past `expected`.
   func delete(_ branch: String, on remote: String, expected: ObjectID, progress: (@Sendable (String) -> Void)?) async throws {
     let ref = "refs/heads/\(branch)"

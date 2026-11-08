@@ -243,6 +243,48 @@ func commit(_ path: String, _ text: String, in folder: URL) throws {
     #expect(try context.pushURLs("b") == ["git@github.com:owner/repo"])
   }
 
+  /// Lightweight and annotated tags reach the remote, with commits it doesn't have yet; one there already at the same
+  /// object is left as it is, one at another object is refused and stays.
+  @Test func pushesTagsWithoutMovingOne() async throws {
+    let served = try ServedRepository()
+    let folder = try served.clone()
+    try commit("tagged.txt", "tagged\n", in: folder)
+    try git(["tag", "light"], in: folder)
+    try commit("annotated.txt", "annotated\n", in: folder)
+    try git(["tag", "-a", "release", "-m", "Release"], in: folder)
+    let repository = try LocalRepository(url: folder)
+    try await GitSSH.$scoped.withValue(served.connector) {
+      try await repository.pushTag("light", to: "origin")
+      try await repository.pushTag("release", to: "origin")
+    }
+    #expect(try served.revision("refs/tags/light") == (try served.revision("refs/tags/light", in: folder)))
+    #expect(try served.revision("refs/tags/release") == (try served.revision("refs/tags/release", in: folder)))
+    #expect(try git(["cat-file", "-t", "refs/tags/release"], in: served.bare) == "tag\n")
+    // The branch didn't move: only the tags were sent.
+    #expect(try served.revision("main") == (try served.revision("origin/main", in: folder)))
+    try git(["fsck", "--strict", "--no-dangling"], in: served.bare)
+
+    // Already there at the same object: nothing to do.
+    let before = try git(["for-each-ref"], in: served.bare)
+    try await GitSSH.$scoped.withValue(served.connector) { try await repository.pushTag("v1", to: "origin") }
+    #expect(try git(["for-each-ref"], in: served.bare) == before)
+
+    // There at another object: refused, and the remote's stays.
+    try git(["tag", "-f", "-a", "v1", "-m", "Moved"], in: folder)
+    await GitSSH.$scoped.withValue(served.connector) {
+      await #expect(throws: GitEngineError.self) { try await repository.pushTag("v1", to: "origin") }
+    }
+    try git(["tag", "-f", "light", "HEAD~2"], in: folder)
+    await GitSSH.$scoped.withValue(served.connector) {
+      await #expect(throws: GitEngineError.self) { try await repository.pushTag("light", to: "origin") }
+    }
+    #expect(try git(["for-each-ref"], in: served.bare) == before)
+    // A tag that isn't here.
+    await GitSSH.$scoped.withValue(served.connector) {
+      await #expect(throws: GitEngineError.self) { try await repository.pushTag("missing", to: "origin") }
+    }
+  }
+
   /// A linked worktree shares objects, refs and config with its repository; a `.git` file says where.
   @Test func worksInALinkedWorktree() async throws {
     let served = try ServedRepository()

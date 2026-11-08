@@ -137,6 +137,7 @@ private struct Route {
     case .pull: return try await pull()
     case .push(let force): return try await push(force: force)
     case .deleteBranch(let name, let remote, let expected): return try await delete(name, on: remote, expected: expected)
+    case .pushTag(let name, let remote): return try await pushTag(name, to: remote)
     }
   }
 
@@ -193,6 +194,17 @@ private struct Route {
     }
   }
 
+  private func pushTag(_ name: String, to remote: String) async throws -> GitNetworkOutcome {
+    if level == .vaultKeyOnly, checks.usesLFS {
+      throw GitEngineError.refused(
+        "This repository uses Git LFS. Vault key only can’t send its files, and pushing their pointers without them would damage the repository.")
+    }
+    return try await gate([remote], .push, obstacle: checks.format ?? pushObstacle(remote, tag: true)) { _ in
+      try await Pusher(context: context).pushTag(name, to: remote, progress: request.progress)
+      return .done
+    }
+  }
+
   private func delete(_ name: String, on remote: String, expected: String) async throws -> GitNetworkOutcome {
     guard let expected = ObjectID(hex: expected) else { throw GitEngineError.refused("“\(expected)” isn't a commit.") }
     let hook = request.hasGit && level < .vaultKeyOnly && checks.hasHook("pre-push") ? "A pre-push hook is active." : nil
@@ -222,18 +234,19 @@ private struct Route {
   }
 
   /// Why a push needs git (or, at `vaultKeyOnly`, is refused). The in-app path runs no `pre-push` hook and sends no
-  /// LFS objects; `vaultKeyOnly` says so in Settings and handled LFS before this.
-  private func pushObstacle(_ remote: String) -> String? {
+  /// LFS objects; `vaultKeyOnly` says so in Settings and handled LFS before this. A tag names what it sends, so
+  /// `push.default` and `push.followTags` don't apply to it.
+  private func pushObstacle(_ remote: String, tag: Bool = false) -> String? {
     guard request.hasGit else { return nil }
     let settings = context.settings
     if level < .vaultKeyOnly {
       if checks.hasHook("pre-push") { return "A pre-push hook is active." }
       if checks.usesLFS { return "This repository uses Git LFS." }
     }
-    if let mode = settings.value("push.default")?.lowercased(), mode == "matching" || mode == "nothing" {
+    if !tag, let mode = settings.value("push.default")?.lowercased(), mode == "matching" || mode == "nothing" {
       return "Git in the app doesn't do push.default \(mode)."
     }
-    for key in ["push.followTags", "push.gpgSign"] where settings.value(key).map({ !["false", "no", "off", "0"].contains($0.lowercased()) }) == true {
+    for key in tag ? ["push.gpgSign"] : ["push.followTags", "push.gpgSign"] where settings.value(key).map({ !["false", "no", "off", "0"].contains($0.lowercased()) }) == true {
       return "Git in the app doesn't do \(key)."
     }
     if settings.value("push.pushOption") != nil { return "Git in the app doesn't do push.pushOption." }

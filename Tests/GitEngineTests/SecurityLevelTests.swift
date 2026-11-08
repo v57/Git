@@ -138,6 +138,40 @@ import Testing
     #expect(!scene.usedGitsSSH)
   }
 
+  /// A tag goes in the app, or through git when the key is refused; neither moves a tag the remote has.
+  @Test func pushesATagInTheAppOrWithGit() async throws {
+    for login in [Login.works, .refused] {
+      let scene = try Scene()
+      let folder = try scene.served.clone()
+      try git(["config", "push.followTags", "true"], in: folder)
+      try commit("tagged.txt", "tagged\n", in: folder)
+      try git(["tag", "-a", "release", "-m", "Release"], in: folder)
+      try git(["tag", "-a", "other", "-m", "Not asked for"], in: folder)
+      let repository = scene.repository(folder)
+      try await at(.inAppFirst, scene.served, login: login) {
+        try await repository.pushTag("release")
+        try await repository.pushTag("v1")
+      }
+      #expect(scene.usedGitsSSH == (login == .refused))
+      #expect(try scene.served.revision("refs/tags/release") == (try scene.served.revision("refs/tags/release", in: folder)))
+      #expect(try git(["for-each-ref", "refs/tags/other", "refs/heads/main"], in: scene.served.bare).contains("other") == false)
+      #expect(try scene.served.revision("main") == (try scene.served.revision("origin/main", in: folder)))
+
+      try git(["tag", "-f", "-a", "v1", "-m", "Moved"], in: folder)
+      let before = try scene.served.revision("refs/tags/v1")
+      let message: String = await at(.inAppFirst, scene.served, login: login) {
+        do {
+          try await repository.pushTag("v1")
+          return ""
+        } catch {
+          return error.localizedDescription
+        }
+      }
+      #expect(message.contains("already has a tag v1"), "\(login): \(message)")
+      #expect(try scene.served.revision("refs/tags/v1") == before)
+    }
+  }
+
   @Test func aServerRefusalDoesntFallBack() async throws {
     let scene = try Scene()
     let folder = try scene.served.clone()

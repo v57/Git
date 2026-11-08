@@ -464,6 +464,16 @@ public final class RepositorySession {
     }
   }
 
+  /// Pushes `tag` to the push remote, without moving a tag already there.
+  @discardableResult
+  public func pushTag(_ tag: Tag) async -> Bool {
+    let progress = progressHandler()
+    let name = tag.name
+    return await perform(.pushing, failureTitle: "Couldn't push \(name)") {
+      try await $0.pushTag(name, progress: progress)
+    }
+  }
+
   /// Adds `url` as remote `name` and pushes the current branch to it, tracking it. The remote
   /// stays when the push fails, so the next push retries it.
   @discardableResult

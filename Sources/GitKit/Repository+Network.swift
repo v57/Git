@@ -84,6 +84,40 @@ extension Repository {
     try await network(.push(force: force), progress: progress) { _ in arguments }
   }
 
+  /// Pushes tag `name` to the current branch's push remote (`origin`, or the only remote, when detached), the tag
+  /// object too for an annotated tag. Never moves a remote tag: one there already at this object is fine, one at
+  /// another object is refused.
+  public func pushTag(_ name: String, progress: (@Sendable (String) -> Void)? = nil) async throws {
+    let remote = try await tagPushRemote()
+    let ref = "refs/tags/\(name)"
+    do {
+      try await network(.pushTag(name: name, remote: remote), progress: progress) { _ in
+        ["push", "--progress", "--no-follow-tags", remote, "\(ref):\(ref)"]
+      }
+    } catch let error as GitError
+      where error.message.contains("(already exists)") || error.message.contains("would clobber existing tag")
+    {
+      throw GitError(
+        arguments: error.arguments, exitCode: error.exitCode,
+        message: "\(remote) already has a tag \(name) on another commit. Tags there aren't moved: give this one another name.")
+    }
+  }
+
+  /// Where a tag goes: the current branch's push remote, else `remote.pushDefault`, `origin` or the only remote.
+  func tagPushRemote() async throws -> String {
+    let branch = try await git(["symbolic-ref", "--quiet", "--short", "HEAD"], allowedExitCodes: [0, 1]).output
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if !branch.isEmpty { return try await pushRemote(for: branch) }
+    let value = try await git(["config", "--get", "remote.pushDefault"], allowedExitCodes: [0, 1]).output
+      .trimmingCharacters(in: .whitespacesAndNewlines)
+    if !value.isEmpty { return value }
+    let remotes = try await remotes()
+    if remotes.contains("origin") { return "origin" }
+    if remotes.count == 1 { return remotes[0] }
+    if remotes.isEmpty { throw GitError(message: "This repository has no remote to push to.") }
+    throw GitError(message: "Several remotes and none is the default. Set one with git config remote.pushDefault <remote>.")
+  }
+
   public func deleteRemoteBranch(_ branch: Branch, progress: (@Sendable (String) -> Void)? = nil)
     async throws
   {
