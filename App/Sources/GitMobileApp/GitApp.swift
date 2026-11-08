@@ -227,14 +227,14 @@ struct RepositoriesWelcome: View {
       ForEach(sources) { source in
         switch source {
         case .local(let repository):
-          RecentItem(repository.name, subtitle: "On this device", systemImage: "internaldrive") {
+          RecentItem(repository.name, subtitle: "On this device", systemImage: "internaldrive", id: source.id) {
             selection = source.id
           }
         case .remote(let repository):
           RecentItem(
             repository.name, subtitle: repository.targets.map(\.name).joined(separator: ", "),
             systemImage: repository.icon == nil ? "desktopcomputer" : nil,
-            imageData: repository.icon
+            imageData: repository.icon, id: source.id
           ) { selection = source.id }
         }
       }
