@@ -25,13 +25,21 @@ public struct PrivacySettingsPane<Features: View>: View {
             The servers your remotes name, such as GitHub, GitLab or your own. Each sees your IP address and how \
             you sign in, and receives what you push.
             """)
-        KitPrivacyParty(
-          "GitHub", systemImage: "cloud", hue: .indigo,
-          when: "When you sign in, open Settings ▸ GitHub or publish a repository.",
-          why: """
-            It needs your sign-in to do that. Git reads your name, picture and organizations, and creates the \
-            repository you asked for.
-            """)
+        #if os(iOS)
+          // iPhone and iPad don't publish to GitHub (G-006).
+          KitPrivacyParty(
+            "GitHub", systemImage: "cloud", hue: .indigo,
+            when: "When you sign in or open Settings ▸ GitHub.",
+            why: "It needs your sign-in to do that. Git reads your name, picture and organizations.")
+        #else
+          KitPrivacyParty(
+            "GitHub", systemImage: "cloud", hue: .indigo,
+            when: "When you sign in, open Settings ▸ GitHub or publish a repository.",
+            why: """
+              It needs your sign-in to do that. Git reads your name, picture and organizations, and creates the \
+              repository you asked for.
+              """)
+        #endif
         #if !os(iOS)
           KitPrivacyParty(
             "GitHub, for updates", systemImage: "arrow.down.circle", hue: .indigo,
