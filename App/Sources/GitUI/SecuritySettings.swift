@@ -28,6 +28,10 @@ private var appliedLevel: GitSecurityLevel {
   #endif
 }
 
+/// Whether this device's key asks for the user before it signs (G-003): a key made since 2026-11-04 does
+/// (`VaultIdentity.asksForPresence`), and so will the one made when there's none yet. One made before signs without asking.
+private var deviceKeyAsks: Bool { !VaultIdentity.exists || VaultIdentity.asksForPresence }
+
 /// What keeps the user's work safe, in plain words, at the level they picked.
 private struct SecurityProtectionCard: View {
   var body: some View {
@@ -42,16 +46,30 @@ private struct SecurityProtectionCard: View {
   }
 
   private func key(_ level: GitSecurityLevel) -> LocalizedStringKey {
-    level == .useGit
-      ? """
-        Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
-        while the device is unlocked, without asking for Face ID or Touch ID. At Use git, servers don’t see it: git \
-        signs in with your own keys.
-        """
-      : """
-        Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
-        while the device is unlocked, without asking for Face ID or Touch ID.
-        """
+    switch (deviceKeyAsks, level == .useGit) {
+    case (true, true):
+      """
+      Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs only \
+      once you confirm with Face ID, Touch ID or your password, and that yes lasts 15 minutes in this app. At Use \
+      git, servers don’t see it: git signs in with your own keys.
+      """
+    case (true, false):
+      """
+      Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs only \
+      once you confirm with Face ID, Touch ID or your password, and that yes lasts 15 minutes in this app.
+      """
+    case (false, true):
+      """
+      Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
+      while the device is unlocked, without asking for Face ID or Touch ID. At Use git, servers don’t see it: git \
+      signs in with your own keys.
+      """
+    case (false, false):
+      """
+      Made inside this device’s Secure Enclave, a chip nothing can copy it out of, not even this app. It signs \
+      while the device is unlocked, without asking for Face ID or Touch ID.
+      """
+    }
   }
 
   /// What goes through iCloud, or nothing since the user turned it off in Settings ▸ Privacy.
@@ -221,7 +239,9 @@ private struct SecurityComparisonCard: View {
       KitSecurityComparison("Git", footer: "From Working Copy’s manual, November 2026.") {
         KitComparisonRow(
           "Your SSH key", systemImage: "key",
-          here: "Always this device’s key, made in its Secure Enclave. It signs without asking for Face ID or Touch ID.",
+          here: deviceKeyAsks
+            ? "Always this device’s key, made in its Secure Enclave. It signs once you confirm with Face ID, Touch ID or your passcode."
+            : "Always this device’s key, made in its Secure Enclave. It signs without asking for Face ID or Touch ID.",
           others: [
             ("Working Copy", "Keys it generates or you import, which can also be kept in the Secure Enclave, behind Face ID or Touch ID.")
           ])
