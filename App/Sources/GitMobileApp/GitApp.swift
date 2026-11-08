@@ -392,9 +392,9 @@ struct RepositoriesSidebar: View {
         StatusDot(hue: deviceCount > 0 ? .green : .gray)
         Text(deviceCount == 0 ? "No devices" : deviceCount == 1 ? "1 device" : "\(deviceCount) devices")
         Spacer(minLength: 0)
+        // The kit's icon button: `.labelStyle(.iconOnly)` around `.kitPlain` lost to the style's own label style.
         Button("Settings", systemImage: "gearshape") { sheet = .settings }
-          .labelStyle(.iconOnly)
-          .buttonStyle(.kitPlain)
+          .buttonStyle(.kitIcon)
       }
     }
     .navigationTitle("Git")
