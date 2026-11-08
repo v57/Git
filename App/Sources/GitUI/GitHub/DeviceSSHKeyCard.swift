@@ -36,6 +36,7 @@ public struct DeviceSSHKeyCard: View {
                 .buttonStyle(.kit)
             }
           }
+          .fixedSize()  // the fingerprint truncates first, never the button ("Add on Git…" on an iPhone)
         }
       }
     }
