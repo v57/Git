@@ -5,10 +5,13 @@ import SwiftUI
 
 /// One file's diff as the kit's hunk cards (the Mac's), syntax colored. For a change in Changes: Stage or Unstage and
 /// Discard in the bar, and where git runs on a Mac, single lines and hunks stage, unstage and discard in the cards.
-/// It reloads after every refresh, and goes back once the file has no changes left.
+/// It reloads after every refresh. When the file has no changes left where it was (staged, unstaged, its last hunk
+/// moved), it follows the file to the other side, or goes back once the file has no changes at all.
 struct DiffScreen: View {
   let model: RepositoryModel
-  let route: DiffRoute
+  let opened: DiffRoute
+  /// Where the file went after staging or unstaging it (`follow`), else nil: the route it was opened with.
+  @State private var followed: DiffRoute?
   @State private var content: LoadedDiff?
   @State private var isLoaded = false
   @State private var error: String?
@@ -17,6 +20,7 @@ struct DiffScreen: View {
   @Environment(\.colorScheme) private var colorScheme
   @Environment(\.dismiss) private var dismiss
 
+  private var route: DiffRoute { followed ?? opened }
   private var path: String { route.target.path }
   private var name: String { (path as NSString).lastPathComponent }
 
@@ -79,7 +83,7 @@ struct DiffScreen: View {
         }
       }
     }
-    .task(id: LoadKey(revision: model.revision, dark: colorScheme == .dark)) { await load() }
+    .task(id: LoadKey(route: route, revision: model.revision, dark: colorScheme == .dark)) { await load() }
   }
 
   private var meta: [String] {
@@ -109,6 +113,7 @@ struct DiffScreen: View {
   }
 
   private struct LoadKey: Hashable {
+    var route: DiffRoute
     var revision: Int
     var dark: Bool
   }
@@ -122,10 +127,37 @@ struct DiffScreen: View {
         contents: { await backend.contents(of: $0, at: $1) })
       content = loaded
       error = nil
+      if loaded == nil, follow() { return }
       selection = selection.filter { id in loaded?.diff.lines.contains { $0.id == id } ?? false }
     } catch {
       self.error = RepositoryModel.describe(error)
     }
     isLoaded = true
+  }
+
+  /// A change with nothing left on its side: the screen shows the file on the other side (Stage in the bar showed
+  /// "No Changes" with Stage still there, G-001), or goes back when it has no changes at all. True when it moved on.
+  private func follow() -> Bool {
+    guard let change = route.change, let status = model.status else { return false }
+    let other = change.area == .staged ? status.unstaged : status.staged
+    if let moved = other.first(where: { $0.path == change.path }) {
+      followed = DiffRoute(moved)
+      return true
+    }
+    let same = change.area == .staged ? status.staged : status.unstaged
+    guard !same.contains(where: { $0.path == change.path }) else { return false }
+    dismiss()
+    return true
+  }
+}
+
+extension DiffRoute {
+  /// A file in Changes: its staged or unstaged diff.
+  init(_ change: FileChange) {
+    let target: DiffTarget =
+      change.area == .staged
+      ? .staged(path: change.path, originalPath: change.originalPath)
+      : .unstaged(path: change.path, untracked: change.kind == .untracked)
+    self.init(target: target, change: change, kind: change.kind)
   }
 }

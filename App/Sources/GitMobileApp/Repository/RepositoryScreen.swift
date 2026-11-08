@@ -61,7 +61,7 @@ struct RepositoryScreen: View {
     }
     .modifier(PhoneRepositoryBar(model: idiom == .phone && model.phase == .ready ? model : nil, showsNewBranch: $showsNewBranch))
     .navigationBarBackButtonHidden(true)
-    .navigationDestination(for: DiffRoute.self) { route in DiffScreen(model: model, route: route) }
+    .navigationDestination(for: DiffRoute.self) { route in DiffScreen(model: model, opened: route) }
     .navigationDestination(for: Commit.self) { commit in CommitScreen(model: model, commit: commit) }
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
     .kitNotice(item: $model.failure, title: \.title, message: \.message) { failure in
