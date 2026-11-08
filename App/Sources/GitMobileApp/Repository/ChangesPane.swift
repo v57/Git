@@ -8,6 +8,8 @@ import SwiftUI
 struct ChangesPane: View {
   let model: RepositoryModel
   @State private var pendingDiscard: [FileChange]?
+  /// The file whose diff a tap opened.
+  @State private var opened: DiffRoute?
 
   var body: some View {
     if let status = model.status {
@@ -42,6 +44,7 @@ struct ChangesPane: View {
         .animation(.kit, value: status)
       }
       .refreshable { await model.refresh() }
+      .navigationDestination(item: $opened) { DiffScreen(model: model, opened: $0) }
       .kitConfirmation(
         discardTitle,
         isPresented: .init(get: { pendingDiscard != nil }, set: { if !$0 { pendingDiscard = nil } }),
@@ -89,14 +92,16 @@ struct ChangesPane: View {
   }
 
   private func row(_ change: FileChange) -> some View {
-    NavigationLink(value: DiffRoute(target: target(change), change: change, kind: change.kind)) {
-      ChangeFileRow(change: change, lines: model.lineCounts[change.id]) {
-        Task {
-          if change.area == .staged { await model.unstage([change]) } else { await model.stage([change]) }
-        }
+    // A tap, not a NavigationLink: a link's button pushed the diff when a held finger came up, though the long press
+    // had opened the row's menu (G-002). The repository list's rows open the same way.
+    ChangeFileRow(change: change, lines: model.lineCounts[change.id]) {
+      Task {
+        if change.area == .staged { await model.unstage([change]) } else { await model.stage([change]) }
       }
     }
-    .buttonStyle(.kitRow)
+    .contentShape(Rectangle())
+    .onTapGesture { opened = DiffRoute(change) }
+    .accessibilityAddTraits(.isButton)
     .kitContextMenu {
       if change.area == .staged {
         Button("Unstage", systemImage: "minus.circle") { Task { await model.unstage([change]) } }
@@ -107,12 +112,6 @@ struct ChangesPane: View {
       Divider()
       Button("Copy Path", systemImage: "doc.on.doc") { KitPasteboard.copy(change.path) }
     }
-  }
-
-  private func target(_ change: FileChange) -> DiffTarget {
-    change.area == .staged
-      ? .staged(path: change.path, originalPath: change.originalPath)
-      : .unstaged(path: change.path, untracked: change.kind == .untracked)
   }
 
   private var discardTitle: String {
