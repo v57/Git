@@ -245,6 +245,9 @@ struct CompletedOperation: Equatable {
 
   /// A repository on another device while it connects, or why it couldn't; nil once it has a session.
   enum RemoteState: Equatable {
+    /// The selection the last launch left: it waits for Connect, so launching signs in to no other device (security
+    /// audit L15).
+    case waiting
     case connecting(String)
     case failed(String)
   }
@@ -331,8 +334,9 @@ struct CompletedOperation: Equatable {
   }
 
   /// Watches only the repository on screen, and remembers when it was opened for the Welcome
-  /// window's Recent list.
-  func activate(_ path: String?, context: ModelContext? = nil) async {
+  /// window's Recent list. One on another device signs in there unless `connecting` is false (the selection restored at
+  /// launch), when it waits for Connect.
+  func activate(_ path: String?, context: ModelContext? = nil, connecting: Bool = true) async {
     if let path, let context {
       let saved = try? context.fetch(
         FetchDescriptor<SavedRepository>(predicate: #Predicate { $0.path == path }))
@@ -346,7 +350,11 @@ struct CompletedOperation: Equatable {
       Task { await vaultProjects.publish([saved], context: context) }
     }
     if let path, Self.isRemote(path) {
-      await connect(path)
+      if connecting {
+        await connect(path)
+      } else if sessions[path] == nil, remoteStates[path] == nil {
+        remoteStates[path] = .waiting
+      }
       // Another repository was picked while it connected.
       if Task.isCancelled { return }
     }

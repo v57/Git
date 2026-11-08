@@ -253,7 +253,7 @@ struct RemoteRepositoriesSection: View {
           LiveIcon(systemImage: "network", hue: .blue, status: .working, size: 14)
         case .failed?:
           StatusDot(hue: .red)
-        case nil:
+        case .waiting?, nil:
           if let summary = library.remoteSummary(repository) { StatusMarks(summary: summary) }
         }
       }
@@ -262,8 +262,9 @@ struct RemoteRepositoriesSection: View {
   }
 }
 
-/// A repository on another device until its session is in: connecting, or why it couldn't, with Try Again; under
-/// either, how its device last saw it (the vault's status: branch, counts, the first files).
+/// A repository on another device until its session is in: waiting for Connect (the selection restored at launch),
+/// connecting, or why it couldn't, with Try Again; under each, how its device last saw it (the vault's status: branch,
+/// counts, the first files).
 struct RemoteConnectionScreen: View {
   @Environment(RepositoryLibrary.self) private var library
   let key: String
@@ -274,6 +275,17 @@ struct RemoteConnectionScreen: View {
     let lastSeen = repository?.lastSeen
     ZStack {
       switch library.remoteStates[key] {
+      case .waiting?:
+        EmptyState(
+          systemImage: "desktopcomputer", title: "\(name)",
+          message: repository.map { String(localized: "On \($0.targets.first?.name ?? String(localized: "another device")).") }
+        ) {
+          lastSeenDetail(lastSeen)
+        } actions: {
+          Button("Connect") { Task { await library.activate(key) } }
+            .buttonStyle(.kitPrimary)
+        }
+        .transition(.page)
       case .failed(let message)?:
         EmptyState(systemImage: "exclamationmark.triangle", title: "Couldn’t Open \(name)", message: "\(message)") {
           lastSeenDetail(lastSeen)

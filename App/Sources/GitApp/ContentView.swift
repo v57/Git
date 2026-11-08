@@ -19,6 +19,8 @@ struct ContentView: View {
   @State private var columns = NavigationSplitViewVisibility.all
   /// The repository on screen: the selection once its first status has loaded (`showSelection`).
   @State private var shownPath: String?
+  /// Until the first selection is activated: the one the last launch left (`selectedRepository`).
+  @State private var restoring = true
 
   /// The repository whose screen is up; at launch, before one is shown, the selection itself.
   private var screenPath: String? { selectedPath == nil ? nil : shownPath ?? selectedPath }
@@ -77,7 +79,10 @@ struct ContentView: View {
     .handlesExternalEvents(preferring: ["*"], allowing: ["*"])
     .task(id: selectedPath) { await showSelection() }
     .task(id: selectedPath) {
-      await library.activate(selectedPath, context: context)
+      // The selection the last launch left: one on another device waits for Connect (security audit L15).
+      let restored = restoring
+      restoring = false
+      await library.activate(selectedPath, context: context, connecting: !restored)
       // On its own task: picking another repository doesn't stop a fetch that started.
       if !Task.isCancelled, let path = selectedPath { Task { await library.autoFetchSelected(path) } }
       #if DEBUG
