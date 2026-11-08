@@ -51,6 +51,11 @@ whose own git it runs over SSH.
   repository's menu can open it in Code.
 - [Shell](https://github.com/v57/Shell/blob/main/Docs/README.md): Shell can open a folder in Git.
 
+## For developers
+
+Git's libraries, for use in other apps: [GitKit](GitKit.md), [GitHubKit](GitHubKit.md), [GitHubUI](GitHubUI.md) and
+[GitEngine](GitEngine.md). The [README](../README.md#libraries) has a table of them.
+
 ## Network
 
 Git contacts no server on its own. It talks to your Git servers when you clone, fetch, pull or push, to GitHub when

@@ -39,6 +39,20 @@ watcher covers all of them, and a group's header sums up its repositories. Colla
 Repositories section still shows the open repository, and its header shows an icon for each
 other repository that needs attention.
 
+## Libraries
+
+The root package (`https://github.com/v57/Git.git`, branch `main`) has four libraries other apps can use:
+
+| Library | Purpose | Platforms | Import |
+|---|---|---|---|
+| [GitKit](docs/GitKit.md) | Runs `git` and parses it: status, diffs, line staging, commits, history, branches, conflicts, clone, fetch, pull and push; the observable `RepositorySession` | macOS 14+, Linux, Windows; iOS 17+ through a `GitTransport` only | `import GitKit` |
+| [GitHubKit](docs/GitHubKit.md) | GitHub sign-in (device flow), the token in the keychain, and the REST calls: repositories, Git Data, releases, issues, Discussions | macOS 14+, iOS 17+; builds on Linux and Windows | `import GitHubKit` |
+| [GitHubUI](docs/GitHubUI.md) | The GitHub sign-in sheet on ComponentKit | macOS 14+, iOS 17+; builds on Linux and Windows | `import GitHubUI` |
+| [GitEngine](docs/GitEngine.md) | Git in Swift for devices without git, and GitKit's in-app network engine | iOS 17+, macOS 14+; tested on Linux | `import GitEngine` |
+
+The apps' package in `App/` has the app's own libraries (`GitUI`, `GitRemote`, `GitApp`, `GitMobileApp`, `GitEntry`).
+They are not meant for other apps and have no pages here.
+
 ## Layout
 
     Package.swift                 GitKit and GitHubKit libraries + their tests (swift-testing)
