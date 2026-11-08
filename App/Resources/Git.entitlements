@@ -11,6 +11,7 @@
 	<key>keychain-access-groups</key>
 	<array>
 		<string>$(AppIdentifierPrefix)dev.v57.shared</string>
+		<string>$(AppIdentifierPrefix)dev.v57.records</string>
 	</array>
 	<key>com.apple.developer.icloud-container-identifiers</key>
 	<array>
