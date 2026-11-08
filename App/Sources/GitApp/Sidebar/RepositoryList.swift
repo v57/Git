@@ -347,7 +347,7 @@ struct RepositoryList: View {
           $0.needsAttention ? "\(repository.name): \(StatusMarks.description($0))" : nil
         }
       }
-    return lines.isEmpty ? "All other repositories are up to date" : lines.joined(separator: "\n")
+    return lines.isEmpty ? String(localized: "All other repositories are up to date") : lines.joined(separator: "\n")
   }
 
   // MARK: Groups
@@ -588,21 +588,21 @@ struct RepositoryList: View {
     let from = remote ?? "the remote"
     let behind = summary.behind
     let ahead = summary.ahead
-    let stay = ahead == 1 ? " Your 1 commit stays." : ahead > 1 ? " Your \(ahead) commits stay." : ""
+    let stay = ahead == 1 ? String(localized: " Your 1 commit stays.") : ahead > 1 ? String(localized: " Your \(ahead) commits stay.") : ""
     return RemoteActionWords { action in
       switch action {
       case .fetch:
-        RemoteActionWords.Row(preview: "Checks \(from) for new commits. Nothing in \(branch) changes.")
+        RemoteActionWords.Row(preview: String(localized: "Checks \(from) for new commits. Nothing in \(branch) changes."))
       case .pull:
         behind > 0
           ? RemoteActionWords.Row(
-            hint: counted(behind, "commit"), preview: "Brings \(counted(behind, "commit")) from \(from) into \(branch).\(stay)",
+            hint: counted(behind, .commit), preview: String(localized: "Brings \(counted(behind, .commit)) from \(from) into \(branch).\(stay)"),
             picture: BranchPicture(.pull(incoming: behind, yours: ahead, branch: branch, source: remote)))
-          : RemoteActionWords.Row(preview: "Brings any new commits from \(from) into \(branch).\(stay)")
+          : RemoteActionWords.Row(preview: String(localized: "Brings any new commits from \(from) into \(branch).\(stay)"))
       case .push:
         RemoteActionWords.Row(
-          hint: ahead > 0 ? counted(ahead, "commit") : nil,
-          preview: ahead > 0 ? "Sends your \(counted(ahead, "commit")) on \(branch) to \(from)." : "Sends \(branch) to \(from).")
+          hint: ahead > 0 ? counted(ahead, .commit) : nil,
+          preview: ahead > 0 ? String(localized: "Sends your \(counted(ahead, .commit)) on \(branch) to \(from).") : String(localized: "Sends \(branch) to \(from)."))
       }
     }
   }
@@ -616,25 +616,25 @@ struct RepositoryList: View {
     return RemoteActionWords { action in
       switch action {
       case .fetch:
-        RemoteActionWords.Row(preview: "Checks the remotes of its \(repositories) for new commits. Nothing in them changes.")
+        RemoteActionWords.Row(preview: String(localized: "Checks the remotes of its \(repositories) for new commits. Nothing in them changes."))
       case .pull:
         RemoteActionWords.Row(
-          hint: behind > 0 ? counted(behind, "commit") : nil,
+          hint: behind > 0 ? counted(behind, .commit) : nil,
           preview: behind > 0
-            ? "Brings \(counted(behind, "commit")) into its \(repositories), each from its own remote."
-            : "Brings any new commits into its \(repositories), each from its own remote.")
+            ? String(localized: "Brings \(counted(behind, .commit)) into its \(repositories), each from its own remote.")
+            : String(localized: "Brings any new commits into its \(repositories), each from its own remote."))
       case .push:
         RemoteActionWords.Row(
-          hint: ahead > 0 ? counted(ahead, "commit") : nil,
+          hint: ahead > 0 ? counted(ahead, .commit) : nil,
           preview: ahead > 0
-            ? "Sends \(counted(ahead, "commit")) to their remotes, from the repositories that have some."
-            : "Sends the commits of the repositories that have some to their remotes.")
+            ? String(localized: "Sends \(counted(ahead, .commit)) to their remotes, from the repositories that have some.")
+            : String(localized: "Sends the commits of the repositories that have some to their remotes."))
       }
     }
   }
 
   private func repositoriesText(_ count: Int) -> String {
-    count == 1 ? "1 repository" : "\(count) repositories"
+    count == 1 ? String(localized: "1 repository") : String(localized: "\(count) repositories")
   }
 
   /// Fetch, Pull and Push for `paths`; with `pushOnlyAhead`, Push leaves out the repositories

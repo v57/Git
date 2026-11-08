@@ -55,15 +55,17 @@ public struct LastSeenChanges: View {
 
   /// "3 changes on main, 1 to push".
   private var glance: String {
-    var parts = [
-      (status.changeCount == 0 ? "no changes" : status.changeCount == 1 ? "1 change" : "\(status.changeCount) changes")
-        + " on " + (status.branch ?? "a detached HEAD")
-    ]
+    let changes =
+      status.changeCount == 0
+      ? String(localized: "no changes")
+      : status.changeCount == 1 ? String(localized: "1 change") : String(localized: "\(status.changeCount) changes")
+    let branch = status.branch ?? String(localized: "a detached HEAD")
+    var parts = [String(localized: "\(changes) on \(branch)")]
     if let operation = status.operation.flatMap(RepositoryOperation.init(rawValue:)) {
       parts.append(operation.title.lowercased())
     }
-    if status.ahead > 0 { parts.append("\(status.ahead) to push") }
-    if status.behind > 0 { parts.append("\(status.behind) to pull") }
+    if status.ahead > 0 { parts.append(String(localized: "\(status.ahead) to push")) }
+    if status.behind > 0 { parts.append(String(localized: "\(status.behind) to pull")) }
     return parts.joined(separator: ", ")
   }
 }

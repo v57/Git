@@ -117,14 +117,14 @@ struct ChangesPane: View {
 
   private var discardTitle: String {
     guard let changes = pendingDiscard else { return "" }
-    return changes.count == 1 ? "Discard changes to \(changes[0].fileName)?" : "Discard changes to \(changes.count) files?"
+    return changes.count == 1 ? String(localized: "Discard changes to \(changes[0].fileName)?") : String(localized: "Discard changes to \(changes.count) files?")
   }
 
   private var discardMessage: String {
     guard let changes = pendingDiscard else { return "" }
     let staged = changes.contains { $0.area == .staged }
-    let newFiles = model.isRemote ? "New files are moved to the Trash there." : "New files are deleted."
-    return (staged ? "Staged and unstaged changes are lost. " : "Unstaged changes are lost. ") + newFiles
+    let newFiles = model.isRemote ? String(localized: "New files are moved to the Trash there.") : String(localized: "New files are deleted.")
+    return (staged ? String(localized: "Staged and unstaged changes are lost. ") : String(localized: "Unstaged changes are lost. ")) + newFiles
   }
 }
 
@@ -212,9 +212,9 @@ struct CommitComposer: View {
   }
 
   private var title: String {
-    if amend { return "Amend" }
+    if amend { return String(localized: "Amend") }
     let count = staged > 0 ? staged : unstaged
-    return count == 1 ? "Commit 1 File" : "Commit \(count) Files"
+    return count == 1 ? String(localized: "Commit 1 File") : String(localized: "Commit \(count) Files")
   }
 
   private var canCommit: Bool {

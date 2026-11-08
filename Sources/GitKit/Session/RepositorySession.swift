@@ -24,25 +24,25 @@ public final class RepositorySession {
 
     public var title: String {
       switch self {
-      case .staging: "Staging…"
-      case .discarding: "Discarding…"
-      case .committing: "Committing…"
-      case .fetching: "Fetching…"
-      case .pulling: "Pulling…"
-      case .pushing: "Pushing…"
-      case .switchingBranch: "Switching branch…"
-      case .stashing: "Stashing…"
-      case .continuing: "Continuing…"
-      case .aborting: "Aborting…"
-      case .reverting: "Reverting…"
-      case .resetting: "Resetting…"
-      case .tagging: "Tagging…"
-      case .merging: "Merging…"
-      case .resolving: "Resolving…"
-      case .checkingOut: "Checking out…"
-      case .cherryPicking: "Cherry-picking…"
-      case .squashing: "Squashing…"
-      case .deletingBranch: "Deleting branch…"
+      case .staging: String(localized: "Staging…")
+      case .discarding: String(localized: "Discarding…")
+      case .committing: String(localized: "Committing…")
+      case .fetching: String(localized: "Fetching…")
+      case .pulling: String(localized: "Pulling…")
+      case .pushing: String(localized: "Pushing…")
+      case .switchingBranch: String(localized: "Switching branch…")
+      case .stashing: String(localized: "Stashing…")
+      case .continuing: String(localized: "Continuing…")
+      case .aborting: String(localized: "Aborting…")
+      case .reverting: String(localized: "Reverting…")
+      case .resetting: String(localized: "Resetting…")
+      case .tagging: String(localized: "Tagging…")
+      case .merging: String(localized: "Merging…")
+      case .resolving: String(localized: "Resolving…")
+      case .checkingOut: String(localized: "Checking out…")
+      case .cherryPicking: String(localized: "Cherry-picking…")
+      case .squashing: String(localized: "Squashing…")
+      case .deletingBranch: String(localized: "Deleting branch…")
       }
     }
   }
@@ -295,7 +295,7 @@ public final class RepositorySession {
       _ = try? await head
       _ = await lastFetched
       _ = try? await tags
-      report(error, title: "Couldn't read the repository")
+      report(error, title: String(localized: "Couldn't read the repository"))
     }
   }
 
@@ -330,7 +330,7 @@ public final class RepositorySession {
     } catch {
       guard generation == historyGeneration else { return }
       hasMoreCommits = false
-      report(error, title: "Couldn't load history")
+      report(error, title: String(localized: "Couldn't load history"))
     }
     isLoadingCommits = false
   }
@@ -383,59 +383,59 @@ public final class RepositorySession {
 
   public func stage(_ changes: [FileChange]) async {
     let paths = changes.map(\.path)
-    await perform(.staging, failureTitle: "Couldn't stage") { try await $0.stage(paths) }
+    await perform(.staging, failureTitle: String(localized: "Couldn't stage")) { try await $0.stage(paths) }
   }
 
   public func unstage(_ changes: [FileChange]) async {
     let paths = changes.flatMap { [$0.originalPath, $0.path].compactMap { $0 } }
-    await perform(.staging, failureTitle: "Couldn't unstage") { try await $0.unstage(paths) }
+    await perform(.staging, failureTitle: String(localized: "Couldn't unstage")) { try await $0.unstage(paths) }
   }
 
   public func stageAll() async {
-    await perform(.staging, failureTitle: "Couldn't stage") { try await $0.stageAll() }
+    await perform(.staging, failureTitle: String(localized: "Couldn't stage")) { try await $0.stageAll() }
   }
 
   public func unstageAll() async {
-    await perform(.staging, failureTitle: "Couldn't unstage") { try await $0.unstageAll() }
+    await perform(.staging, failureTitle: String(localized: "Couldn't unstage")) { try await $0.unstageAll() }
   }
 
   public func discard(_ changes: [FileChange]) async {
-    await perform(.discarding, failureTitle: "Couldn't discard changes") {
+    await perform(.discarding, failureTitle: String(localized: "Couldn't discard changes")) {
       try await $0.discard(changes)
     }
   }
 
   public func discardStaged(_ changes: [FileChange]) async {
-    await perform(.discarding, failureTitle: "Couldn't discard changes") {
+    await perform(.discarding, failureTitle: String(localized: "Couldn't discard changes")) {
       try await $0.discardStaged(changes)
     }
   }
 
   public func ignore(_ pattern: String) async {
-    await perform(.staging, failureTitle: "Couldn't add to .gitignore") { try await $0.ignore(pattern) }
+    await perform(.staging, failureTitle: String(localized: "Couldn't add to .gitignore")) { try await $0.ignore(pattern) }
   }
 
   public func stageLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform(.staging, failureTitle: "Couldn't stage lines") {
+    await perform(.staging, failureTitle: String(localized: "Couldn't stage lines")) {
       try await $0.stageLines(lines, of: diff)
     }
   }
 
   public func unstageLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform(.staging, failureTitle: "Couldn't unstage lines") {
+    await perform(.staging, failureTitle: String(localized: "Couldn't unstage lines")) {
       try await $0.unstageLines(lines, of: diff)
     }
   }
 
   public func discardLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform(.discarding, failureTitle: "Couldn't discard lines") {
+    await perform(.discarding, failureTitle: String(localized: "Couldn't discard lines")) {
       try await $0.discardLines(lines, of: diff)
     }
   }
 
   @discardableResult
   public func commit(message: String, amend: Bool = false) async -> Bool {
-    await perform(.committing, failureTitle: "Couldn't commit") {
+    await perform(.committing, failureTitle: String(localized: "Couldn't commit")) {
       try await $0.commit(message: message, amend: amend)
     }
   }
@@ -443,7 +443,7 @@ public final class RepositorySession {
   @discardableResult
   public func fetch() async -> Bool {
     let progress = progressHandler()
-    return await perform(.fetching, failureTitle: "Couldn't fetch") {
+    return await perform(.fetching, failureTitle: String(localized: "Couldn't fetch")) {
       try await $0.fetch(progress: progress)
     }
   }
@@ -451,7 +451,7 @@ public final class RepositorySession {
   @discardableResult
   public func pull() async -> Bool {
     let progress = progressHandler()
-    return await perform(.pulling, failureTitle: "Couldn't pull") {
+    return await perform(.pulling, failureTitle: String(localized: "Couldn't pull")) {
       try await $0.pull(progress: progress)
     }
   }
@@ -459,7 +459,7 @@ public final class RepositorySession {
   @discardableResult
   public func push(force: Bool = false) async -> Bool {
     let progress = progressHandler()
-    return await perform(.pushing, failureTitle: "Couldn't push") {
+    return await perform(.pushing, failureTitle: String(localized: "Couldn't push")) {
       try await $0.push(force: force, progress: progress)
     }
   }
@@ -469,7 +469,7 @@ public final class RepositorySession {
   public func pushTag(_ tag: Tag) async -> Bool {
     let progress = progressHandler()
     let name = tag.name
-    return await perform(.pushing, failureTitle: "Couldn't push \(name)") {
+    return await perform(.pushing, failureTitle: String(localized: "Couldn't push \(name)")) {
       try await $0.pushTag(name, progress: progress)
     }
   }
@@ -479,14 +479,14 @@ public final class RepositorySession {
   @discardableResult
   public func publish(to url: String, remote name: String = "origin") async -> Bool {
     let progress = progressHandler()
-    return await perform(.pushing, failureTitle: "Couldn't publish") {
+    return await perform(.pushing, failureTitle: String(localized: "Couldn't publish")) {
       try await $0.addRemote(name, url: url)
       try await $0.push(progress: progress)
     }
   }
 
   public func switchTo(_ branch: Branch) async {
-    await perform(.switchingBranch, failureTitle: "Couldn't switch to \(branch.name)") {
+    await perform(.switchingBranch, failureTitle: String(localized: "Couldn't switch to \(branch.name)")) {
       try await $0.switchTo(branch)
     }
   }
@@ -495,13 +495,13 @@ public final class RepositorySession {
   public func createBranch(_ name: String, from startPoint: String? = nil, checkout: Bool = true)
     async -> Bool
   {
-    await perform(.switchingBranch, failureTitle: "Couldn't create \(name)") {
+    await perform(.switchingBranch, failureTitle: String(localized: "Couldn't create \(name)")) {
       try await $0.createBranch(name, from: startPoint, checkout: checkout)
     }
   }
 
   public func deleteBranch(_ branch: Branch, force: Bool = false) async {
-    await perform(.switchingBranch, failureTitle: "Couldn't delete \(branch.name)") {
+    await perform(.switchingBranch, failureTitle: String(localized: "Couldn't delete \(branch.name)")) {
       try await $0.deleteBranch(branch.name, force: force)
     }
   }
@@ -510,62 +510,62 @@ public final class RepositorySession {
     let progress = progressHandler()
     deletingBranches.insert(branch.id)
     defer { deletingBranches.remove(branch.id) }
-    await perform(.deletingBranch, failureTitle: "Couldn't delete \(branch.name)") {
+    await perform(.deletingBranch, failureTitle: String(localized: "Couldn't delete \(branch.name)")) {
       try await $0.deleteRemoteBranch(upstream, progress: progress)
       try await $0.deleteBranch(branch.name, force: true)
     }
   }
 
   public func stash(message: String? = nil, includeUntracked: Bool = true) async {
-    await perform(.stashing, failureTitle: "Couldn't stash") {
+    await perform(.stashing, failureTitle: String(localized: "Couldn't stash")) {
       try await $0.stash(message: message, includeUntracked: includeUntracked)
     }
   }
 
   public func applyStash(_ stash: Stash) async {
-    await perform(.stashing, failureTitle: "Couldn't apply the stash") {
+    await perform(.stashing, failureTitle: String(localized: "Couldn't apply the stash")) {
       try await $0.applyStash(stash)
     }
   }
 
   public func popStash(_ stash: Stash) async {
-    await perform(.stashing, failureTitle: "Couldn't pop the stash") {
+    await perform(.stashing, failureTitle: String(localized: "Couldn't pop the stash")) {
       try await $0.popStash(stash)
     }
   }
 
   public func dropStash(_ stash: Stash) async {
-    await perform(.stashing, failureTitle: "Couldn't drop the stash") {
+    await perform(.stashing, failureTitle: String(localized: "Couldn't drop the stash")) {
       try await $0.dropStash(stash)
     }
   }
 
   public func merge(_ branch: Branch) async {
-    await perform(.merging, failureTitle: "Couldn't merge \(branch.name)") {
+    await perform(.merging, failureTitle: String(localized: "Couldn't merge \(branch.name)")) {
       try await $0.merge(branch)
     }
   }
 
   public func revert(_ commit: Commit) async {
-    await perform(.reverting, failureTitle: "Couldn't revert \(commit.shortID)") {
+    await perform(.reverting, failureTitle: String(localized: "Couldn't revert \(commit.shortID)")) {
       try await $0.revert(commit)
     }
   }
 
   public func checkout(_ commit: Commit) async {
-    await perform(.checkingOut, failureTitle: "Couldn't check out \(commit.shortID)") {
+    await perform(.checkingOut, failureTitle: String(localized: "Couldn't check out \(commit.shortID)")) {
       try await $0.checkout(commit)
     }
   }
 
   public func cherryPick(_ commit: Commit) async {
-    await perform(.cherryPicking, failureTitle: "Couldn't cherry-pick \(commit.shortID)") {
+    await perform(.cherryPicking, failureTitle: String(localized: "Couldn't cherry-pick \(commit.shortID)")) {
       try await $0.cherryPick(commit)
     }
   }
 
   public func reset(to commit: Commit, mode: Repository.ResetMode = .mixed) async {
-    await perform(.resetting, failureTitle: "Couldn't reset to \(commit.shortID)") {
+    await perform(.resetting, failureTitle: String(localized: "Couldn't reset to \(commit.shortID)")) {
       try await $0.reset(to: commit.id, mode: mode)
     }
   }
@@ -573,7 +573,7 @@ public final class RepositorySession {
   /// Undoes the last commit, keeping its changes staged. Returns its message, or `nil` on failure.
   public func undoLastCommit() async -> String? {
     let box = StringBox()
-    let succeeded = await perform(.resetting, failureTitle: "Couldn't undo the commit") {
+    let succeeded = await perform(.resetting, failureTitle: String(localized: "Couldn't undo the commit")) {
       box.value = try await $0.undoLastCommit()
     }
     return succeeded ? box.value : nil
@@ -610,7 +610,7 @@ public final class RepositorySession {
   /// Squashes `commits` into one with `message`. Returns the new commit, or `nil` on failure.
   public func squash(_ commits: [Commit], message: String) async -> String? {
     let box = StringBox()
-    let succeeded = await perform(.squashing, failureTitle: "Couldn't squash the commits") {
+    let succeeded = await perform(.squashing, failureTitle: String(localized: "Couldn't squash the commits")) {
       box.value = try await $0.squash(commits, message: message)
     }
     return succeeded ? box.value : nil
@@ -618,7 +618,7 @@ public final class RepositorySession {
 
   @discardableResult
   public func createTag(_ name: String, at commit: Commit?, message: String? = nil) async -> Bool {
-    await perform(.tagging, failureTitle: "Couldn't create tag \(name)") {
+    await perform(.tagging, failureTitle: String(localized: "Couldn't create tag \(name)")) {
       try await $0.createTag(name, at: commit?.id, message: message)
     }
   }
@@ -628,14 +628,14 @@ public final class RepositorySession {
 
   public func continueOperation() async {
     guard let operation = status?.operation else { return }
-    await perform(.continuing, failureTitle: "Couldn't continue") {
+    await perform(.continuing, failureTitle: String(localized: "Couldn't continue")) {
       try await $0.continueOperation(operation)
     }
   }
 
   public func abortOperation() async {
     guard let operation = status?.operation else { return }
-    await perform(.aborting, failureTitle: "Couldn't abort") {
+    await perform(.aborting, failureTitle: String(localized: "Couldn't abort")) {
       try await $0.abortOperation(operation)
     }
   }
@@ -646,7 +646,7 @@ public final class RepositorySession {
   @discardableResult
   public func resolveConflict(_ change: FileChange, with text: String) async -> Bool {
     let path = change.path
-    return await perform(.resolving, failureTitle: "Couldn't resolve \(change.fileName)") {
+    return await perform(.resolving, failureTitle: String(localized: "Couldn't resolve \(change.fileName)")) {
       try await $0.resolveConflict(path, with: text)
     }
   }
@@ -655,7 +655,7 @@ public final class RepositorySession {
   @discardableResult
   public func resolveConflict(_ change: FileChange, taking side: ConflictSide) async -> Bool {
     let path = change.path
-    return await perform(.resolving, failureTitle: "Couldn't resolve \(change.fileName)") {
+    return await perform(.resolving, failureTitle: String(localized: "Couldn't resolve \(change.fileName)")) {
       try await $0.resolveConflict(path, taking: side)
     }
   }

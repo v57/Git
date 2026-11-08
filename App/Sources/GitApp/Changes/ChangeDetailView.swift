@@ -158,7 +158,7 @@ struct ChangeDetailView: View {
       guard !Task.isCancelled else { return }
       loaded = nil
       loadedFile = file
-      session.report(error, title: "Couldn't load the diff")
+      session.report(error, title: String(localized: "Couldn't load the diff"))
     }
   }
 

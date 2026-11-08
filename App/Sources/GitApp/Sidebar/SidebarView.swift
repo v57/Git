@@ -335,13 +335,14 @@ private struct RepositorySections: View {
 
   /// "Finds v2.4.0 in History: a1b2c3d, 3 days ago."
   private func tagPreview(_ tag: Tag) -> String {
-    let when = tag.date.map { ", \($0.formatted(.relative(presentation: .named)))" } ?? ""
-    return "Finds \(tag.name) in History: \(tag.commit.prefix(7))\(when)."
+    let commit = String(tag.commit.prefix(7))
+    guard let date = tag.date else { return String(localized: "Finds \(tag.name) in History: \(commit).") }
+    return String(localized: "Finds \(tag.name) in History: \(commit), \(date.formatted(.relative(presentation: .named))).")
   }
 
   private var worktreesMeta: [String] {
     let detached = session.worktrees.count { $0.branch == nil }
-    return ["\(session.worktrees.count) worktrees", detached > 0 ? "\(detached) detached" : ""]
+    return [String(localized: "\(session.worktrees.count) worktrees"), detached > 0 ? String(localized: "\(detached) detached") : ""]
   }
 
   // MARK: Branches
@@ -540,17 +541,23 @@ struct StatusMarks: View {
   }
 
   static func description(_ summary: RepositorySummary) -> String {
-    func count(_ n: Int, _ noun: String) -> String { n == 1 ? "1 \(noun)" : "\(n) \(noun)s" }
     var parts: [String] = []
     if let operation = summary.operation {
+      let conflicts = summary.conflictCount
       parts.append(
-        summary.conflictCount > 0
-          ? "\(operation.title), \(count(summary.conflictCount, "conflict"))" : operation.title)
+        conflicts == 0
+          ? operation.title
+          : conflicts == 1
+            ? String(localized: "\(operation.title), 1 conflict") : String(localized: "\(operation.title), \(conflicts) conflicts"))
     }
-    if summary.changeCount > 0 { parts.append(count(summary.changeCount, "uncommitted change")) }
-    if summary.ahead > 0 { parts.append(count(summary.ahead, "commit") + " to push") }
-    if summary.behind > 0 { parts.append(count(summary.behind, "commit") + " to pull") }
-    if summary.isUnpublished { parts.append(parts.isEmpty ? "Not published" : "not published") }
-    return parts.isEmpty ? "Up to date" : parts.joined(separator: ", ")
+    if summary.changeCount > 0 {
+      parts.append(
+        summary.changeCount == 1
+          ? String(localized: "1 uncommitted change") : String(localized: "\(summary.changeCount) uncommitted changes"))
+    }
+    if summary.ahead > 0 { parts.append(String(localized: "\(counted(summary.ahead, .commit)) to push")) }
+    if summary.behind > 0 { parts.append(String(localized: "\(counted(summary.behind, .commit)) to pull")) }
+    if summary.isUnpublished { parts.append(parts.isEmpty ? String(localized: "Not published") : String(localized: "not published")) }
+    return parts.isEmpty ? String(localized: "Up to date") : parts.joined(separator: ", ")
   }
 }

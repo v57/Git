@@ -220,7 +220,7 @@ private struct CommitDetail: View {
       }
     } catch {
       files = []
-      session.report(error, title: "Couldn't load the commit")
+      session.report(error, title: String(localized: "Couldn't load the commit"))
     }
   }
 
@@ -240,7 +240,7 @@ private struct CommitDetail: View {
       loaded = result
     } catch {
       guard !Task.isCancelled else { return }
-      session.report(error, title: "Couldn't load the diff")
+      session.report(error, title: String(localized: "Couldn't load the diff"))
     }
   }
 }

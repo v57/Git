@@ -14,9 +14,9 @@ enum RepositoryMode: String, CaseIterable, Identifiable {
   var id: Self { self }
   var title: String {
     switch self {
-    case .changes: "Changes"
-    case .history: "History"
-    case .stashes: "Stashes"
+    case .changes: String(localized: "Changes")
+    case .history: String(localized: "History")
+    case .stashes: String(localized: "Stashes")
     }
   }
   var systemImage: String {

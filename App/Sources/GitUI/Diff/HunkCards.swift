@@ -77,8 +77,8 @@ public struct HunkCards: View {
   private func discardPreview(_ hunk: DiffHunk) -> String {
     let changed = hunk.lines.count { $0.kind == .added || $0.kind == .removed }
     let name = content.diff.path.split(separator: "/").last.map(String.init) ?? content.diff.path
-    let lines = changed == 1 ? "this changed line" : "these \(changed) changed lines"
-    return "Removes \(lines) from \(name). It asks first; you can’t undo this."
+    let lines = changed == 1 ? String(localized: "this changed line") : String(localized: "these \(changed) changed lines")
+    return String(localized: "Removes \(lines) from \(name). It asks first; you can’t undo this.")
   }
 
   /// "3 lines added, 1 removed", for a folded staged hunk.
@@ -86,9 +86,15 @@ public struct HunkCards: View {
     let added = hunk.lines.count { $0.kind == .added }
     let removed = hunk.lines.count { $0.kind == .removed }
     var parts: [String] = []
-    if added > 0 { parts.append(added == 1 ? "1 line added" : "\(added) lines added") }
-    if removed > 0 { parts.append(added > 0 ? "\(removed) removed" : removed == 1 ? "1 line removed" : "\(removed) lines removed") }
-    return parts.joined(separator: ", ") + (hunk.section.isEmpty ? "" : " in \(hunk.section)")
+    if added > 0 { parts.append(added == 1 ? String(localized: "1 line added") : String(localized: "\(added) lines added")) }
+    if removed > 0 {
+      parts.append(
+        added > 0
+          ? String(localized: "\(removed) removed")
+          : removed == 1 ? String(localized: "1 line removed") : String(localized: "\(removed) lines removed"))
+    }
+    let counts = parts.joined(separator: ", ")
+    return hunk.section.isEmpty ? counts : String(localized: "\(counts) in \(hunk.section)")
   }
 }
 

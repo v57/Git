@@ -10,9 +10,9 @@ public enum GitHubPermission: CaseIterable, Identifiable, Sendable {
 
   public var title: String {
     switch self {
-    case .privateRepositories: "Private repositories"
-    case .organizations: "Organizations"
-    case .workflows: "Workflows"
+    case .privateRepositories: String(localized: "Private repositories")
+    case .organizations: String(localized: "Organizations")
+    case .workflows: String(localized: "Workflows")
     }
   }
 
@@ -26,9 +26,9 @@ public enum GitHubPermission: CaseIterable, Identifiable, Sendable {
 
   public var detail: String {
     switch self {
-    case .privateRepositories: "Read and write every repository you can access."
-    case .organizations: "List your organizations and publish repositories to them."
-    case .workflows: "Push changes to GitHub Actions files in .github/workflows."
+    case .privateRepositories: String(localized: "Read and write every repository you can access.")
+    case .organizations: String(localized: "List your organizations and publish repositories to them.")
+    case .workflows: String(localized: "Push changes to GitHub Actions files in .github/workflows.")
     }
   }
 

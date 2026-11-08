@@ -15,10 +15,10 @@ enum RepositorySort: String, CaseIterable, Identifiable {
 
   var title: String {
     switch self {
-    case .name: "Name"
-    case .recentChanges: "Recent Changes"
-    case .lastCommit: "Last Commit"
-    case .lastPush: "Last Push"
+    case .name: String(localized: "Name")
+    case .recentChanges: String(localized: "Recent Changes")
+    case .lastCommit: String(localized: "Last Commit")
+    case .lastPush: String(localized: "Last Push")
     }
   }
 
@@ -26,9 +26,9 @@ enum RepositorySort: String, CaseIterable, Identifiable {
   var metaTitle: String? {
     switch self {
     case .name: nil
-    case .recentChanges: "Recent changes"
-    case .lastCommit: "Last commit"
-    case .lastPush: "Last push"
+    case .recentChanges: String(localized: "Recent changes")
+    case .lastCommit: String(localized: "Last commit")
+    case .lastPush: String(localized: "Last push")
     }
   }
 

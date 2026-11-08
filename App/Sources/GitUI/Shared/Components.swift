@@ -21,14 +21,14 @@ public struct ChangeKindBadge: View {
 
   public static func name(_ kind: ChangeKind) -> String {
     switch kind {
-    case .added: "Added"
-    case .modified: "Modified"
-    case .deleted: "Deleted"
-    case .renamed: "Renamed"
-    case .copied: "Copied"
-    case .typeChanged: "Type changed"
-    case .untracked: "New file"
-    case .conflicted: "Conflicted"
+    case .added: String(localized: "Added")
+    case .modified: String(localized: "Modified")
+    case .deleted: String(localized: "Deleted")
+    case .renamed: String(localized: "Renamed")
+    case .copied: String(localized: "Copied")
+    case .typeChanged: String(localized: "Type changed")
+    case .untracked: String(localized: "New file")
+    case .conflicted: String(localized: "Conflicted")
     }
   }
 

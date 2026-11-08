@@ -186,11 +186,11 @@ private struct SyncButtons: View {
 
   /// What Force Push does: `--force-with-lease`, so it refuses if the remote moved since the last fetch.
   private var forcePushPreview: String {
-    let branch = session.status?.branch ?? "your branch"
-    let upstream = session.status?.upstream ?? "the remote branch"
+    let branch = session.status?.branch ?? String(localized: "your branch")
+    let upstream = session.status?.upstream ?? String(localized: "the remote branch")
     let lost = session.status?.behind ?? 0
-    let gone = lost > 0 ? " Its \(counted(lost, "commit")) that \(branch) doesn’t have are lost;" : ""
-    return "Replaces \(upstream) with your \(branch).\(gone) It asks first."
+    let gone = lost > 0 ? String(localized: " Its \(counted(lost, .commit)) that \(branch) doesn’t have are lost;") : ""
+    return String(localized: "Replaces \(upstream) with your \(branch).\(gone) It asks first.")
   }
 
   private var pushHelp: LocalizedStringKey {
@@ -261,9 +261,9 @@ func divergenceText(ahead: Int?, behind: Int?, base: String) -> String? {
   let ahead = ahead ?? 0
   let behind = behind ?? 0
   switch (ahead > 0, behind > 0) {
-  case (true, true): return "\(ahead) ahead, \(behind) behind \(base)"
-  case (true, false): return "\(ahead) ahead of \(base)"
-  case (false, true): return "\(behind) behind \(base)"
+  case (true, true): return String(localized: "\(ahead) ahead, \(behind) behind \(base)")
+  case (true, false): return String(localized: "\(ahead) ahead of \(base)")
+  case (false, true): return String(localized: "\(behind) behind \(base)")
   case (false, false): return nil
   }
 }
@@ -433,9 +433,9 @@ struct StashMenu: View {
       .kitMenu(isPresented: $isPresented) {
         let changed = session.status?.changeCount ?? 0
         Button("Stash Changes…", systemImage: "archivebox") { isStashing = true }
-          .kitMenuHint(changed > 0 ? counted(changed, "file") : nil)
+          .kitMenuHint(changed > 0 ? counted(changed, .file) : nil)
           .kitMenuPreview(
-            "Puts your changes to \(counted(changed, "file")) aside, so the working tree is clean. You can name the stash first.")
+            "Puts your changes to \(counted(changed, .file)) aside, so the working tree is clean. You can name the stash first.")
           .disabled(session.status?.isClean ?? true)
         if let latest = session.stashes.first {
           Button("Pop Latest Stash", systemImage: "tray.and.arrow.up") { Task { await session.popStash(latest) } }
@@ -675,7 +675,7 @@ private struct DeleteEverywhereSheet: View {
   private var warnings: [String] {
     func commits(_ count: Int, on name: String, notOn other: String) -> String {
       count == 1
-        ? "1 commit on \(name) isn't on \(other)." : "\(count) commits on \(name) aren't on \(other)."
+        ? String(localized: "1 commit on \(name) isn't on \(other).") : String(localized: "\(count) commits on \(name) aren't on \(other).")
     }
     var warnings: [String] = []
     if let ahead = branch.aheadOfHead, ahead > 0 {

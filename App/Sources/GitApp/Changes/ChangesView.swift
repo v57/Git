@@ -192,13 +192,13 @@ private struct ChangeList: View {
   private func discardPreview(_ change: FileChange) -> String {
     let name = change.fileName
     if change.kind == .untracked || (change.area == .staged && change.kind == .added) {
-      return "Moves \(name) to the Trash. It asks first."
+      return String(localized: "Moves \(name) to the Trash. It asks first.")
     }
     let lines = session.lineCounts[change.id].map { ($0.added ?? 0) + ($0.removed ?? 0) } ?? 0
-    let these = lines > 0 ? "these \(counted(lines, "changed line"))" : "the changes"
+    let these = lines > 0 ? String(localized: "these \(counted(lines, .changedLine))") : String(localized: "the changes")
     return change.area == .staged
-      ? "Removes \(these) and puts \(name) back as it was in the last commit, unstaged changes too. It asks first; you can’t undo this."
-      : "Removes \(these) from \(name); what you staged stays. It asks first; you can’t undo this."
+      ? String(localized: "Removes \(these) and puts \(name) back as it was in the last commit, unstaged changes too. It asks first; you can’t undo this.")
+      : String(localized: "Removes \(these) from \(name); what you staged stays. It asks first; you can’t undo this.")
   }
 
   /// Add to .gitignore: the file itself, or a submenu that also offers its extension and folders.

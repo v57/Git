@@ -297,7 +297,7 @@ struct RepositoriesSidebar: View {
     ) {
       KitSection(
         idiom == .phone ? "On This iPhone" : "On This iPad",
-        meta: [local.count == 1 ? "1 repository" : "\(local.count) repositories"], systemImage: "internaldrive",
+        meta: [local.count == 1 ? String(localized: "1 repository") : String(localized: "\(local.count) repositories")], systemImage: "internaldrive",
         hue: .orange
       ) {
         ForEach(local.filter { matches($0.name) }, id: \.url) { repository in
@@ -365,7 +365,7 @@ struct RepositoriesSidebar: View {
       if !opened.isEmpty {
         KitSection(
           "Opened on a Mac",
-          meta: [opened.count == 1 ? "1 repository" : "\(opened.count) repositories"], systemImage: "desktopcomputer",
+          meta: [opened.count == 1 ? String(localized: "1 repository") : String(localized: "\(opened.count) repositories")], systemImage: "desktopcomputer",
           hue: .blue
         ) {
           ForEach(opened.filter { matches($0.name) }) { repository in

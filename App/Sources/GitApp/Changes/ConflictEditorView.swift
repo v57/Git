@@ -130,19 +130,19 @@ struct ConflictsScreen: View {
 
   private var operationName: String {
     switch operation {
-    case .merge, nil: "Merge"
-    case .rebase: "Rebase"
-    case .cherryPick: "Cherry-Pick"
-    case .revert: "Revert"
+    case .merge, nil: String(localized: "Merge")
+    case .rebase: String(localized: "Rebase")
+    case .cherryPick: String(localized: "Cherry-Pick")
+    case .revert: String(localized: "Revert")
     }
   }
 
   private var operationNoun: String {
     switch operation {
-    case .merge, nil: "the merge"
-    case .rebase: "the rebase"
-    case .cherryPick: "the cherry-pick"
-    case .revert: "the revert"
+    case .merge, nil: String(localized: "the merge")
+    case .rebase: String(localized: "the rebase")
+    case .cherryPick: String(localized: "the cherry-pick")
+    case .revert: String(localized: "the revert")
     }
   }
 
@@ -246,19 +246,19 @@ struct ConflictsScreen: View {
   }
 
   private func fileNote(_ path: String) -> String {
-    guard conflicted.contains(where: { $0.path == path }) else { return "Resolved" }
+    guard conflicted.contains(where: { $0.path == path }) else { return String(localized: "Resolved") }
     switch contents[path] {
     case .blocks(let file):
       let choices = state.conflictChoices[path] ?? [:]
       let open = file.blocks.count - choices.count
       if open > 0 {
         return file.blocks.count == 1
-          ? "Needs a choice" : "\(open) of \(file.blocks.count) blocks need a choice"
+          ? String(localized: "Needs a choice") : String(localized: "\(open) of \(file.blocks.count) blocks need a choice")
       }
       let kinds = Set(choices.values)
-      if kinds == [.current] { return "Resolved · kept Current" }
-      if kinds == [.incoming] { return "Resolved · kept Incoming" }
-      return "Resolved"
+      if kinds == [.current] { return String(localized: "Resolved · kept Current") }
+      if kinds == [.incoming] { return String(localized: "Resolved · kept Incoming") }
+      return String(localized: "Resolved")
     case .text:
       return "Resolved by hand"
     case .binary, .missing, nil:
@@ -477,7 +477,7 @@ private struct ConflictBlockCard: View {
 
   private var lineRange: String {
     let count = max(ConflictParser.lines(of: block.current).count, ConflictParser.lines(of: block.incoming).count, 1)
-    return count == 1 ? "Line \(block.line)" : "Lines \(block.line)–\(block.line + count - 1)"
+    return count == 1 ? String(localized: "Line \(block.line)") : String(localized: "Lines \(block.line)–\(block.line + count - 1)")
   }
 
   private var choice: Binding<ConflictChoice?> {
@@ -601,21 +601,22 @@ private struct OperationComplete: View {
   let completed: CompletedOperation
   private var title: String {
     switch completed.operation {
-    case .merge: "Merge complete"
-    case .rebase: "Rebase complete"
-    case .cherryPick: "Cherry-pick complete"
-    case .revert: "Revert complete"
+    case .merge: String(localized: "Merge complete")
+    case .rebase: String(localized: "Rebase complete")
+    case .cherryPick: String(localized: "Cherry-pick complete")
+    case .revert: String(localized: "Revert complete")
     }
   }
 
   private var message: String {
-    let branch = completed.branch ?? "the current branch"
+    let branch = completed.branch ?? String(localized: "the current branch")
+    let source = completed.source ?? String(localized: "The branch")
     switch completed.operation {
     case .merge:
-      return "\(completed.source ?? "The branch") is now part of \(branch). Push when you are ready to share it."
-    case .rebase: return "\(completed.source ?? "The branch") now sits on top of its new base."
-    case .cherryPick: return "The commit was applied to \(branch). Push when you are ready to share it."
-    case .revert: return "The revert was committed to \(branch). Push when you are ready to share it."
+      return String(localized: "\(source) is now part of \(branch). Push when you are ready to share it.")
+    case .rebase: return String(localized: "\(source) now sits on top of its new base.")
+    case .cherryPick: return String(localized: "The commit was applied to \(branch). Push when you are ready to share it.")
+    case .revert: return String(localized: "The revert was committed to \(branch). Push when you are ready to share it.")
     }
   }
 

@@ -100,16 +100,18 @@ struct RepositoryScreen: View {
 
   private var httpsMessage: String? {
     guard let offer = model.httpsOffer else { return nil }
-    let device = model.target?.name ?? "This device"
+    let device = model.target?.name ?? String(localized: "This device")
+    let reason = offer.reason.split(separator: "\n").first.map(String.init) ?? ""
+    let action = offer.action.title.lowercased()
     var lines = [
-      "\(device) couldn’t sign in to \(offer.remote.host) over SSH: \(offer.reason.split(separator: "\n").first ?? "")",
-      "Switch \(offer.remote.remote) to \(offer.remote.url) and \(offer.action.title.lowercased()) again?",
+      String(localized: "\(device) couldn’t sign in to \(offer.remote.host) over SSH: \(reason)"),
+      String(localized: "Switch \(offer.remote.remote) to \(offer.remote.url) and \(action) again?"),
     ]
     if GitCredentials.credential(for: offer.remote.host) == nil {
       lines.append(
         offer.remote.host == "github.com"
-          ? "Git isn’t signed in to GitHub with full access here, so this needs \(device)’s own git credentials. You can sign in under Settings."
-          : "This needs \(device)’s own git credentials.")
+          ? String(localized: "Git isn’t signed in to GitHub with full access here, so this needs \(device)’s own git credentials. You can sign in under Settings.")
+          : String(localized: "This needs \(device)’s own git credentials."))
     }
     return lines.joined(separator: "\n\n")
   }
@@ -196,9 +198,9 @@ struct SyncTools: View {
   private func title(_ action: RepositoryModel.SyncAction) -> String {
     guard let status = model.status else { return action.title }
     switch action {
-    case .pull: return "Pull \(status.behind)"
-    case .push: return status.upstream == nil ? "Publish" : "Push \(status.ahead)"
-    case .fetch: return "Fetch"
+    case .pull: return String(localized: "Pull \(status.behind)")
+    case .push: return status.upstream == nil ? String(localized: "Publish") : String(localized: "Push \(status.ahead)")
+    case .fetch: return String(localized: "Fetch")
     }
   }
 }

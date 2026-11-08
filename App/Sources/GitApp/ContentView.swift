@@ -279,7 +279,7 @@ struct RepositoryScreen: View {
   }
 
   private var title: String {
-    kind == .conflicts && state.completedOperation == nil ? "Resolve Conflicts" : state.mode.title
+    kind == .conflicts && state.completedOperation == nil ? String(localized: "Resolve Conflicts") : state.mode.title
   }
 
   private var subtitle: [String] {
@@ -339,10 +339,11 @@ private struct HistorySearch: ViewModifier {
 enum OperationText {
   static func title(_ operation: RepositoryOperation, source: String?, branch: String?) -> String {
     switch (operation, source) {
-    case (.merge, let source?): "Merging \(source)" + (branch.map { " into \($0)" } ?? "")
-    case (.rebase, let source?): "Rebasing \(source)"
-    case (.cherryPick, let source?): "Cherry-picking \(source)"
-    case (.revert, let source?): "Reverting \(source)"
+    case (.merge, let source?):
+      branch.map { String(localized: "Merging \(source) into \($0)") } ?? String(localized: "Merging \(source)")
+    case (.rebase, let source?): String(localized: "Rebasing \(source)")
+    case (.cherryPick, let source?): String(localized: "Cherry-picking \(source)")
+    case (.revert, let source?): String(localized: "Reverting \(source)")
     default: operation.title
     }
   }

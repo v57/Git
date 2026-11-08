@@ -39,7 +39,7 @@ struct AllRepositoriesView: View {
     .kitToolbar(title) { titleView } tools: { tools }
   }
 
-  private var title: String { "All Repositories" }
+  private var title: String { String(localized: "All Repositories") }
 
   private var titleView: KitTitle {
     let shown = repositories.filter { !$0.isHidden }
@@ -283,12 +283,12 @@ extension Date {
   var relativeDay: String {
     let calendar = Calendar.current
     if calendar.isDateInToday(self) { return "today" }
-    if calendar.isDateInYesterday(self) { return "yesterday" }
+    if calendar.isDateInYesterday(self) { return String(localized: "yesterday") }
     let days = calendar.dateComponents([.day], from: calendar.startOfDay(for: self), to: calendar.startOfDay(for: .now))
       .day ?? 0
-    if days < 7 { return "\(days) days" }
-    if days < 14 { return "last week" }
-    if days < 60 { return "\(days / 7) weeks" }
+    if days < 7 { return String(localized: "\(days) days") }
+    if days < 14 { return String(localized: "last week") }
+    if days < 60 { return String(localized: "\(days / 7) weeks") }
     return formatted(.dateTime.month(.abbreviated).year())
   }
 }

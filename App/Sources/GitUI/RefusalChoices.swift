@@ -10,10 +10,10 @@ public enum RefusalChoices {
   public static func message(_ refusal: GitNetworkRefusal) -> String {
     var lines = [refusal.message]
     if offersAddKey(refusal) {
-      lines.append("GitHub doesn’t know this device’s key yet. Add Key on GitHub copies it and opens GitHub’s page for it, then try again: the remote moves to SSH.")
+      lines.append(String(localized: "GitHub doesn’t know this device’s key yet. Add Key on GitHub copies it and opens GitHub’s page for it, then try again: the remote moves to SSH."))
     }
     if refusal.offersHTTPS {
-      lines.append("Use HTTPS This Time signs in with your GitHub account for this action only. The remote stays on HTTPS, and the next action asks again.")
+      lines.append(String(localized: "Use HTTPS This Time signs in with your GitHub account for this action only. The remote stays on HTTPS, and the next action asks again."))
     }
     return lines.joined(separator: "\n\n")
   }

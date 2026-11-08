@@ -114,9 +114,9 @@ struct CommitComposer: View {
   }
 
   private var commitTitle: String {
-    if state.amend { return "Amend Last Commit" }
-    if stagedCount == 0 { return "Commit" }
-    return stagedCount == 1 ? "Commit 1 File" : "Commit \(stagedCount) Files"
+    if state.amend { return String(localized: "Amend Last Commit") }
+    if stagedCount == 0 { return String(localized: "Commit") }
+    return stagedCount == 1 ? String(localized: "Commit 1 File") : String(localized: "Commit \(stagedCount) Files")
   }
 
   private func prefillAmendMessage() async {

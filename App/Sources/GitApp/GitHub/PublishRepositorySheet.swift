@@ -116,9 +116,9 @@ struct PublishRepositorySheet: View {
   private var footerText: String? {
     var lines: [String] = []
     if account.isSignedIn && account.permissions.repositories != .all {
-      lines.append("Pushing uses your own git credentials, since Git’s access is limited to public repositories.")
+      lines.append(String(localized: "Pushing uses your own git credentials, since Git’s access is limited to public repositories."))
     }
-    if session.headCommit == nil { lines.append("Commit something first: there is nothing to push yet.") }
+    if session.headCommit == nil { lines.append(String(localized: "Commit something first: there is nothing to push yet.")) }
     return lines.isEmpty ? nil : lines.joined(separator: " ")
   }
 

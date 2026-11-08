@@ -407,9 +407,9 @@ private struct FailedStep: View {
 
   private var title: String {
     switch error {
-    case .signInDeclined: "Sign-in was declined"
-    case .codeExpired: "The code expired"
-    default: "Couldn’t sign in"
+    case .signInDeclined: String(localized: "Sign-in was declined")
+    case .codeExpired: String(localized: "The code expired")
+    default: String(localized: "Couldn’t sign in")
     }
   }
 

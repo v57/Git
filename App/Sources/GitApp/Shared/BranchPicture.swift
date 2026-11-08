@@ -2,9 +2,16 @@ import ComponentKit
 import GitKit
 import SwiftUI
 
+/// What `counted` counts.
+enum CountedNoun { case commit, file, changedLine }
+
 /// Counts as a menu says them ("1 commit", "3 files").
-func counted(_ count: Int, _ noun: String) -> String {
-  count == 1 ? "1 \(noun)" : "\(count) \(noun)s"
+func counted(_ count: Int, _ noun: CountedNoun) -> String {
+  switch noun {
+  case .commit: count == 1 ? String(localized: "1 commit") : String(localized: "\(count) commits")
+  case .file: count == 1 ? String(localized: "1 file") : String(localized: "\(count) files")
+  case .changedLine: count == 1 ? String(localized: "1 changed line") : String(localized: "\(count) changed lines")
+  }
 }
 
 extension View {
@@ -12,17 +19,18 @@ extension View {
   /// unless `into` can just move forward.
   func mergePreview(_ branch: Branch, into current: String) -> some View {
     let ahead = branch.aheadOfHead
-    let commits = ahead.map { "the \(counted($0, "commit")) from \(branch.name)" } ?? "the commits from \(branch.name)"
+    let commits = ahead.map { String(localized: "the \(counted($0, .commit)) from \(branch.name)") }
+      ?? String(localized: "the commits from \(branch.name)")
     let fastForward = branch.behindHead == 0
     let sentence =
       ahead == 0
-      ? "\(current) already has every commit on \(branch.name)."
+      ? String(localized: "\(current) already has every commit on \(branch.name).")
       : fastForward
-        ? "Moves \(current) forward by \(commits). No merge commit is needed."
-        : "Adds \(commits) to \(current) with a merge commit."
+        ? String(localized: "Moves \(current) forward by \(commits). No merge commit is needed.")
+        : String(localized: "Adds \(commits) to \(current) with a merge commit.")
     return
       self
-      .kitMenuHint(ahead.map { $0 == 0 ? "Up to date" : counted($0, "commit") })
+      .kitMenuHint(ahead.map { $0 == 0 ? String(localized: "Up to date") : counted($0, .commit) })
       .kitMenuPreview(sentence) {
         BranchPicture(.merge(commits: ahead, from: branch.name, into: current, fastForward: fastForward))
       }

@@ -248,7 +248,7 @@ private struct CommitList: View {
     if !layout.toPull.isEmpty {
       let count = layout.toPull.count + 1
       CommitCardHeader(
-        title: "To pull", count: Count(layout.toPull.count), meta: ["from \(upstream)", authors(layout.toPull)],
+        title: "To pull", count: Count(layout.toPull.count), meta: [String(localized: "from \(upstream)"), authors(layout.toPull)],
         systemImage: "arrow.down", hue: .gray, lanes: [], graphWidth: layout.graphWidth
       ) {
         Button("Pull", systemImage: "arrow.down") { Task { await session.pull() } }
@@ -299,8 +299,8 @@ private struct CommitList: View {
   }
 
   private var historyTitle: String {
-    if session.logQuery.search != nil { return "Results" }
-    return session.status?.branch ?? session.status?.headOID.map { String($0.prefix(7)) } ?? "History"
+    if session.logQuery.search != nil { return String(localized: "Results") }
+    return session.status?.branch ?? session.status?.headOID.map { String($0.prefix(7)) } ?? String(localized: "History")
   }
 
   private var historyImage: String {
@@ -310,18 +310,21 @@ private struct CommitList: View {
   private var historyMeta: [String] {
     if let search = session.logQuery.search {
       let count = session.commits.count
-      return ["\(count) commit\(count == 1 ? "" : "s") matching “\(search)”"]
+      return [
+        count == 1
+          ? String(localized: "1 commit matching “\(search)”") : String(localized: "\(count) commits matching “\(search)”")
+      ]
     }
     var parts = [session.repository.url.lastPathComponent]
-    if session.logQuery.allBranches { parts.append("all branches") }
-    if let tag = session.tags.first { parts.append("\(tag.name) is the latest tag") }
+    if session.logQuery.allBranches { parts.append(String(localized: "all branches")) }
+    if let tag = session.tags.first { parts.append(String(localized: "\(tag.name) is the latest tag")) }
     return parts
   }
 
   private func authors(_ commits: [Commit]) -> String {
     var seen = Set<String>()
     let names = commits.map(\.authorName).filter { seen.insert($0).inserted }
-    return names.count > 2 ? "\(names[0]), \(names[1]) and \(names.count - 2) more" : names.joined(separator: ", ")
+    return names.count > 2 ? String(localized: "\(names[0]), \(names[1]) and \(names.count - 2) more") : names.joined(separator: ", ")
   }
 
   /// The commits as rows 1… of a card of `cardSize` rows (row 0 is its header).

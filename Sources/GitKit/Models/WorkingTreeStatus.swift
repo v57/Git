@@ -78,10 +78,10 @@ public enum RepositoryOperation: String, Sendable, Hashable, Codable {
 
   public var title: String {
     switch self {
-    case .merge: "Merging"
-    case .rebase: "Rebasing"
-    case .cherryPick: "Cherry-picking"
-    case .revert: "Reverting"
+    case .merge: String(localized: "Merging")
+    case .rebase: String(localized: "Rebasing")
+    case .cherryPick: String(localized: "Cherry-picking")
+    case .revert: String(localized: "Reverting")
     }
   }
 }

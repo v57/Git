@@ -160,7 +160,7 @@ enum RepositorySource: Hashable, Identifiable {
         revision += 1
         if moved, !commits.isEmpty { await reloadHistory() }
       } catch {
-        if status == nil { report(error, title: "Couldn’t Read the Repository") }
+        if status == nil { report(error, title: String(localized: "Couldn’t Read the Repository")) }
       }
     } while refreshAgain
   }
@@ -241,35 +241,35 @@ enum RepositorySource: Hashable, Identifiable {
   }
 
   func stage(_ changes: [FileChange]) async {
-    await perform("Staging…", failure: "Couldn’t Stage") { try await $0.stage(changes) }
+    await perform(String(localized: "Staging…"), failure: String(localized: "Couldn’t Stage")) { try await $0.stage(changes) }
   }
 
   func unstage(_ changes: [FileChange]) async {
-    await perform("Unstaging…", failure: "Couldn’t Unstage") { try await $0.unstage(changes) }
+    await perform(String(localized: "Unstaging…"), failure: String(localized: "Couldn’t Unstage")) { try await $0.unstage(changes) }
   }
 
   func stageAll() async {
-    await perform("Staging…", failure: "Couldn’t Stage") { try await $0.stageAll() }
+    await perform(String(localized: "Staging…"), failure: String(localized: "Couldn’t Stage")) { try await $0.stageAll() }
   }
 
   func unstageAll() async {
-    await perform("Unstaging…", failure: "Couldn’t Unstage") { try await $0.unstageAll() }
+    await perform(String(localized: "Unstaging…"), failure: String(localized: "Couldn’t Unstage")) { try await $0.unstageAll() }
   }
 
   func discard(_ changes: [FileChange]) async {
-    await perform("Discarding…", failure: "Couldn’t Discard") { try await $0.discard(changes) }
+    await perform(String(localized: "Discarding…"), failure: String(localized: "Couldn’t Discard")) { try await $0.discard(changes) }
   }
 
   func stageLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform("Staging…", failure: "Couldn’t Stage the Lines") { try await $0.stageLines(lines, of: diff) }
+    await perform(String(localized: "Staging…"), failure: String(localized: "Couldn’t Stage the Lines")) { try await $0.stageLines(lines, of: diff) }
   }
 
   func unstageLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform("Unstaging…", failure: "Couldn’t Unstage the Lines") { try await $0.unstageLines(lines, of: diff) }
+    await perform(String(localized: "Unstaging…"), failure: String(localized: "Couldn’t Unstage the Lines")) { try await $0.unstageLines(lines, of: diff) }
   }
 
   func discardLines(_ lines: Set<Int>, of diff: FileDiff) async {
-    await perform("Discarding…", failure: "Couldn’t Discard the Lines") { try await $0.discardLines(lines, of: diff) }
+    await perform(String(localized: "Discarding…"), failure: String(localized: "Couldn’t Discard the Lines")) { try await $0.discardLines(lines, of: diff) }
   }
 
   /// Asks for the name and email at the first commit that needs them (the window shows the sheet).
@@ -287,17 +287,17 @@ enum RepositorySource: Hashable, Identifiable {
         for: .personal, vaults: vaults, reason: CommitIdentity.reason, gitHub: (GitHubAccount.app.user?.name, nil))
     }
     guard let answer else { return false }
-    return await perform("Committing…", failure: "Couldn’t Commit") {
+    return await perform(String(localized: "Committing…"), failure: String(localized: "Couldn’t Commit")) {
       _ = try await $0.commit(message: message, amend: amend, as: answer.profile)
     }
   }
 
   func switchTo(_ branch: Branch) async {
-    await perform("Switching…", failure: "Couldn’t Switch to \(branch.localName)") { try await $0.switchTo(branch) }
+    await perform(String(localized: "Switching…"), failure: String(localized: "Couldn’t Switch to \(branch.localName)")) { try await $0.switchTo(branch) }
   }
 
   func createBranch(_ name: String) async -> Bool {
-    await perform("Creating \(name)…", failure: "Couldn’t Create \(name)") { try await $0.createBranch(name) }
+    await perform(String(localized: "Creating \(name)…"), failure: String(localized: "Couldn’t Create \(name)")) { try await $0.createBranch(name) }
   }
 
   /// What Sync does now, the way GitHub Desktop picks: pull what's behind, else push what's ahead (or a branch with
@@ -307,9 +307,9 @@ enum RepositorySource: Hashable, Identifiable {
 
     var title: String {
       switch self {
-      case .fetch: "Fetch"
-      case .pull: "Pull"
-      case .push: "Push"
+      case .fetch: String(localized: "Fetch")
+      case .pull: String(localized: "Pull")
+      case .push: String(localized: "Push")
       }
     }
 
@@ -334,9 +334,9 @@ enum RepositorySource: Hashable, Identifiable {
       Task { @MainActor in self?.progress = line }
     }
     switch action {
-    case .fetch: await sync(action, "Fetching…", "Couldn’t Fetch") { try await $0.fetch(progress: report) }
-    case .pull: await sync(action, "Pulling…", "Couldn’t Pull") { try await $0.pull(progress: report) }
-    case .push: await sync(action, "Pushing…", "Couldn’t Push") { try await $0.push(progress: report) }
+    case .fetch: await sync(action, String(localized: "Fetching…"), String(localized: "Couldn’t Fetch")) { try await $0.fetch(progress: report) }
+    case .pull: await sync(action, String(localized: "Pulling…"), String(localized: "Couldn’t Pull")) { try await $0.pull(progress: report) }
+    case .push: await sync(action, String(localized: "Pushing…"), String(localized: "Couldn’t Push")) { try await $0.push(progress: report) }
     }
   }
 
@@ -368,7 +368,7 @@ enum RepositorySource: Hashable, Identifiable {
 
   /// Moves the remote to HTTPS and runs the sync again.
   func acceptHTTPS(_ offer: HTTPSOffer) async {
-    let switched = await perform("Switching to HTTPS…", failure: "Couldn’t Switch to HTTPS") {
+    let switched = await perform(String(localized: "Switching to HTTPS…"), failure: String(localized: "Couldn’t Switch to HTTPS")) {
       try await $0.switchToHTTPS(offer.remote)
     }
     if switched { await sync(offer.action) }
