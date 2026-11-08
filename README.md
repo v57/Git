@@ -192,7 +192,10 @@ The app lists two kinds of repositories:
   refreshes every few seconds instead of from FSEvents.
 
 GitEngine compares itself with real git in its tests. It has no `.gitattributes`, autocrlf, submodules,
-shallow clones or SHA-256 repositories yet, and push sends the current branch only, never forced.
+shallow clones or SHA-256 repositories yet, and push sends the current branch only. `push(force:)` forces only with a
+lease (`--force-with-lease` in GitKit; GitEngine refuses unless the remote branch is where it was at the last fetch).
+The one caller that forces is the Mac app's Force Push… (the Push button's context menu, after a confirmation); every
+other push, and the iPhone and iPad app's, is a plain push.
 
 ## Usage
 
