@@ -66,8 +66,9 @@ extension GitTransport {
 /// through the termination handler. At most `maxConcurrentProcesses` gits run at once and the
 /// rest wait their turn, so a burst of refreshes across many repositories can't starve the app.
 public struct GitRunner: Sendable {
-  /// Settings passed as `-c` to every call: unquoted UTF-8 paths and no color codes.
-  static let globalConfig = ["-c", "core.quotepath=false", "-c", "color.ui=never"]
+  /// Settings passed as `-c` to every call: unquoted UTF-8 paths, no color codes, and no `core.fsmonitor`, a command
+  /// a folder's own `.git/config` can name that `git status` would run on every refresh and poll (security audit M8).
+  static let globalConfig = ["-c", "core.quotepath=false", "-c", "color.ui=never", "-c", "core.fsmonitor=false"]
 
   /// How many git processes may run at the same time, across the app.
   public static let maxConcurrentProcesses = 12

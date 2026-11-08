@@ -218,6 +218,34 @@ struct TempRepo {
 }
 
 @Suite struct RepositoryTests {
+  /// A folder's own `.git/config` naming `core.fsmonitor` doesn't run it on status, the summary or a refresh
+  /// (security audit M8).
+  @Test func statusDoesNotRunUntrustedFSMonitor() async throws {
+    let temp = try await TempRepo()
+    try temp.write("a.txt", "a\n")
+    try await temp.commitAll("First")
+    let marker = temp.root.deletingLastPathComponent().appendingPathComponent("fsmonitor-ran")
+    let hook = temp.root.deletingLastPathComponent().appendingPathComponent("fsmonitor.sh")
+    try Data("#!/bin/sh\ntouch '\(marker.path)'\n".utf8).write(to: hook)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: hook.path)
+    try await temp.repo.git(["config", "core.fsmonitor", hook.path])
+    try temp.write("a.txt", "b\n")
+    _ = try await temp.repo.status()
+    _ = try await temp.repo.summary()
+    #expect(!FileManager.default.fileExists(atPath: marker.path))
+    // The same config does run it when git is run without the app's settings, so the test shows something.
+    let plain = Process()
+    plain.executableURL = URL(fileURLWithPath: "/usr/bin/git")
+    plain.arguments = ["status", "--porcelain"]
+    plain.currentDirectoryURL = temp.root
+    plain.environment = ["GIT_CONFIG_GLOBAL": "/dev/null", "GIT_CONFIG_NOSYSTEM": "1", "PATH": "/usr/bin:/bin"]
+    plain.standardOutput = FileHandle.nullDevice
+    plain.standardError = FileHandle.nullDevice
+    try plain.run()
+    plain.waitUntilExit()
+    #expect(FileManager.default.fileExists(atPath: marker.path))
+  }
+
   @Test func statusLogAndCommitFiles() async throws {
     let temp = try await TempRepo()
     let empty = try await temp.repo.status()
