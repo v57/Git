@@ -357,7 +357,24 @@ struct ConflictsScreen: View {
         message: "The repository is on another device: edit the file there, then come back to continue.")
       return
     }
-    KitDesktop.open(session.repository.url.appendingPathComponent(path))
+    let file = session.repository.url.appendingPathComponent(path)
+    // A conflicted script or launcher (`setup.command`, a `.terminal` or `.fileloc`, anything executable) opens in the
+    // text editor, else in Finder: its default app would run it (security audit L17).
+    guard Self.launches(file) else { return KitDesktop.open(file) }
+    if let editor = KitDesktop.defaultApp(for: URL(fileURLWithPath: "/nonexistent/conflict.txt")) {
+      KitDesktop.open([file], withApp: editor.bundleIdentifier)
+    } else {
+      KitDesktop.reveal([file])
+    }
+  }
+
+  /// Whether opening `file` with its default app could run it.
+  private static func launches(_ file: URL) -> Bool {
+    let launchers: Set<String> = [
+      "command", "tool", "terminal", "fileloc", "webloc", "inetloc", "app", "sh", "zsh", "bash", "csh", "ksh", "py",
+      "rb", "pl", "php", "js", "scpt", "applescript", "workflow", "action", "pkg", "mpkg", "dmg", "jar",
+    ]
+    return launchers.contains(file.pathExtension.lowercased()) || FileManager.default.isExecutableFile(atPath: file.path)
   }
 
   /// ⌥⌘← and ⌥⌘→ choose a side for the next open conflict in the selected file.
