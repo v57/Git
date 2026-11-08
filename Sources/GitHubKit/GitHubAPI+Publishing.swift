@@ -8,11 +8,26 @@ public struct GitHubRelease: Sendable, Hashable, Decodable {
   public var body: String?
   public var draft: Bool
   public var htmlURL: String
+  /// The files already uploaded (GitHub lists them with the release).
+  public var assets: [GitHubReleaseAsset]?
 
   enum CodingKeys: String, CodingKey {
-    case id, name, body, draft
+    case id, name, body, draft, assets
     case tagName = "tag_name"
     case htmlURL = "html_url"
+  }
+}
+
+/// A file attached to a release.
+public struct GitHubReleaseAsset: Sendable, Hashable, Decodable {
+  public var id: Int
+  public var name: String
+  public var size: Int
+  public var downloadURL: String
+
+  enum CodingKeys: String, CodingKey {
+    case id, name, size
+    case downloadURL = "browser_download_url"
   }
 }
 
@@ -63,16 +78,52 @@ extension GitHubAPI {
     var draft: Bool
     var prerelease: Bool
     var target_commitish: String?
+    var generate_release_notes: Bool
   }
 
-  /// Creates a release, and its tag from `target` (the default branch without one) if the tag is new.
+  /// Creates a release, and its tag from `target` (the default branch without one) if the tag is new. With
+  /// `generateNotes`, GitHub writes the notes from the commits and pull requests since the last release.
   public func createRelease(
     owner: String, repository: String, tag: String, name: String?, body: String?, draft: Bool = false,
-    prerelease: Bool = false, target: String? = nil
+    prerelease: Bool = false, target: String? = nil, generateNotes: Bool = false
   ) async throws -> GitHubRelease {
     try await send(
       "POST", "/repos/\(Self.pathComponent(owner))/\(Self.pathComponent(repository))/releases",
-      body: NewRelease(tag_name: tag, name: name, body: body, draft: draft, prerelease: prerelease, target_commitish: target))
+      body: NewRelease(
+        tag_name: tag, name: name, body: body, draft: draft, prerelease: prerelease, target_commitish: target,
+        generate_release_notes: generateNotes))
+  }
+
+  /// Uploads a file to a release as `name` (GitHub's upload host). GitHub refuses a name the release already has:
+  /// delete that asset first to replace it.
+  public func uploadReleaseAsset(
+    owner: String, repository: String, releaseID: Int, name: String, data: Data,
+    contentType: String = "application/octet-stream"
+  ) async throws -> GitHubReleaseAsset {
+    var components = URLComponents(string: "https://uploads.github.com")!
+    components.path = "/repos/\(owner)/\(repository)/releases/\(releaseID)/assets"
+    components.queryItems = [URLQueryItem(name: "name", value: name)]
+    guard let url = components.url else { throw GitHubError.invalidResponse }
+    var request = URLRequest.gitHub(url)
+    request.httpMethod = "POST"
+    if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+    request.setValue("application/vnd.github+json", forHTTPHeaderField: "Accept")
+    request.setValue("2022-11-28", forHTTPHeaderField: "X-GitHub-Api-Version")
+    request.setValue(contentType, forHTTPHeaderField: "Content-Type")
+    request.httpBody = data
+    let (body, response) = try await transport.send(request)
+    guard (200..<300).contains(response.statusCode) else { throw GitHubError.from(status: response.statusCode, body: body) }
+    do {
+      return try JSONDecoder().decode(GitHubReleaseAsset.self, from: body)
+    } catch {
+      throw GitHubError.invalidResponse
+    }
+  }
+
+  /// Deletes a release's file.
+  public func deleteReleaseAsset(owner: String, repository: String, id: Int) async throws {
+    _ = try await raw(
+      "DELETE", "/repos/\(Self.pathComponent(owner))/\(Self.pathComponent(repository))/releases/assets/\(id)")
   }
 
   /// The release for `tag`, if there is one.

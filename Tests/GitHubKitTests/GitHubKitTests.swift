@@ -304,3 +304,36 @@ final class ScopedTransport: HTTPTransport, @unchecked Sendable {
     #expect(other.accessGroup == KeychainTokenStore.shared.accessGroup)
   }
 }
+
+@Suite struct ReleaseAssetTests {
+  @Test func uploadsToTheUploadHostWithTheFileName() async throws {
+    let transport = FakeTransport([
+      (201, #"{"id":7,"name":"App-Linux-x64.tar.gz","size":3,"browser_download_url":"https://github.com/o/r/releases/download/v1/App-Linux-x64.tar.gz"}"#)
+    ])
+    let api = GitHubAPI(token: "t", transport: transport)
+    let asset = try await api.uploadReleaseAsset(
+      owner: "o", repository: "r", releaseID: 42, name: "App-Linux-x64.tar.gz", data: Data("abc".utf8))
+    #expect(asset.id == 7)
+    let request = try #require(transport.requests.first)
+    #expect(request.url?.absoluteString == "https://uploads.github.com/repos/o/r/releases/42/assets?name=App-Linux-x64.tar.gz")
+    #expect(request.httpMethod == "POST")
+    #expect(request.value(forHTTPHeaderField: "Authorization") == "Bearer t")
+    #expect(request.httpBody == Data("abc".utf8))
+  }
+
+  @Test func createsAReleaseWithGeneratedNotesAndReadsItsAssets() async throws {
+    let transport = FakeTransport([
+      (201, #"{"id":1,"tag_name":"v1","name":"App 1","body":null,"draft":true,"html_url":"https://github.com/o/r/releases/v1","assets":[]}"#),
+      (200, #"{"id":1,"tag_name":"v1","draft":false,"html_url":"h","assets":[{"id":3,"name":"a.zip","size":1,"browser_download_url":"u"}]}"#),
+      (204, ""),
+    ])
+    let api = GitHubAPI(token: "t", transport: transport)
+    _ = try await api.createRelease(owner: "o", repository: "r", tag: "v1", name: "App 1", body: nil, draft: true, generateNotes: true)
+    #expect(transport.body(0).contains(#""generate_release_notes":true"#))
+    let release = try #require(try await api.release(owner: "o", repository: "r", tag: "v1"))
+    #expect(release.assets?.map(\.name) == ["a.zip"])
+    try await api.deleteReleaseAsset(owner: "o", repository: "r", id: 3)
+    #expect(transport.requests.last?.httpMethod == "DELETE")
+    #expect(transport.requests.last?.url?.path == "/repos/o/r/releases/assets/3")
+  }
+}
