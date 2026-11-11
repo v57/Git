@@ -36,13 +36,34 @@ enum DeviceKeySSH {
     let personal = Vault.shared.personalVault
     let port = address.port ?? 22
     let known = try? personal.store?.knownFingerprint(host: address.host, port: port)
+    let trusted = vaultFingerprints(at: address.host, port: port)
     return SSHServer(
       host: address.host, port: port, user: address.user ?? "git", key: try key(),
       trust: .known(
         known,
         otherwise: .ask { key in
-          await VaultHostKeyRequest.shared.approve(key.fingerprint, keyType: key.type, host: key.host, port: key.port, in: personal)
+          if trusted.contains(key.fingerprint) { return true }
+          return await VaultHostKeyRequest.shared.approve(
+            key.fingerprint, keyType: key.type, host: key.host, port: key.port, in: personal)
         }))
+  }
+
+  /// The keys the vault already trusts for its hosts at this address (G-010): a Mac that published itself as
+  /// "Studio.local", or a host whose other addresses include it. Its pin belongs to that host's route, so it doesn't
+  /// pin the bare address; a key that matches it goes on without asking, and any other key is asked about as before.
+  private static func vaultFingerprints(at address: String, port: Int) -> Set<String> {
+    let address = address.lowercased()
+    var fingerprints = Set<String>()
+    let personal = Vault.shared.personalVault
+    for vault in personal === Vault.shared ? [personal] : [Vault.shared, personal] {
+      for host in vault.hosts where host.port == port {
+        guard vault.addresses(of: host).contains(where: { $0.lowercased() == address }) else { continue }
+        for fingerprint in [vault.knownHost(for: host)?.fingerprint, host.hub?.hostKeyFingerprint] {
+          if let fingerprint, !fingerprint.isEmpty { fingerprints.insert(fingerprint) }
+        }
+      }
+    }
+    return fingerprints
   }
 
   private static func key() throws -> SSHKey {
