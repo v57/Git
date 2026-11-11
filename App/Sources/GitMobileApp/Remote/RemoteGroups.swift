@@ -60,10 +60,8 @@ import VaultKit
     }
     guard !failures.isEmpty else { return }
     let noun = failures.count == 1 ? failures[0].name : String(localized: "\(failures.count) repositories")
-    let reasons = failures.map { failure in
-      let message = failure.message.split(separator: "\n").first.map(String.init) ?? ""
-      return failures.count == 1 ? message : "\(failure.name): \(message)"
-    }
+    // One line per distinct reason, not one per repository (G-011).
+    let reasons = RemoteFailure.reasons(failures, lines: 1)
     failure = RemoteFailure(
       title: String(localized: "Couldn’t refresh \(noun)"),
       message: (reasons + [String(localized: "Their marks are as their device last wrote them, with how long ago.")])

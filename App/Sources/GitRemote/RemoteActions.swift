@@ -46,9 +46,25 @@ public struct RemoteFailure: Identifiable, Sendable {
     guard !failures.isEmpty else { return nil }
     let noun = failures.count == 1 ? "repository" : "\(failures.count) repositories"
     title = "Couldn't \(action.title.lowercased()) \(failures.count == 1 ? failures[0].name : noun)"
-    message = failures.map { failure in
-      let message = failure.message.split(separator: "\n").prefix(3).joined(separator: "\n")
-      return failures.count == 1 ? message : "\(failure.name): \(message)"
-    }.joined(separator: "\n\n")
+    message = Self.reasons(failures, lines: 3).joined(separator: "\n\n")
+  }
+
+  /// One paragraph per distinct reason, its first `lines` lines, in the order first seen (G-011: a refresh of 83
+  /// repositories with Vault key only on said the same sentence 83 times). A reason all of them share stands alone
+  /// (the title names how many); otherwise each says which: up to three names, or "12 repositories".
+  public static func reasons(_ failures: [(name: String, message: String)], lines: Int) -> [String] {
+    var order: [String] = []
+    var names: [String: [String]] = [:]
+    for failure in failures {
+      let message = failure.message.split(separator: "\n").prefix(lines).joined(separator: "\n")
+      if names[message] == nil { order.append(message) }
+      names[message, default: []].append(failure.name)
+    }
+    guard order.count > 1 else { return order }
+    return order.map { message in
+      let group = names[message] ?? []
+      let who = group.count <= 3 ? group.joined(separator: ", ") : String(localized: "\(group.count) repositories")
+      return "\(who): \(message)"
+    }
   }
 }
