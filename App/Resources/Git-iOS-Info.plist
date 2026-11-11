@@ -10,6 +10,10 @@
 	<true/>
 	<key>LSSupportsOpeningDocumentsInPlace</key>
 	<true/>
+	<!-- With LSSupportsOpeningDocumentsInPlace, the Files app shows Documents as On My iPhone ▸ Git. Here, not as
+	     INFOPLIST_KEY_UIFileSharingEnabled: Xcode left that setting out of the generated plist (G-009). -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Git signs in to your Macs over SSH to work with the repositories there.</string>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
