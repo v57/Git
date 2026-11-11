@@ -64,4 +64,12 @@ extension RemoteRepository {
     }
     return nil
   }
+
+  /// When `lastSeen`'s device wrote it, when the vault knows.
+  public var lastSeenDate: Date? {
+    for target in targets {
+      if let device = target.device, statuses[device] != nil { return statusDates[device] }
+    }
+    return nil
+  }
 }

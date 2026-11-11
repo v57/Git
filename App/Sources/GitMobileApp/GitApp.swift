@@ -397,6 +397,8 @@ struct RepositoriesSidebar: View {
           .buttonStyle(.kitIcon)
       }
     }
+    // Pull to refresh reads the listed repositories on their devices (G-008).
+    .refreshable { await groups.refresh(remote.filter { !groups.removed.contains($0.id) }) }
     .navigationTitle("Git")
     .kitNotice(item: $groups.failure, title: \.title, message: \.message)
     .kitConfirmation(
@@ -412,9 +414,15 @@ struct RepositoriesSidebar: View {
   /// Its branch when its device last said (the vault's status), then the devices it is on, as Code lists its
   /// projects: "via Hub" after each repeated itself on every row.
   private func subtitle(_ repository: RemoteRepository) -> String {
-    let places = repository.targets.map(\.name).joined(separator: ", ")
-    guard let branch = repository.lastSeen?.status.branch else { return places }
-    return branch + " · " + places
+    var parts: [String] = []
+    if let branch = repository.lastSeen?.status.branch { parts.append(branch) }
+    // The marks are the device's last word until this device reads it: how old that is (G-008), before the places,
+    // which a narrow row cuts.
+    if !groups.isChecked(repository), groups.activity[repository.id] == nil, let date = repository.lastSeenDate {
+      parts.append(String(localized: "as of \(LastSeenAge.text(date))"))
+    }
+    parts.append(repository.targets.map(\.name).joined(separator: ", "))
+    return parts.joined(separator: " · ")
   }
 
   /// What's running on it, else its changes and commits to push and pull when this device or its own last looked.

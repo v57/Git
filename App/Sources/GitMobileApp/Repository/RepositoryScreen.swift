@@ -94,7 +94,7 @@ struct RepositoryScreen: View {
   /// How its device last saw it (the vault's status), while it connects and when it can't.
   @ViewBuilder private var lastSeen: some View {
     if case .remote(let repository) = source, let lastSeen = repository.lastSeen {
-      LastSeenChanges(device: lastSeen.device, status: lastSeen.status).padding(.top, 8)
+      LastSeenChanges(device: lastSeen.device, status: lastSeen.status, date: repository.lastSeenDate).padding(.top, 8)
     }
   }
 

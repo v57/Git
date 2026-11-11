@@ -11,7 +11,8 @@
   /// name in the app, `group` a vault group to show it in (both apps make it a vault project there),
   /// `fallbacks` the machine's other addresses (tried when `host` doesn't answer) and `status` how the device last saw
   /// it (a `VaultProject.Status`: `{"branch", "changeCount", "ahead", "behind", "hasUpstream", "conflictCount", "files":
-  /// [{"path", "kind", "area"}]}`), shown before it connects. `icon` is a PNG file the grouped project's icon is read from.
+  /// [{"path", "kind", "area"}]}`), shown before it connects, and `statusAge` how many seconds old it is. `icon` is a
+  /// PNG file the grouped project's icon is read from.
   ///
   ///     SIMCTL_CHILD_GIT_DEBUG_REMOTE='{…}' xcrun simctl launch <udid> dev.v57.git
   ///     GIT_DEBUG_REMOTE='{…}' open -g -n Git.app --args --in-memory
@@ -28,6 +29,8 @@
       public var group: String?
       public var fallbacks: [String]?
       public var status: VaultProject.Status?
+      /// How many seconds before launch `status` was written (its age in the list).
+      public var statusAge: Double?
       public var icon: String?
     }
 
@@ -40,6 +43,8 @@
     /// The id of the repository `remote` becomes (`RemoteRepository.id`), which a vault project of a `group` takes too.
     public static func id(of remote: Remote) -> String { "debug-" + remote.name }
 
+    private static let launch = Date()
+
     public static var repositories: [RemoteRepository] {
       remotes.enumerated().map { index, remote in
         let device = "debug-\(index)"
@@ -48,7 +53,8 @@
           port: remote.port ?? 22, user: remote.user, directory: remote.directory,
           detail: remote.device == nil ? "debug" : "via Hub", device: device)
         return RemoteRepository(
-          id: id(of: remote), name: remote.name, targets: [target], statuses: remote.status.map { [device: $0] } ?? [:])
+          id: id(of: remote), name: remote.name, targets: [target], statuses: remote.status.map { [device: $0] } ?? [:],
+          statusDates: remote.statusAge.map { [device: launch.addingTimeInterval(-$0)] } ?? [:])
       }
     }
 

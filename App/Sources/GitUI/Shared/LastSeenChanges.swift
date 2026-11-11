@@ -9,19 +9,22 @@ import VaultKit
 public struct LastSeenChanges: View {
   let device: String
   let status: VaultProject.Status
+  /// When the device wrote it, for its age ("2 hr. ago"); nil when the vault doesn't say.
+  var date: Date?
   /// How many files it lists before "and N more".
   var limit = 6
 
-  public init(device: String, status: VaultProject.Status, limit: Int = 6) {
+  public init(device: String, status: VaultProject.Status, date: Date? = nil, limit: Int = 6) {
     self.device = device
     self.status = status
+    self.date = date
     self.limit = limit
   }
 
   public var body: some View {
     let files = status.files.prefix(limit)
     VStack(alignment: .leading, spacing: 6) {
-      Text("Last seen on \(device): \(glance)")
+      Text(date.map { "Last seen on \(device) \(LastSeenAge.text($0)): \(glance)" } ?? "Last seen on \(device): \(glance)")
         .kitFont(.caption)
         .foregroundStyle(.kitSecondary)
         .fixedSize(horizontal: false, vertical: true)
@@ -67,5 +70,14 @@ public struct LastSeenChanges: View {
     if status.ahead > 0 { parts.append(String(localized: "\(status.ahead) to push")) }
     if status.behind > 0 { parts.append(String(localized: "\(status.behind) to pull")) }
     return parts.joined(separator: ", ")
+  }
+}
+
+/// How old a device's last status is: "2 hr. ago", "just now" (G-008: the marks only change when that device's Git
+/// writes them, so they say when that was).
+public enum LastSeenAge {
+  public static func text(_ date: Date, now: Date = .now) -> String {
+    if now.timeIntervalSince(date) < 60 { return String(localized: "just now") }
+    return date.formatted(.relative(presentation: .numeric, unitsStyle: .abbreviated))
   }
 }

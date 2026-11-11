@@ -26,6 +26,50 @@ import VaultKit
     checked[repository.id] ?? repository.lastSeen?.status.summary
   }
 
+  /// Whether this device read it itself since launch (a group action or a refresh), rather than showing what its
+  /// device last wrote to the vault.
+  func isChecked(_ repository: RemoteRepository) -> Bool { checked[repository.id] != nil }
+
+  /// The list's pull to refresh (G-008): reads how each repository is now on its device, over SSH and without
+  /// fetching, a few at a time. Where a device doesn't answer, its row keeps the vault's status with its age, and a
+  /// notice says which couldn't be read.
+  func refresh(_ repositories: [RemoteRepository]) async {
+    let repositories = repositories.filter { activity[$0.id] == nil }
+    guard !repositories.isEmpty else { return }
+    var failures: [(name: String, message: String)] = []
+    await withTaskGroup(of: (RemoteRepository, Result<RepositorySummary, Error>).self) { group in
+      var pending = repositories[...]
+      func addNext() {
+        guard let repository = pending.popFirst() else { return }
+        group.addTask {
+          do {
+            return (repository, .success(try await RemoteRepositories.status(of: repository)))
+          } catch {
+            return (repository, .failure(error))
+          }
+        }
+      }
+      for _ in 0..<4 { addNext() }
+      for await (repository, result) in group {
+        switch result {
+        case .success(let summary): checked[repository.id] = summary
+        case .failure(let error): failures.append((repository.name, RemoteRepositories.describe(error)))
+        }
+        addNext()
+      }
+    }
+    guard !failures.isEmpty else { return }
+    let noun = failures.count == 1 ? failures[0].name : String(localized: "\(failures.count) repositories")
+    let reasons = failures.map { failure in
+      let message = failure.message.split(separator: "\n").first.map(String.init) ?? ""
+      return failures.count == 1 ? message : "\(failure.name): \(message)"
+    }
+    failure = RemoteFailure(
+      title: String(localized: "Couldn’t refresh \(noun)"),
+      message: (reasons + [String(localized: "Their marks are as their device last wrote them, with how long ago.")])
+        .joined(separator: "\n\n"))
+  }
+
   func setHidden(_ ids: [String], _ isHidden: Bool) {
     if isHidden { hidden.formUnion(ids) } else { hidden.subtract(ids) }
   }

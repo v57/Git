@@ -54,15 +54,20 @@ public struct RemoteRepository: Identifiable, Hashable, Sendable {
   /// How it was on each device when Git there last looked, by vault device (`VaultProject.statuses`): shown before
   /// it connects (`lastSeen`).
   public var statuses: [String: VaultProject.Status]
+  /// When each device wrote its status, by vault device (the status field's date in the vault): how old the marks
+  /// are. A device writes it when the repository changes there while Git runs, so it says when it was last known so.
+  public var statusDates: [String: Date]
 
   public init(
-    id: String, name: String, icon: Data? = nil, targets: [RemoteTarget], statuses: [String: VaultProject.Status] = [:]
+    id: String, name: String, icon: Data? = nil, targets: [RemoteTarget], statuses: [String: VaultProject.Status] = [:],
+    statusDates: [String: Date] = [:]
   ) {
     self.id = id
     self.name = name
     self.icon = icon
     self.targets = targets
     self.statuses = statuses
+    self.statusDates = statusDates
   }
 
   /// The devices it is on, as Code lists its projects.
@@ -97,7 +102,8 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
       let targets = targets(for: project, vault: vault)
       guard !targets.isEmpty else { return nil }
       return RemoteRepository(
-        id: project.id, name: project.name, icon: project.icon, targets: targets, statuses: project.statuses)
+        id: project.id, name: project.name, icon: project.icon, targets: targets, statuses: project.statuses,
+        statusDates: statusDates(of: project, vault: vault))
     }
     for saved in saved {
       guard let host = vault.host(id: saved.hostID) else { continue }
@@ -109,6 +115,31 @@ public struct SavedRemote: Codable, Hashable, Identifiable, Sendable {
       repositories += DebugRemotes.repositories
     #endif
     return repositories.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+  }
+
+  /// When each device wrote the project's status, from the vault's field dates; read again only when the statuses
+  /// change, since the list is built on every redraw.
+  private static func statusDates(of project: VaultProject, vault: Vault) -> [String: Date] {
+    guard !project.statuses.isEmpty else { return [:] }
+    if let cached = statusDateCache[project.id], cached.statuses == project.statuses { return cached.dates }
+    let prefix = "status."
+    var dates: [String: Date] = [:]
+    for (key, change) in (try? vault.store?.fieldChanges(id: project.id)) ?? [:] where key.hasPrefix(prefix) {
+      dates[String(key.dropFirst(prefix.count))] = change.date
+    }
+    statusDateCache[project.id] = (project.statuses, dates)
+    return dates
+  }
+
+  private static var statusDateCache: [String: (statuses: [String: VaultProject.Status], dates: [String: Date])] = [:]
+
+  /// How the repository is now on its device, read over SSH without fetching, pulling or pushing: what a refresh of
+  /// the list shows in place of the device's last status.
+  public static func status(of repository: RemoteRepository, vault: Vault = .shared) async throws -> RepositorySummary {
+    if let refusal = GitSecurity.level.otherDeviceRefusal { throw GitError(message: refusal) }
+    let opened = try await open(repository, vault: vault)
+    defer { opened.transport.close() }
+    return RepositorySummary(try await opened.repository.summaryStatus())
   }
 
   /// The devices on the user's Hubs (or Macs that published themselves) that have the project, in its folder there,
