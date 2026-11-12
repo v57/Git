@@ -83,7 +83,7 @@ struct ChangesPane: View {
   }
 
   private func meta(_ changes: [FileChange]) -> [String] {
-    var parts = [changes.count == 1 ? "1 file" : "\(changes.count) files"]
+    var parts = [String(localized: "\(changes.count) files")]
     let counts = changes.compactMap { model.lineCounts[$0.id] }
     if !counts.isEmpty {
       parts.append("+\(counts.compactMap(\.added).reduce(0, +)) −\(counts.compactMap(\.removed).reduce(0, +))")

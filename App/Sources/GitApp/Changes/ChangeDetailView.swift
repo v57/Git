@@ -176,7 +176,7 @@ struct ChangeDetailView: View {
       Diffstat(added: diff.additions, removed: diff.deletions)
       Spacer()
       if !selection.isEmpty, diff.supportsLineSelection {
-        Count(selection.count == 1 ? "1 line" : "\(selection.count) lines")
+        Count(String(localized: "\(selection.count) lines"))
         lineButtons(change: change, diff: diff)
       } else if diff.ignoresWhitespace {
         Text("Whitespace hidden: stage whole files").kitFont(.caption)

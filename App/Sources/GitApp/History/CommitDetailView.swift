@@ -93,7 +93,7 @@ private struct CommitDetail: View {
 
   private var headerMeta: [String] {
     let count = files?.count
-    return [commit.shortID, count.map { $0 == 1 ? "1 file changed" : "\($0) files changed" } ?? ""]
+    return [commit.shortID, count.map { String(localized: "\($0) files changed") } ?? ""]
   }
 
   // MARK: Author

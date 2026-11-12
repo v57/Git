@@ -287,9 +287,9 @@ struct RepositoryList: View {
     let listed = layout.repositories().count(where: isListed)
     let count =
       more > 0 && !showsMore
-      ? "\(listed - more) of \(listed)" : shown.count == 1 ? "1 repository" : "\(shown.count) repositories"
+      ? "\(listed - more) of \(listed)" : String(localized: "\(shown.count) repositories")
     if let order = sort.metaTitle { return [order, count] }
-    return [count, attention > 0 ? "\(attention) with changes" : ""]
+    return [count, attention > 0 ? String(localized: "\(attention) with changes") : ""]
   }
 
   /// The All Repositories page, then Sort By and Show, as on the board: the sort's options, then the filters and
@@ -379,7 +379,7 @@ struct RepositoryList: View {
     let place =
       group.paths[library.vault.deviceID].map { ($0 as NSString).abbreviatingWithTildeInPath }
       ?? layout.title(of: group)
-    let count = members.count == 1 ? "1 repository" : "\(members.count) repositories"
+    let count = String(localized: "\(members.count) repositories")
     return GroupHelp(meta: [place == group.name ? nil : place, count].compactMap { $0 }.joined(separator: " · "), attention: attention)
   }
 

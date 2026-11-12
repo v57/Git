@@ -140,7 +140,7 @@ private struct ChangeList: View {
     }
   }
 
-  private func fileCount(_ count: Int) -> String { count == 1 ? "1 file" : "\(count) files" }
+  private func fileCount(_ count: Int) -> String { String(localized: "\(count) files") }
 
   /// The lines a list of changes adds and removes, `nil` while they're counted.
   private func lines(_ changes: [FileChange]) -> (added: Int, removed: Int)? {

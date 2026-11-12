@@ -49,8 +49,9 @@ struct AllRepositoriesView: View {
     return KitTitle(
       title,
       meta: [
-        shown.count == 1 ? "1 repository" : "\(shown.count) repositories",
-        changed > 0 ? "\(changed) with changes" : "", toPush > 0 ? "\(toPush) to push" : "",
+        String(localized: "\(shown.count) repositories"),
+        changed > 0 ? String(localized: "\(changed) with changes") : "",
+        toPush > 0 ? String(localized: "\(toPush) to push") : "",
       ],
       systemImage: "square.grid.2x2", hue: .indigo, status: isFetching ? .working : .idle)
   }

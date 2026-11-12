@@ -46,7 +46,7 @@ struct SidebarView: View {
     let repositories = repositories
     RepositorySidebar(shown: shown, filter: $filter, columns: $columns) {
       // The window's account, while there is more than Personal.
-      VaultAccountPicker(meta: repositories.count == 1 ? "1 repository" : "\(repositories.count) repositories")
+      VaultAccountPicker(meta: String(localized: "\(repositories.count) repositories"))
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
       RepositoryList(selection: $selection, selected: $selected, shown: shown, filter: filter)
         .kitSticky(top: .titleWhileVisible, bottom: .none)
@@ -317,8 +317,9 @@ private struct RepositorySections: View {
     if let activity = session.activity, Self.remoteActivities.contains(activity) {
       return [session.progress ?? activity.title]
     }
-    let fetched = session.lastFetched.map { "fetched \($0.kitFormatted(.ago))" } ?? "never fetched"
-    return [remotes.count == 1 ? remotes[0] : "\(remotes.count) remotes", fetched]
+    let fetched =
+      session.lastFetched.map { String(localized: "fetched \($0.kitFormatted(.ago))") } ?? String(localized: "never fetched")
+    return [remotes.count == 1 ? remotes[0] : String(localized: "\(remotes.count) remotes"), fetched]
   }
 
   private static let remoteActivities: [RepositorySession.Activity] = [.fetching, .pulling, .pushing]

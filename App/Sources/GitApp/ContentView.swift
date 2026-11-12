@@ -299,16 +299,18 @@ struct RepositoryScreen: View {
   private var modeSubtitle: [String] {
     // Until the status is in, the sidebar's summary of the repository.
     let summary = session.status.map(RepositorySummary.init) ?? library.summaries[library.key(of: session)]
-    let branch = summary?.branch ?? summary?.headOID.map { String($0.prefix(7)) } ?? "No commits"
+    let branch = summary?.branch ?? summary?.headOID.map { String($0.prefix(7)) } ?? String(localized: "No commits")
     switch state.mode {
     case .changes:
       let count = summary?.changeCount ?? 0
-      return [branch, count == 0 ? "clean" : "\(count) changed file\(count == 1 ? "" : "s")"]
+      return [branch, count == 0 ? String(localized: "clean") : String(localized: "\(count) changed files")]
     case .history, .stashes:
       var parts = [branch]
-      if let ahead = summary?.ahead, ahead > 0 { parts.append("\(ahead) commit\(ahead == 1 ? "" : "s") to push") }
-      if let behind = summary?.behind, behind > 0 { parts.append("\(behind) to pull") }
-      if parts.count == 1 { parts.append(summary?.hasUpstream == true ? "up to date" : "not published") }
+      if let ahead = summary?.ahead, ahead > 0 { parts.append(String(localized: "\(ahead) commits to push")) }
+      if let behind = summary?.behind, behind > 0 { parts.append(String(localized: "\(behind) to pull")) }
+      if parts.count == 1 {
+        parts.append(summary?.hasUpstream == true ? String(localized: "up to date") : String(localized: "not published"))
+      }
       return parts
     }
   }

@@ -194,7 +194,7 @@ struct ConflictsScreen: View {
         }
         if !mergedCleanly.isEmpty {
           ConflictFilesCard(
-            title: "Merged cleanly", meta: mergedCleanly.count == 1 ? "1 file" : "\(mergedCleanly.count) files",
+            title: "Merged cleanly", meta: String(localized: "\(mergedCleanly.count) files"),
             systemImage: "checkmark", hue: .green, status: .idle
           ) {
             ForEach(mergedCleanly) { change in

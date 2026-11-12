@@ -80,11 +80,11 @@ struct RepositoryWelcome: View {
     guard let summary else { return nil }
     if let operation = summary.operation { return (operation.title, .orange) }
     if summary.changeCount > 0 {
-      return (summary.changeCount == 1 ? "1 change" : "\(summary.changeCount) changes", .orange)
+      return (String(localized: "\(summary.changeCount) changes"), .orange)
     }
-    if summary.ahead > 0 { return ("\(summary.ahead) to push", .orange) }
-    if summary.behind > 0 { return ("\(summary.behind) to pull", .blue) }
-    return ("Up to date", .green)
+    if summary.ahead > 0 { return (String(localized: "\(summary.ahead) to push"), .orange) }
+    if summary.behind > 0 { return (String(localized: "\(summary.behind) to pull"), .blue) }
+    return (String(localized: "Up to date"), .green)
   }
 
   // MARK: Actions

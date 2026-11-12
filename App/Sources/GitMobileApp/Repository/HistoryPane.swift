@@ -47,9 +47,9 @@ struct HistoryPane: View {
 
   private var meta: [String] {
     let count = model.commits.count
-    let shown = model.hasMoreCommits ? "\(count)+ commits" : count == 1 ? "1 commit" : "\(count) commits"
+    let shown = model.hasMoreCommits ? String(localized: "\(count)+ commits") : String(localized: "\(count) commits")
     guard let ahead = model.status?.ahead, ahead > 0 else { return [shown] }
-    return [shown, "\(ahead) to push"]
+    return [shown, String(localized: "\(ahead) to push")]
   }
 
   /// The commits before the upstream's tip: the first `ahead` of the current branch.
@@ -183,7 +183,7 @@ struct CommitScreen: View {
   private func meta(_ files: [CommitFile]) -> [String] {
     let added = files.compactMap { $0.lines?.added }.reduce(0, +)
     let removed = files.compactMap { $0.lines?.removed }.reduce(0, +)
-    return [files.count == 1 ? "1 file" : "\(files.count) files", "+\(added) −\(removed)"]
+    return [String(localized: "\(files.count) files"), "+\(added) −\(removed)"]
   }
 }
 
