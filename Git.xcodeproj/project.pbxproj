@@ -24,6 +24,9 @@
 				Assets.xcassets = (
 					macos,
 				);
+				PrivacyInfo.xcprivacy = (
+					ios,
+				);
 			};
 			target = 000000000000000100000000 /* Git */;
 		};
