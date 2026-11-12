@@ -261,7 +261,7 @@ func divergenceText(ahead: Int?, behind: Int?, base: String) -> String? {
   let ahead = ahead ?? 0
   let behind = behind ?? 0
   switch (ahead > 0, behind > 0) {
-  case (true, true): return String(localized: "\(ahead) ahead, \(behind) behind \(base)")
+  case (true, true): return String(localized: "\(ahead) ahead") + ", " + String(localized: "\(behind) behind \(base)")
   case (true, false): return String(localized: "\(ahead) ahead of \(base)")
   case (false, true): return String(localized: "\(behind) behind \(base)")
   case (false, false): return nil

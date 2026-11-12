@@ -226,9 +226,11 @@ private struct CommitList: View {
         options: [("All Branches", true), ("Current Branch", false)])
       Spacer()
       let authors = layout.authors
-      Text(
-        "\(session.commits.count)\(session.hasMoreCommits ? "+" : "") commit\(session.commits.count == 1 ? "" : "s") · \(authors) author\(authors == 1 ? "" : "s")"
-      )
+      let commits = session.commits.count
+      Text(verbatim: [
+        session.hasMoreCommits ? String(localized: "\(commits)+ commits") : String(localized: "\(commits) commits"),
+        String(localized: "\(authors) authors"),
+      ].joined(separator: " · "))
       .kitFont(.caption)
       .contentTransition(.numericText(value: Double(session.commits.count)))
       .animation(.kit, value: session.commits.count)

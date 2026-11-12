@@ -253,7 +253,7 @@ struct ConflictsScreen: View {
       let open = file.blocks.count - choices.count
       if open > 0 {
         return file.blocks.count == 1
-          ? String(localized: "Needs a choice") : String(localized: "\(open) of \(file.blocks.count) blocks need a choice")
+          ? String(localized: "Needs a choice") : String(localized: "\(open.formatted()) of \(file.blocks.count) blocks need a choice")
       }
       let kinds = Set(choices.values)
       if kinds == [.current] { return String(localized: "Resolved · kept Current") }
