@@ -60,16 +60,24 @@ for target in package.targets {
     ]
   case "GitHubUI":
     target.dependencies += [
-      .product(name: "SwiftUI", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
+      .product(name: "SwiftUI", package: "SwiftUI"),
     ]
   case "GitEngine":
     target.dependencies += [.product(name: "CryptoKit", package: "SwiftUI")]
   case "GitKit":
     target.dependencies += [
-      .product(name: "os", package: "SwiftUI"), .product(name: "SwiftUIPortability", package: "SwiftUI"),
+      .product(name: "os", package: "SwiftUI"),
     ]
   default: break
   }
+}
+// Foundation's APIs swift-corelibs-foundation lacks (`String(localized:)`, …): imported everywhere, as Foundation
+// brings them on Apple platforms.
+for target in package.targets where target.type == .regular || target.type == .executable {
+  target.dependencies.append(.product(name: "SwiftUIPortability", package: "SwiftUI"))
+  target.swiftSettings = (target.swiftSettings ?? []) + [
+    .unsafeFlags(["-Xfrontend", "-import-module", "-Xfrontend", "SwiftUIPortability"])
+  ]
 }
 #if os(Linux)
 // zlib under Apple's module name for GitEngine (`apt install zlib1g-dev`).

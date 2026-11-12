@@ -1,5 +1,9 @@
 import Foundation
 
+#if canImport(FoundationNetworking)
+  import FoundationNetworking
+#endif
+
 /// A release as GitHub returns it.
 public struct GitHubRelease: Sendable, Hashable, Decodable {
   public var id: Int
