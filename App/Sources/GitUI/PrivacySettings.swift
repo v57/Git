@@ -57,7 +57,7 @@ public struct PrivacySettingsPane<Features: View>: View {
         #endif
         KitPrivacyParty(
           "Your other devices", systemImage: "laptopcomputer", hue: .teal,
-          when: "When you open a repository on one, or Git reopens it at launch, and when you act on one.",
+          when: "When you open a repository on one or press its Connect, and when you act on one. At launch it waits for Connect.",
           why: """
             Git connects straight to that device over SSH and runs git there. Its git then talks to its servers \
             with its own keys.
