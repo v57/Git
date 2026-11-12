@@ -34,7 +34,7 @@ struct RemoveProjectsSheet: View {
     let sections = sections
     let items = sections.flatMap(\.items)
     KitSheet(
-      title: items.count == 1 ? "Remove 1 Project?" : "Remove All \(items.count) Projects?", meta: "\(meta(items))",
+      title: "Remove All \(items.count) Projects?", meta: "\(meta(items))",
       systemImage: "trash", hue: .red, width: 520
     ) {
       ForEach(sections) { section in
@@ -84,11 +84,11 @@ struct RemoveProjectsSheet: View {
     let ahead = summaries.reduce(0) { $0 + $1.ahead }
     var unsaved: [String] = []
     if changed > 0 {
-      unsaved.append(changed == 1 ? String(localized: "1 has changes") : String(localized: "\(changed) have changes"))
+      unsaved.append(String(localized: "\(changed) have changes"))
     }
     if ahead > 0 {
       unsaved.append(
-        ahead == 1 ? String(localized: "1 commit isn't pushed") : String(localized: "\(ahead) commits aren't pushed"))
+        String(localized: "\(ahead) commits aren't pushed"))
     }
     let left = String(
       localized: "They leave Code, Dev, Markdown and the other v57 apps on this Mac. Their folders stay on disk.")

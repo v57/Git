@@ -303,7 +303,7 @@ struct RepositoriesSidebar: View {
     ) {
       KitSection(
         idiom == .phone ? "On This iPhone" : "On This iPad",
-        meta: [local.count == 1 ? String(localized: "1 repository") : String(localized: "\(local.count) repositories")], systemImage: "internaldrive",
+        meta: [String(localized: "\(local.count) repositories")], systemImage: "internaldrive",
         hue: .orange
       ) {
         ForEach(local.filter { matches($0.name) }, id: \.url) { repository in
@@ -376,7 +376,7 @@ struct RepositoriesSidebar: View {
       if !opened.isEmpty {
         KitSection(
           "Opened on a Mac",
-          meta: [opened.count == 1 ? String(localized: "1 repository") : String(localized: "\(opened.count) repositories")], systemImage: "desktopcomputer",
+          meta: [String(localized: "\(opened.count) repositories")], systemImage: "desktopcomputer",
           hue: .blue
         ) {
           ForEach(opened.filter { matches($0.name) }) { repository in
@@ -401,7 +401,7 @@ struct RepositoriesSidebar: View {
     .status {
       HStack(spacing: 6) {
         StatusDot(hue: deviceCount > 0 ? .green : .gray)
-        Text(deviceCount == 0 ? "No devices" : deviceCount == 1 ? "1 device" : "\(deviceCount) devices")
+        Text(deviceCount == 0 ? "No devices" : "\(deviceCount) devices")
         Spacer(minLength: 0)
         // The kit's icon button: `.labelStyle(.iconOnly)` around `.kitPlain` lost to the style's own label style.
         Button("Settings", systemImage: "gearshape") { sheet = .settings }

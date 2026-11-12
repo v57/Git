@@ -200,7 +200,6 @@ private struct SyncButtons: View {
     if !hasUpstream { return "Push \(branch) and track it" }
     switch ahead {
     case ...0: return "Push"
-    case 1: return "Push 1 commit"
     default: return "Push \(ahead) commits"
     }
   }
@@ -674,8 +673,7 @@ private struct DeleteEverywhereSheet: View {
 
   private var warnings: [String] {
     func commits(_ count: Int, on name: String, notOn other: String) -> String {
-      count == 1
-        ? String(localized: "1 commit on \(name) isn't on \(other).") : String(localized: "\(count) commits on \(name) aren't on \(other).")
+      String(localized: "\(count) commits on \(name) aren't on \(other).")
     }
     var warnings: [String] = []
     if let ahead = branch.aheadOfHead, ahead > 0 {

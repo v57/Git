@@ -86,12 +86,12 @@ public struct HunkCards: View {
     let added = hunk.lines.count { $0.kind == .added }
     let removed = hunk.lines.count { $0.kind == .removed }
     var parts: [String] = []
-    if added > 0 { parts.append(added == 1 ? String(localized: "1 line added") : String(localized: "\(added) lines added")) }
+    if added > 0 { parts.append(String(localized: "\(added) lines added")) }
     if removed > 0 {
       parts.append(
         added > 0
           ? String(localized: "\(removed) removed")
-          : removed == 1 ? String(localized: "1 line removed") : String(localized: "\(removed) lines removed"))
+          : String(localized: "\(removed) lines removed"))
     }
     let counts = parts.joined(separator: ", ")
     return hunk.section.isEmpty ? counts : String(localized: "\(counts) in \(hunk.section)")

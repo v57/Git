@@ -44,8 +44,8 @@ public struct RemoteFailure: Identifiable, Sendable {
   /// The notice for `failures`, or nil when there are none.
   public init?(_ action: RemoteAction, failures: [(name: String, message: String)]) {
     guard !failures.isEmpty else { return nil }
-    let noun = failures.count == 1 ? "repository" : "\(failures.count) repositories"
-    title = "Couldn't \(action.title.lowercased()) \(failures.count == 1 ? failures[0].name : noun)"
+    let noun = failures.count == 1 ? failures[0].name : String(localized: "\(failures.count) repositories")
+    title = "Couldn't \(action.title.lowercased()) \(noun)"
     message = Self.reasons(failures, lines: 3).joined(separator: "\n\n")
   }
 

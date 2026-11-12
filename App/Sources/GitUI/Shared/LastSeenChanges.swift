@@ -46,7 +46,7 @@ public struct LastSeenChanges: View {
       }
       let more = status.changeCount - files.count
       if !files.isEmpty, more > 0 {
-        Text(more == 1 ? "and 1 more" : "and \(more) more")
+        Text("and \(more) more")
           .kitFont(.caption)
           .foregroundStyle(.kitTertiary)
       }
@@ -61,7 +61,7 @@ public struct LastSeenChanges: View {
     let changes =
       status.changeCount == 0
       ? String(localized: "no changes")
-      : status.changeCount == 1 ? String(localized: "1 change") : String(localized: "\(status.changeCount) changes")
+      : String(localized: "\(status.changeCount) changes")
     let branch = status.branch ?? String(localized: "a detached HEAD")
     var parts = [String(localized: "\(changes) on \(branch)")]
     if let operation = status.operation.flatMap(RepositoryOperation.init(rawValue:)) {

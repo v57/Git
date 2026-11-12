@@ -244,7 +244,7 @@ struct RepositoryList: View {
     }
     .help(attentionHelp(layout))
     .kitConfirmation(
-      repositories.count == 1 ? "Remove 1 repository from the list?" : "Remove all \(repositories.count) repositories from the list?", isPresented: $confirmsRemoveAll,
+      "Remove all \(repositories.count) repositories from the list?", isPresented: $confirmsRemoveAll,
       message: "Their folders stay on disk.", systemImage: "minus.circle",
       confirm: "Remove All"
     ) {
@@ -588,7 +588,7 @@ struct RepositoryList: View {
     let from = remote ?? "the remote"
     let behind = summary.behind
     let ahead = summary.ahead
-    let stay = ahead == 1 ? String(localized: " Your 1 commit stays.") : ahead > 1 ? String(localized: " Your \(ahead) commits stay.") : ""
+    let stay = ahead > 0 ? String(localized: " Your \(ahead) commits stay.") : ""
     return RemoteActionWords { action in
       switch action {
       case .fetch:
@@ -634,7 +634,7 @@ struct RepositoryList: View {
   }
 
   private func repositoriesText(_ count: Int) -> String {
-    count == 1 ? String(localized: "1 repository") : String(localized: "\(count) repositories")
+    String(localized: "\(count) repositories")
   }
 
   /// Fetch, Pull and Push for `paths`; with `pushOnlyAhead`, Push leaves out the repositories

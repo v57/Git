@@ -548,13 +548,11 @@ struct StatusMarks: View {
       parts.append(
         conflicts == 0
           ? operation.title
-          : conflicts == 1
-            ? String(localized: "\(operation.title), 1 conflict") : String(localized: "\(operation.title), \(conflicts) conflicts"))
+          : String(localized: "\(operation.title), \(conflicts) conflicts"))
     }
     if summary.changeCount > 0 {
       parts.append(
-        summary.changeCount == 1
-          ? String(localized: "1 uncommitted change") : String(localized: "\(summary.changeCount) uncommitted changes"))
+        String(localized: "\(summary.changeCount) uncommitted changes"))
     }
     if summary.ahead > 0 { parts.append(String(localized: "\(counted(summary.ahead, .commit)) to push")) }
     if summary.behind > 0 { parts.append(String(localized: "\(counted(summary.behind, .commit)) to pull")) }

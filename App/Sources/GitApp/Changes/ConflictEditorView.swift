@@ -108,7 +108,7 @@ struct ConflictsScreen: View {
     let left = totals.total - totals.done
     let isReady = left == 0
     return Banner(
-      isReady ? "All conflicts resolved" : left == 1 ? "1 conflict left" : "\(left) conflicts left",
+      isReady ? "All conflicts resolved" : "\(left) conflicts left",
       message: isReady
         ? "Review the result, then continue to finish \(operationNoun)."
         : "Pick a version for each highlighted block. Nothing is committed until you continue.",

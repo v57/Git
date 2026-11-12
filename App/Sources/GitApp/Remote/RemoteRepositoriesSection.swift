@@ -102,7 +102,7 @@ struct RemoteRepositoriesSection: View {
       if !others.isEmpty {
         KitSection(
           tree.projects().isEmpty ? "On Your Devices" : "On Other Machines",
-          meta: [others.count == 1 ? String(localized: "1 repository") : String(localized: "\(others.count) repositories")], systemImage: "desktopcomputer",
+          meta: [String(localized: "\(others.count) repositories")], systemImage: "desktopcomputer",
           hue: .blue
         ) {
           ForEach(others.filter { matches($0.name) }) { repository in
@@ -147,7 +147,7 @@ struct RemoteRepositoriesSection: View {
   /// Its place among the groups (nothing when that is just its name) and how many repositories it holds.
   private func groupMeta(_ group: VaultProjectGroup, projects: [VaultProject], in tree: VaultProjectTree) -> String {
     let place = title(of: group, in: tree)
-    let count = projects.count == 1 ? String(localized: "1 repository") : String(localized: "\(projects.count) repositories")
+    let count = String(localized: "\(projects.count) repositories")
     return [place == group.name ? nil : place, count].compactMap { $0 }.joined(separator: " · ")
   }
 

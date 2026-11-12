@@ -8,9 +8,9 @@ enum CountedNoun { case commit, file, changedLine }
 /// Counts as a menu says them ("1 commit", "3 files").
 func counted(_ count: Int, _ noun: CountedNoun) -> String {
   switch noun {
-  case .commit: count == 1 ? String(localized: "1 commit") : String(localized: "\(count) commits")
-  case .file: count == 1 ? String(localized: "1 file") : String(localized: "\(count) files")
-  case .changedLine: count == 1 ? String(localized: "1 changed line") : String(localized: "\(count) changed lines")
+  case .commit: String(localized: "\(count) commits")
+  case .file: String(localized: "\(count) files")
+  case .changedLine: String(localized: "\(count) changed lines")
   }
 }
 
@@ -171,7 +171,7 @@ struct BranchPicture: View {
         + old.map { Self.dot($0, 18, .accent, hollow: true) } + [
           .path([.move(144, 18), .line(168, 18), .move(163, 13), .line(168, 18), .line(163, 23)], tone: .accent, dashed: false),
           Self.dot(184, 18, .accent),
-          Self.word(commits == 1 ? "1 commit" : "\(commits) commits", (old[0] + old[old.count - 1]) / 2, 36, .accent, weight: .medium),
+          Self.word(counted(commits, .commit), (old[0] + old[old.count - 1]) / 2, 36, .accent, weight: .medium),
           Self.word("1 commit", 184, 36, .accent, weight: .medium),
         ]
 

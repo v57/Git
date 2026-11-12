@@ -150,7 +150,7 @@ private struct CommitDetail: View {
       },
       meta: {
         HStack(spacing: 6) {
-          Text(files.count == 1 ? "1 changed" : "\(files.count) changed")
+          Text("\(files.count) changed")
           if !files.isEmpty { Diffstat(added: added, removed: removed) }
         }
       },

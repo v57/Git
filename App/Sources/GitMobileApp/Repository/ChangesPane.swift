@@ -213,7 +213,7 @@ struct CommitComposer: View {
   private var title: String {
     if amend { return String(localized: "Amend") }
     let count = staged > 0 ? staged : unstaged
-    return count == 1 ? String(localized: "Commit 1 File") : String(localized: "Commit \(count) Files")
+    return String(localized: "Commit \(count) Files")
   }
 
   private var canCommit: Bool {

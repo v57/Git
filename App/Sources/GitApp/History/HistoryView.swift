@@ -313,8 +313,7 @@ private struct CommitList: View {
     if let search = session.logQuery.search {
       let count = session.commits.count
       return [
-        count == 1
-          ? String(localized: "1 commit matching “\(search)”") : String(localized: "\(count) commits matching “\(search)”")
+        String(localized: "\(count) commits matching “\(search)”")
       ]
     }
     var parts = [session.repository.url.lastPathComponent]
