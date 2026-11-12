@@ -223,6 +223,12 @@ struct RepositoriesWelcome: View {
       WelcomeAction("Open on a Mac…", detail: "A folder on one of your SSH hosts", systemImage: "desktopcomputer") {
         sheet = .addRemote
       }
+      WelcomeAction(
+        "Try a Sample Repository", detail: "Made on this device: history, branches and changes to commit",
+        systemImage: "shippingbox"
+      ) {
+        SampleRepository.open { selection = $0 }
+      }
     } recents: {
       ForEach(sources) { source in
         switch source {
@@ -314,6 +320,10 @@ struct RepositoriesSidebar: View {
         if local.isEmpty {
           Text("Clone a repository or create one: it lives in the Files app, under Git.")
             .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
+          // On iPhone this list is the first screen, so the sample is offered here too.
+          Button("Try a Sample Repository", systemImage: "shippingbox") { SampleRepository.open { selection = $0 } }
+            .buttonStyle(.kitPlain)
+            .padding(.horizontal, 10).padding(.bottom, 8)
         }
       } accessory: {
         Button("Add", systemImage: "plus") { showsAddMenu = true }
@@ -321,6 +331,7 @@ struct RepositoriesSidebar: View {
           .kitMenu(isPresented: $showsAddMenu) {
             Button("Clone Repository…", systemImage: "square.and.arrow.down") { sheet = .clone }
             Button("New Repository…", systemImage: "plus.square") { sheet = .create }
+            Button("Try a Sample Repository", systemImage: "shippingbox") { SampleRepository.open { selection = $0 } }
           }
       }
       VaultProjectsSection(

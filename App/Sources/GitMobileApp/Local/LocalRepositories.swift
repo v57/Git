@@ -52,6 +52,14 @@ import VaultKit
     return repository
   }
 
+  /// Makes the sample repository (`SampleRepository`) in a folder of its own.
+  func createSample() async throws -> LocalRepository {
+    let url = folder.appendingPathComponent(freeName(SampleRepository.name), isDirectory: true)
+    let repository = try await SampleRepository.create(at: url)
+    reload()
+    return repository
+  }
+
   /// Clones `remote` (HTTPS) into a folder named after it. A failed clone leaves no folder behind.
   func clone(_ remote: String, progress: @escaping @Sendable (String) -> Void) async throws -> LocalRepository {
     let url = folder.appendingPathComponent(freeName(Self.name(ofRemote: remote)), isDirectory: true)
