@@ -55,6 +55,14 @@ you copy into that folder with the Files app shows up when you switch back to Gi
 Public repositories clone as they are. To clone a private GitHub repository, sign in to GitHub first
 (**Settings ▸ GitHub**), or use an SSH address, which signs in with this device's key.
 
+### Try a sample repository
+
+To look around before using a repository of your own, tap **Try a Sample Repository**: on the iPad welcome screen,
+in the **+** menu of **On This iPhone** (or **On This iPad**), or in that card while it's empty. Git makes **Atlas
+Sample** on the device and opens it: a small Swift package with a history by four made-up people, a
+`feature/offline-maps` branch with commits of its own, and a changed file and a new one left to stage and commit.
+Nothing is downloaded. Delete it like any other repository when you're done.
+
 ### Open a repository on your Mac
 
 Your Mac's repositories show up under **On Your Devices** when your Mac is one of your Hub's devices, or once you open
@@ -65,7 +73,8 @@ a folder there with **Open on a Mac**. See [Repositories on Other Devices](Other
 - **On iPhone**, tap a repository to open it. **Back** returns to the list. The **Settings** gear sits at the bottom
   of the list, next to the number of your devices.
 - **On iPad**, the list stays beside the open repository. With nothing open, the welcome screen offers **Clone
-  Repository…**, **New Repository…** and **Open on a Mac…**, and lists every repository.
+  Repository…**, **New Repository…**, **Open on a Mac…** and **Try a Sample Repository**, and lists every
+  repository.
 - A repository's screen has **Changes** and **History**. Its title shows the branch, commits to push (↑) and pull (↓),
   and where it is: on this device, or on another device by name.
 - The **Sync** button and the branch menu sit in a bottom bar on iPhone and lead the bar on iPad.

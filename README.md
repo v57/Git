@@ -1,8 +1,9 @@
 # Git
 
-A Git client for macOS, iPhone and iPad: a library (`GitKit`) that does everything git-related and a small
-SwiftUI app (`Git`) on top of it. On iPhone and iPad, `GitEngine` (git in Swift) handles repositories on the
-device, and GitKit runs your Mac's git over SSH for repositories there (see [iPhone and iPad](#iphone-and-ipad)).
+A Git client for macOS, iPhone and iPad (the desktop app also builds for Linux and Windows): a library (`GitKit`)
+that does everything git-related and a small SwiftUI app (`Git`) on top of it. On iPhone and iPad, `GitEngine` (git in
+Swift) handles repositories on the device, and GitKit runs your Mac's git over SSH for repositories there (see
+[iPhone and iPad](#iphone-and-ipad)).
 
 The app shows commit history, colored diffs with word-level highlights, and the working tree's
 staged and unstaged files. You can:

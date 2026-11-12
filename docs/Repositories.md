@@ -82,14 +82,20 @@ the sidebar switches the window's account, opens an account in a new window, or 
 The sidebar has up to three sections:
 
 - **On This iPhone** (or **On This iPad**): repositories stored on the device, with the subtitle **Files › Git**. The
-  **+** menu has **Clone Repository…** and **New Repository…**.
+  **+** menu has **Clone Repository…**, **New Repository…** and **Try a Sample Repository** (see
+  [Getting Started](Getting-Started.md#try-a-sample-repository)).
 - **On Your Devices**: your vault's projects that live on another device you can sign in to, in their groups. It
-  starts folded. Each row shows its branch, the devices it's on, and the changes, ↑ and ↓ that device last saw. See
-  [Repositories on Other Devices](Other-Devices.md).
+  starts folded. Each row shows its branch, how old its marks are (**as of 2 hr. ago**), the devices it's on, and the
+  changes, ↑ and ↓ that device last saw. See [Repositories on Other Devices](Other-Devices.md).
 - **Opened on a Mac**: folders you opened with **Open on a Mac**. Touch and hold a row and choose **Remove from List**
   to take it off. The folder stays on the Mac.
 
 Type in **Search Repositories** to filter all three sections.
+
+Pull down on the list to refresh it. Git asks each device in **On Your Devices** how its repositories are now, over
+SSH and a few at a time, without fetching. A repository whose device doesn't answer keeps the marks that device last
+wrote, with their age, and a **Couldn’t refresh …** notice says why. Repositories that failed for the same reason share
+one line. At **Vault key only**, the refresh can't reach them, and the notice says so.
 
 ### Groups of On Your Devices
 

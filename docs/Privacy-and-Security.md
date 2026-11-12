@@ -13,7 +13,7 @@ no ads. **Settings ▸ Privacy** lists everyone Git talks to.
 | GitHub, for your picture | While **Settings ▸ GitHub** shows it. | Your IP address. Commit authors show as letters, not pictures. |
 | GitHub, for updates (Mac) | When you choose **Check for Updates…**, or once a day if **Check for updates automatically** is on. It's off until you turn it on. Downloads start only when you say so. | Your IP address. |
 | Apple (iCloud) | While iCloud is on for this device. | Encrypted records only. See below. |
-| Your other devices, over SSH | When you open a repository on one, or act on one (**Fetch All** and the like). While it's open, Git checks it every few seconds. | Your sign-in with this device's key, and the git commands Git runs there. |
+| Your other devices, over SSH | When you open a repository on one, press its **Connect**, or act on one (**Fetch All**, or pulling down to refresh the list on iPhone and iPad). While it's open, Git checks it every few seconds. | Your sign-in with this device's key, and the git commands Git runs there. |
 
 Links you click open in your browser, which talks to those sites itself.
 
@@ -69,7 +69,8 @@ with **Copy** and **Add on GitHub**.
 
 The first time Git connects to an SSH server, it asks **Trust this server's key?** and shows the key's fingerprint.
 Nothing is sent to the server before you answer. Trust it only if it's the right key: anyone on the network could be
-answering in its place. **Trust and Connect** remembers the key. A server whose key changes later is refused.
+answering in its place. **Trust and Connect** remembers the key. A server whose key changes later is refused. Cloning from one of your vault's
+SSH hosts doesn't ask again for the key the vault already trusts for it.
 
 ## Security levels
 

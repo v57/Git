@@ -34,9 +34,9 @@ Vault app first, as an SSH host or through your Hub. A folder that isn't a repos
 
 ## Open a repository on another device
 
-Tap it. Git shows **Connecting to …** with what that device last reported: the number of changes, the branch and some
-of the changed files. The **Changes** screen already lists those files, and switches to the live state once Git is
-connected.
+Tap it. Git shows **Connecting to …** with what that device last reported and how long ago (**Last seen on …**): the
+number of changes, the branch and some of the changed files. The **Changes** screen already lists those files, and
+switches to the live state once Git is connected.
 
 - If the device's main address doesn't answer, Git tries its other addresses, such as its local network name or its
   Hub address.
@@ -47,7 +47,8 @@ connected.
 
 The first time Git connects to a machine, it asks **Trust this server's key?** and shows the key's fingerprint.
 Nothing is sent before you answer. **Trust and Connect** remembers the key in your vault. If the key changes later,
-Git refuses to connect.
+Git refuses to connect. A clone from one of your vault's SSH hosts, at one of its addresses, doesn't ask again when the
+server shows the key the vault already trusts for that host.
 
 ### Face ID or Touch ID
 
@@ -62,6 +63,12 @@ Remote Login, then tap **Try Again**. Common messages:
 
 - *… has no user name to sign in as. Set one in the Vault app.*: give the host a user name in Vault.
 - *… signs in with a key another app imported. Use this device’s key instead.*
+
+## How current the list is
+
+A row under **On Your Devices** shows what its device last wrote to your vault, and how long ago (**as of 2 hr. ago**).
+A device writes it when the repository changes there while Git runs. Pull down on the list to ask the devices again:
+see [Repositories](Repositories.md#the-repository-list-on-iphone-and-ipad).
 
 ## Several repositories at once
 
