@@ -31,9 +31,34 @@
       "runner" : "mac"
     },
     {
+      "command" : "/Volumes/Chunky/Tools/VMs/Linux-x64-build/x64build.sh start",
+      "id" : "start-linux-x64",
+      "kind" : "command",
+      "name" : "Start · Linux x64 builder",
+      "parallel" : false,
+      "runner" : "mac"
+    },
+    {
+      "id" : "archive-linux-x64",
+      "kind" : "release",
+      "name" : "Archive · Linux x64",
+      "parallel" : false,
+      "platform" : "linux",
+      "releaseStep" : "archive",
+      "runner" : "ssh:v57@127.0.0.1:2225"
+    },
+    {
+      "command" : "/Volumes/Chunky/Tools/VMs/Linux-x64-build/x64build.sh stop",
+      "id" : "stop-linux-x64",
+      "kind" : "command",
+      "name" : "Stop · Linux x64 builder",
+      "parallel" : false,
+      "runner" : "mac"
+    },
+    {
       "id" : "archive-windows",
       "kind" : "release",
-      "name" : "Archive · Windows",
+      "name" : "Archive · Windows (arm64, x64)",
       "parallel" : false,
       "platform" : "windows",
       "releaseStep" : "archive",
