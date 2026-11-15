@@ -564,8 +564,8 @@ struct CompletedOperation: Equatable {
     // All at once: the vault's projects and groups, then the list's rows.
     let paths = new.map(\.path)
     vault.perform { store in
-      for path in paths { try store.addProject(path: path, remoteURL: remotes[path]) }
-      for path in folderPaths { try store.addProject(path: path) }
+      try store.addProjects(
+        paths.map { VaultProjectFolder(path: $0, remoteURL: remotes[$0]) } + folderPaths.map { VaultProjectFolder(path: $0) })
       try store.arrangeProjects(
         paths + regrouped + folderPaths, roots: results.map(\.root.path), into: group, before: beforeID)
       for database in databases { try store.addDatabaseFile(database) }
