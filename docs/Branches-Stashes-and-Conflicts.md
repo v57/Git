@@ -1,6 +1,10 @@
 # Branches, Stashes and Conflicts
 
-## Branches on the Mac
+Branches keep separate lines of work apart, stashes put unfinished changes aside, and conflicts are where two lines
+of work changed the same text. This page covers switching, creating, merging and deleting branches, stashing, and
+resolving conflicts without leaving Git.
+
+## On the Mac
 
 ### Switch branches
 
@@ -42,19 +46,7 @@ Right-click a branch and choose **Delete…**. Git asks how:
 When a repository has several worktrees, the sidebar lists them under **Worktrees**, and shows which have commits your
 branch doesn't.
 
-## Branches on iPhone and iPad
-
-Tap the branch button (it shows the branch's name):
-
-- **Branches** lists your local branches, with the current one checked. Tap another to switch to it.
-- **Remote** lists branches that exist only on the remote. Tap one to make a local branch that tracks it and switch to
-  it.
-- **New Branch…** starts a branch from the current one. Type a name and tap **Create**. A name with a space isn't
-  allowed.
-
-Merging, deleting branches and stashes are on the Mac only.
-
-## Stashes (Mac)
+### Stashes
 
 A stash puts uncommitted changes aside, so you can switch branches with a clean working tree.
 
@@ -66,7 +58,7 @@ A stash puts uncommitted changes aside, so you can switch branches with a clean 
 
 The **Stashes** screen (⌘3) lists every stash with the same three actions.
 
-## Resolve conflicts (Mac)
+### Resolve conflicts
 
 When a merge, rebase, cherry-pick or revert stops with conflicts, the repository shows **Resolve Conflicts**. Nothing
 is committed until you continue.
@@ -90,4 +82,21 @@ to a text editor, or is shown in Finder, instead.
 For a repository on another device, **Edit Manually…** asks you to edit the file on that device, then come back to
 continue.
 
-On iPhone and iPad, a repository on your Mac with conflicts shows a banner. Resolve them in Git on the Mac.
+## On iPhone and iPad
+
+### Branches
+
+Tap the branch button (it shows the branch's name):
+
+- **Branches** lists your local branches, with the current one checked. Tap another to switch to it.
+- **Remote** lists branches that exist only on the remote. Tap one to make a local branch that tracks it and switch to
+  it.
+- **New Branch…** starts a branch from the current one. Type a name and tap **Create**. A name with a space isn't
+  allowed.
+
+Merging, deleting branches and stashes are on the Mac only.
+
+### Conflicts
+
+A repository on your Mac with conflicts shows a banner, **N Conflicted Files**. Resolve them in Git on the Mac, then
+come back to commit.

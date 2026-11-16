@@ -1,5 +1,8 @@
 # Changes and Commits
 
+The **Changes** screen is where you decide what goes into a commit: see what changed, stage whole files, hunks or
+single lines, throw away what you don't want, and commit.
+
 ## See what changed
 
 Open a repository's **Changes** screen (⌘1 on the Mac). Changed files sit in two cards:
@@ -58,23 +61,23 @@ On the Mac, new files you discard are moved to the Trash, so you can get them ba
 - in a repository on the device, new files are deleted;
 - in a repository on your Mac, new files are moved to the Trash there.
 
-## Ignore a file (Mac)
+## On the Mac
+
+### Ignore a file
 
 A changed file's menu has **Add to .gitignore**. For a file with an extension, it's a submenu that also offers
 **All .ext Files**.
 
-## Open a file (Mac)
+### Open a file
 
 A changed file's menu opens it in its usual app or another app, shows it in Finder, or copies its path with **Copy
-Path**. On iPhone and iPad, the file's menu has **Copy Path**.
+Path**.
 
-## Commit
-
-### On the Mac
+### Commit
 
 1. Stage what you want to commit.
-2. Type a summary. Git may suggest one: press Tab in the empty field to take it. A counter shows when you pass 50
-   characters, the length logs and tools keep.
+2. Type a summary. Git may suggest one: press Tab in the empty field to take it. A counter shows its length and turns
+   orange past 50 characters, the length logs and tools keep.
 3. Press Return to move to the description, and say why you made the change.
 4. Click **Commit N Files** (⌘↩), or **Commit & Push** (⇧⌘↩) to push right after.
 
@@ -85,7 +88,9 @@ repository has no remote).
 **Amend last commit** replaces the last commit with the staged changes and the message you type. Ticking it fills in
 the last commit's message.
 
-### On iPhone and iPad
+## On iPhone and iPad
+
+### Commit
 
 1. Type a summary in the box under the changes. With a hardware keyboard, Return starts a new line. It doesn't commit.
 2. Tap **Commit N Files**. If nothing is staged, Git stages every change first.
@@ -93,7 +98,9 @@ the last commit's message.
 For a repository on your Mac, an **Amend** switch replaces the last commit. Repositories on the device don't offer
 amend.
 
-### Who the commit is from
+A changed file's menu has **Copy Path**.
+
+## Who the commit is from
 
 Git uses the repository's own name and email first, then **Your Name** from your vault. If neither names you, the
 first commit asks for your name and email in the **Your Name** sheet. **Cancel** stops the commit. **Save** keeps them
@@ -102,7 +109,7 @@ in your vault, for every v57 app and device.
 ## Conflicted files
 
 When a merge, rebase, cherry-pick or revert stops with conflicts, the Mac shows **Resolve Conflicts**. See
-[Branches, Stashes and Conflicts](Branches-Stashes-and-Conflicts.md#resolve-conflicts-mac).
+[Branches, Stashes and Conflicts](Branches-Stashes-and-Conflicts.md#resolve-conflicts).
 
 On iPhone and iPad, a repository on your Mac with conflicts shows a banner, **N Conflicted Files**. Resolve them in
 Git on the Mac, then come back to commit.

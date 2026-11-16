@@ -1,6 +1,10 @@
 # Repositories
 
-## The repository list on the Mac
+The repository list is where Git starts: every repository you work on, with its state, so you see what needs
+attention without opening each one. This page covers adding repositories, grouping them, sorting and filtering the
+list, and acting on several at once.
+
+## On the Mac
 
 The **Repositories** section of the sidebar shows every repository you added, with its state before you open it:
 
@@ -47,7 +51,8 @@ leaves out repositories with nothing to push.
 Right-click a repository for:
 
 - **Fetch**, **Pull** and **Push**, with a preview of what each would do.
-- Open it in **Xcode** (when it holds a project or a Swift package), **Code**, **Finder** or **Terminal**.
+- Open it in **Xcode** (on the Mac, when it holds a project or a Swift package), **Code**, **Finder** (your file
+  manager on Linux and Windows) or **Terminal**.
 - **Group**, to move it into a group.
 - **On Other Devices ▸ Copy SSH Command for …**, which copies a command that opens a terminal in this repository's
   folder on another of your devices.
@@ -77,7 +82,7 @@ Each Git window belongs to one vault account: your personal one, or one you work
 the sidebar switches the window's account, opens an account in a new window, or manages accounts in
 **Settings ▸ Accounts**. Each account has its own repositories and its own GitHub sign-in.
 
-## The repository list on iPhone and iPad
+## On iPhone and iPad
 
 The sidebar has up to three sections:
 

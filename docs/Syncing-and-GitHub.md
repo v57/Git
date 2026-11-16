@@ -1,5 +1,9 @@
 # Fetch, Pull, Push and GitHub
 
+Fetch, pull and push keep your repositories in step with their remotes. This page covers syncing, signing in to
+GitHub, publishing a new repository to GitHub, fetching automatically, and how the security level changes the way Git
+signs in.
+
 ## On the Mac
 
 The toolbar has three buttons:
@@ -9,7 +13,7 @@ The toolbar has three buttons:
 - **Pull** (⇧⌘P) brings the upstream branch's new commits into your branch. It needs a branch with an upstream.
 - **Push** (⌘P) sends your commits, and shows how many there are. On a branch without an upstream it reads
   **Publish**: it pushes the branch and tracks it. In a repository with no remote, **Publish** opens **Publish to
-  GitHub** (below).
+  GitHub**.
 
 The same commands are in the **Repository** menu. The sidebar's **Remotes** section has its own **Fetch**, and a
 remote's row fetches just that remote. To fetch, pull or push several repositories at once, see
@@ -19,6 +23,19 @@ remote's row fetches just that remote. To fetch, pull or push several repositori
 
 Right-click **Push** and choose **Force Push…**. Its preview shows the commits the remote would lose. Git asks first,
 and a force push refuses if someone else pushed since your last fetch.
+
+### Publish to GitHub
+
+A repository with commits but no remote can go to GitHub in one step.
+
+1. Click **Publish** in the toolbar, or choose **Repository ▸ Publish to GitHub…** (⌘P).
+2. Pick the **Owner**: you, or one of your organizations. Only organizations where your membership is public are
+   listed.
+3. Check the **Name**, add a **Description** if you want, and pick **Private** or **Public** under **Visibility**.
+4. Click **Publish**.
+
+Git creates the repository on GitHub and pushes your branch to it as `origin`. If you aren't signed in, the sheet has
+**Sign In…**. If your sign-in only allows public repositories or lacks organizations, it has **Grant…**.
 
 ## On iPhone and iPad
 
@@ -67,19 +84,6 @@ Permissions…** reopens the sheet. **Sign Out** signs you out.
   it.
 - If a push changes files in `.github/workflows` and GitHub refuses it for a missing permission, the error offers
   **Grant Access…**.
-
-## Publish to GitHub (Mac)
-
-A repository with commits but no remote can go to GitHub in one step.
-
-1. Click **Publish** in the toolbar, or choose **Repository ▸ Publish to GitHub…** (⌘P).
-2. Pick the **Owner**: you, or one of your organizations. Only organizations where your membership is public are
-   listed.
-3. Check the **Name**, add a **Description** if you want, and pick **Private** or **Public** under **Visibility**.
-4. Click **Publish**.
-
-Git creates the repository on GitHub and pushes your branch to it as `origin`. If you aren't signed in, the sheet has
-**Sign In…**. If your sign-in only allows public repositories or lacks organizations, it has **Grant…**.
 
 ## Fetch automatically
 

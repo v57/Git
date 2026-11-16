@@ -8,11 +8,11 @@ no ads. **Settings ▸ Privacy** lists everyone Git talks to.
 | Who | When | What they see |
 |---|---|---|
 | The servers your remotes name (GitHub, GitLab, your own) | When you clone, fetch, pull, push or delete a remote branch, and when auto-fetch runs if you turned it on. | Your IP address, your sign-in, and what you push. |
-| Whatever your git setup names (Mac) | At **Use git**, and where Git hands an action to your git: a `pre-push` hook, Git LFS, submodules, or a remote set up with its own SSH command. | Whatever git sends with your own keys and helpers. Your GitHub token only at **Use git**. |
+| Whatever your git setup names (Mac, Linux, Windows) | At **Use git** (always on Linux and Windows), and where Git hands an action to your git: a `pre-push` hook, Git LFS, submodules, or a remote set up with its own SSH command. | Whatever git sends with your own keys and helpers. Your GitHub token only at **Use git**. |
 | GitHub (github.com, api.github.com) | When you sign in, open **Settings ▸ GitHub**, open **Publish to GitHub** or publish a repository. | Your sign-in. Git reads your name, picture and organizations. Launching Git doesn't contact GitHub. |
 | GitHub, for your picture | While **Settings ▸ GitHub** shows it. | Your IP address. Commit authors show as letters, not pictures. |
-| GitHub, for updates (Mac) | When you choose **Check for Updates…**, or once a day if **Check for updates automatically** is on. It's off until you turn it on. Downloads start only when you say so. | Your IP address. |
-| Apple (iCloud) | While iCloud is on for this device. | Encrypted records only. See below. |
+| GitHub, for updates (Mac, Linux, Windows) | When you choose **Check for Updates…**, or once a day if **Check for updates automatically** is on. It's off until you turn it on. Downloads start only when you say so. | Your IP address. |
+| Apple (iCloud, on Apple devices) | While iCloud is on for this device. | Encrypted records only. See below. |
 | Your other devices, over SSH | When you open a repository on one, press its **Connect**, or act on one (**Fetch All**, or pulling down to refresh the list on iPhone and iPad). While it's open, Git checks it every few seconds. | Your sign-in with this device's key, and the git commands Git runs there. |
 
 Links you click open in your browser, which talks to those sites itself.
@@ -24,7 +24,7 @@ itself. Nothing leaves the Mac.
 
 Only what you turned on:
 
-- **Check for updates automatically** (Mac): off by default.
+- **Check for updates automatically** (Mac, Linux, Windows): off by default.
 - **Fetch automatically**: off by default. When on, it fetches at startup, when you select a repository, or both, at
   most once an hour, day or week per repository.
 
@@ -33,7 +33,7 @@ when you quit waits for you to click **Connect**.
 
 ## iCloud
 
-iCloud is on when you use iCloud on the device. Git syncs through your vault, and every record is encrypted on the
+iCloud is on the Mac, iPhone and iPad only, and on when you use iCloud on the device. Git syncs through your vault, and every record is encrypted on the
 device before it goes to iCloud. Apple sees only an item id, a key id and the encrypted data.
 
 What syncs: your repositories (as vault projects) and their groups, the security level, your devices' public keys,
@@ -55,8 +55,8 @@ in iCloud stays there.
 
 ## This device's key
 
-Git signs in to SSH servers, GitHub and your other devices with a key made inside this device's Secure Enclave, a chip
-nothing can copy it out of, not even Git.
+On the Mac, iPhone and iPad, Git signs in to SSH servers, GitHub and your other devices with a key made inside this
+device's Secure Enclave, a chip nothing can copy it out of, not even Git.
 
 - A key made since November 4, 2026 signs only once you confirm with Face ID, Touch ID or your password. That yes
   lasts 15 minutes in Git.

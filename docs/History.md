@@ -1,5 +1,8 @@
 # History
 
+History shows the commits of a repository: what's waiting to be pulled or pushed, the branch graph, and each
+commit's files and changes. On the Mac it's also where you revert, cherry-pick, reset, squash and tag.
+
 ## On the Mac
 
 Open a repository's **History** (⌘2). From the top:
@@ -38,7 +41,7 @@ Right-click a commit in the list for **Check Out**, **Revert Changes**, **Cherry
 your files, so you can commit them again. It asks first.
 
 If a revert or cherry-pick stops with conflicts, Git shows **Resolve Conflicts**. See
-[Branches, Stashes and Conflicts](Branches-Stashes-and-Conflicts.md#resolve-conflicts-mac).
+[Branches, Stashes and Conflicts](Branches-Stashes-and-Conflicts.md#resolve-conflicts).
 
 ### Squash commits
 

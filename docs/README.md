@@ -17,12 +17,12 @@ whose own git it runs over SSH.
   - **On your Mac:** open a repository on a Mac (or any SSH host) and Git runs that machine's git over SSH. Everything
     the Changes screen does works there, line staging and amend included, and that machine's config, hooks and
     credentials apply.
-- **Linux and Windows:** the desktop app also builds for Linux and Windows. It has the Mac app's screens and runs
-  the git installed there for every network action. It has no **Security** pane and no iCloud sync.
+- **Linux and Windows:** the desktop app, with the Mac app's screens, a direct download from the same GitHub Releases.
+  It runs the git installed there for every network action, so it has no **Security** pane, and no iCloud sync.
 
 ## Pages
 
-- [Getting Started](Getting-Started.md): add your first repositories and find your way around.
+- [Getting Started](Getting-Started.md): install Git, add your first repositories and find your way around.
 - [Repositories](Repositories.md): the repository list, groups, sorting and filters, and adding or removing
   repositories.
 - [Changes and Commits](Changes-and-Commits.md): staging files, hunks and lines, discarding, and committing.
