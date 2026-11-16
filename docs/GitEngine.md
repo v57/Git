@@ -12,6 +12,20 @@ It is not a full git. There is no line staging, amend, merge, rebase or stash. P
 current branch, never forced unless you ask with a lease. It doesn't handle `.gitattributes`, autocrlf, submodules,
 shallow clones or SHA-256 repositories yet. What it can't do, it refuses with a `GitEngineError` that says why.
 
+## Platforms
+
+<!-- platforms: macos ios linux windows=planned -->
+
+- **iOS and iPadOS** (17 and later): what it is for. Git's iPhone and iPad app keeps its repositories in the app's
+  Documents folder, which the Files app shows.
+- **macOS** (14 and later): everything. Git's Mac app uses it as GitKit's network engine.
+- **Linux:** built and tested, with the system's zlib (the package adds it as a system library) and
+  FoundationNetworking for smart HTTP, where a response's body arrives whole instead of streaming. Git's Linux app
+  does not link it: network actions there run `git`.
+- **Windows:** the package adds v57/SwiftUI's `CryptoKit` stand-in there, but not the zlib module it adds on Linux; it
+  hasn't been tested there, and Git's Windows app does not link it.
+- **Android:** not yet.
+
 ## Getting started
 
 ```swift
@@ -48,22 +62,57 @@ try await repository.push()
 
 ## Main API
 
-### LocalRepository
+### Opening and creating repositories
 
 `LocalRepository(url:)` opens a working tree (it throws when `url/.git` isn't a repository). The value is cheap and
 safe to share between tasks: each call opens the files afresh. Heavy calls are `@concurrent`.
 
-- Creating: `LocalRepository.initialize(at:initialBranch:)`, `LocalRepository.isRepository(_:)`,
-  `LocalRepository.clone(from:to:progress:)` (HTTPS, or SSH through `GitSSH`; the folder must be missing or empty).
-- Reading: `status()`, `log(revision:skip:limit:)`, `changedFiles(in:)`, `diff(_:)` with GitKit's `DiffTarget`,
-  `contents(of:at:)`, `branches()`, `remotes()`, `remoteURL(_:)`, `lastFetchDate()`, `config(_:)`.
-- Changing: `stage(_:)`, `stageAll()`, `unstage(_:)`, `unstageAll()`, `discard(_:)`,
-  `commit(message:author:)` with a `GitSignature(name:email:date:timeZone:)`, `createBranch(_:checkout:)`,
-  `switchTo(_:)`, `addRemote(_:url:)`, `setConfig(_:_:)`.
-- Network: `fetch(progress:)`, `pull(progress:)` (fetch, then fast-forward; refuses diverged branches),
-  `push(force:progress:)` (with `force`, only when the remote has nothing you haven't fetched),
-  `pushTag(_:to:progress:)`, `deleteRemoteBranch(_:on:expected:progress:)` (only while the branch is still at
-  `expected`).
+- `LocalRepository.isRepository(_:)`, `LocalRepository.initialize(at:initialBranch:)` (`main` by default; not
+  `async`), `LocalRepository.clone(from:to:progress:)` (HTTPS, or SSH through `GitSSH`; the folder must be missing or
+  empty).
+- `config(_:)` and `setConfig(_:_:)` read and write `.git/config` (`nil` removes a key).
+
+```swift
+let repository = try LocalRepository.initialize(at: folder)
+try repository.setConfig("user.name", "User")
+```
+
+### Reading
+
+`status()`, `log(revision:skip:limit:)`, `changedFiles(in:)`, `diff(_:)` with GitKit's `DiffTarget` (`nil` when the
+file has no changes), `contents(of:at:)` with GitKit's `FileRevision`, `branches()`, `remotes()`, `remoteURL(_:)`,
+`lastFetchDate()`.
+
+```swift
+let status = try await repository.status()
+let history = try await repository.log(limit: 50)
+if let change = status.unstaged.first {
+  let diff = try await repository.diff(.unstaged(path: change.path, untracked: change.kind == .untracked))
+}
+```
+
+### Changing
+
+`stage(_:)`, `stageAll()`, `unstage(_:)`, `unstageAll()`, `discard(_:)` (untracked files are deleted),
+`commit(message:author:)` with a `GitSignature(name:email:date:timeZone:)` (returns the new commit's id; refuses when
+nothing is staged), `createBranch(_:checkout:)`, `switchTo(_:)`, `addRemote(_:url:)`.
+
+```swift
+try await repository.stage(["README.md"])
+try await repository.createBranch("draft")
+```
+
+### Fetch, pull and push
+
+`fetch(progress:)` (every remote, pruning), `pull(progress:)` (fetch, then fast-forward; refuses diverged branches),
+`push(force:progress:)` (with `force`, only when the remote has nothing you haven't fetched),
+`pushTag(_:to:progress:)`, `deleteRemoteBranch(_:on:expected:progress:)` (only while the branch is still at
+`expected`).
+
+```swift
+try await repository.pull { line in print(line) }
+try await repository.pushTag("v1.0", to: "origin")
+```
 
 ### Credentials and SSH
 
@@ -71,33 +120,43 @@ safe to share between tasks: each call opens the files afresh. Heavy calls are `
   the `Authorization` header.
 - SSH goes through a connector you install with `GitSSH.setConnector(_:)`. GitEngine speaks git's protocol, not SSH:
   the connector logs in (with your key and your host key check) and returns a `GitSSHChannel` running the command
-  (`git-upload-pack` or `git-receive-pack`) for a `GitSSHAddress`. Without a connector, SSH remotes are refused. Git's
-  apps install one on SSHKit that signs in with the device's key and keeps host keys in the vault.
+  (`git-upload-pack` or `git-receive-pack`) for a `GitSSHAddress` (`user`, `host`, `port`, `path`). Without a
+  connector, SSH remotes are refused. Git's apps install one on SSHKit that signs in with the device's key and keeps
+  host keys in the vault.
+
+```swift
+GitSSH.setConnector { address, command in
+  try await openChannel(to: address.host, port: address.port ?? 22, user: address.user, running: command)
+}
+```
+
+`openChannel` stands for your own SSH code: anything that returns a `GitSSHChannel` (`read()`, `write(_:)`,
+`finishWriting()`, `finished()`, `close()`).
 
 ### As GitKit's network engine
 
-`GitEngineNetwork()` conforms to GitKit's `GitNetworkEngine`. Install it with
-`GitNetwork.configure(GitNetwork.Configuration(engine: GitEngineNetwork(), level: { … }))` and GitKit's `Repository`
-does its network actions through it, following the `GitSecurityLevel` the closure returns. It answers `.done`,
-`.fetched` (git does the local half: a pull's merge, a clone's checkout) or `.useGit(reason:…)` when the level lets the
-user's own git try instead. It falls back only for causes that say the app's way can't work (a refused key, no token,
-a repository format it doesn't read), never on a server's real answer or a network failure.
+`GitEngineNetwork()` conforms to GitKit's `GitNetworkEngine`. Install it with `GitNetwork.configure(_:)` and GitKit's
+`Repository` does its network actions through it, following the `GitSecurityLevel` the closure returns. It answers
+`.done`, `.fetched` (git does the local half: a pull's merge, a clone's checkout) or `.useGit(reason:…)` when the level
+lets the user's own git try instead. It falls back only for causes that say the app's way can't work (a refused key,
+no token, a repository format it doesn't read), never on a server's real answer or a network failure.
+
+```swift
+GitNetwork.configure(GitNetwork.Configuration(engine: GitEngineNetwork(), level: { .inAppFirst }))
+```
 
 ### Errors
 
 `GitEngineError` has a `kind` (`.notARepository`, `.corrupt`, `.notFound`, `.refused`, `.locked`, `.authentication`,
 `.network`, `.unsupported`, `.fileSystem`) and a `message` to show as it is.
 
-## Platform notes
-
-- **iOS and iPadOS** (17 and later): what it is for. Git's iPhone and iPad app keeps its repositories in the app's
-  Documents folder, which the Files app shows.
-- **macOS** (14 and later): everything. Git's Mac app uses it as GitKit's network engine.
-- **Linux:** built and tested, with the system's zlib and FoundationNetworking for smart HTTP. Git's Linux app does not
-  link it: network actions there run `git`.
-- **Windows:** the package wires it up (v57/SwiftUI's `CryptoKit` stand-in), but it hasn't been tested there and
-  Git's Windows app does not link it.
-- **Android:** not yet.
+```swift
+do {
+  try await repository.pull()
+} catch let error as GitEngineError where error.kind == .refused {
+  print(error.message)  // e.g. the branches have diverged
+}
+```
 
 ## Testing
 
@@ -126,4 +185,9 @@ swift build --target GitEngine --triple arm64-apple-ios17.0-simulator --sdk "$(x
 For your own tests, `GitNetwork.$scoped` (GitKit) sets a network configuration for one task, so tests can run side by
 side.
 
-See also: [GitKit](GitKit.md), and the user guide's [Repositories on Other Devices](Other-Devices.md).
+## Related
+
+- [GitKit](GitKit.md): the models GitEngine returns, `GitCredentials`, and the `Repository` it does network actions
+  for.
+- [SSHKit](https://github.com/v57/SSH/blob/main/docs/SSHKit.md): what Git's apps build their `GitSSH` connector on.
+- The user guide's [Repositories on Other Devices](Other-Devices.md).

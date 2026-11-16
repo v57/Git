@@ -10,12 +10,22 @@ show it.
 It is a thin layer over [GitHubKit](GitHubKit.md)'s `GitHubAccount`: it holds no token and makes no request of its
 own. Settings screens (the account, its permissions, sign out) stay in each app.
 
+## Platforms
+
+<!-- platforms: macos ios linux windows -->
+
+- **macOS** (14 and later) and **iOS and iPadOS** (17 and later): the sheet is 540 points wide, and as wide as the
+  screen on a phone, where its choices and buttons stack.
+- **Linux and Windows:** builds on v57/SwiftUI as part of Git's desktop app there. Not tested on its own.
+- **Android:** not yet.
+
 ## Getting started
 
 ```swift
 // Package.swift
 dependencies: [
   .package(url: "https://github.com/v57/Git.git", branch: "main"),
+  .package(url: "https://github.com/v57/Component.git", branch: "main"),
 ],
 targets: [
   .target(
@@ -27,8 +37,9 @@ targets: [
 ]
 ```
 
-GitHubUI depends on ComponentKit (`https://github.com/v57/Component.git`); add that package too if your target
-imports it. With `V57_LOCAL=1`, the package takes Component and Vault from checkouts next to this one.
+GitHubUI depends on ComponentKit, which SwiftPM fetches with it; the Component package is listed above because the
+example imports ComponentKit itself (for `kitSheet(item:)`). With `V57_LOCAL=1`, the package takes Component and Vault
+from checkouts next to this one.
 
 Present the sheet with ComponentKit's `kitSheet(item:)`. It closes itself.
 
@@ -56,7 +67,10 @@ struct GitHubButton: View {
 
 ## Main API
 
-- `GitHubSignInSheet(account:appName:permissions:choices:offers:use:glyph:)`: the sheet.
+### The sign-in sheet
+
+- `GitHubSignInSheet(account:appName:permissions:choices:offers:use:glyph:)`: the sheet, with your app's glyph as a
+  trailing `@ViewBuilder` closure.
   - `appName` is how the text names your app ("Choose what MyApp can do with your account").
   - `permissions` is what the chooser starts with.
   - `choices` are the switches under the repositories' choice, `[.organizations, .workflows]` by default. Pass `[]`
@@ -67,22 +81,60 @@ struct GitHubButton: View {
   - Continue starts the device flow, copies the code and opens github.com's page to enter it (through ComponentKit's
     `KitPasteboard` and `KitDesktop`). Closing the sheet while it waits cancels the sign-in.
 - `GitHubSignInRequest(permissions:)`: an `Identifiable` item for `kitSheet(item:)`.
-- `GitHubSignInOffer(accountName:credential:)` and `GitHubSignInOfferRow(offer:use:)`: another account's sign-in, as a
-  row of a ComponentKit `FormCard`.
+
+A repositories-only app with its own glyph:
+
+```swift
+.kitSheet(item: $request) { request in
+  GitHubSignInSheet(
+    account: account, appName: "MyApp", permissions: request.permissions, choices: []
+  ) {
+    Image(systemName: "doc.text")
+  }
+}
+```
+
+### Offering another account's sign-in
+
+`GitHubSignInOffer(accountName:credential:)` is a sign-in another vault account has; the sheet lists them through
+`offers`. `GitHubSignInOfferRow(offer:use:)` shows one as a row of a ComponentKit `FormCard`, for your own screens.
+
+```swift
+GitHubSignInSheet(
+  account: account, appName: "MyApp", permissions: .recommended,
+  offers: {
+    KeychainTokenStore.signIns(of: otherAccountIDs).map {
+      GitHubSignInOffer(accountName: name(of: $0.accountID), credential: $0.credential)
+    }
+  },
+  use: { offer in try? account.signIn(with: offer.credential) },
+  systemImage: "doc.text")
+```
+
+`otherAccountIDs` and `name(of:)` stand for your app's vault accounts and their names.
+
+### Pieces for a settings screen
+
 - `GitHubPermission`: `.privateRepositories`, `.organizations`, `.workflows`, with `title`, `scope`, `detail`,
   `permissions` and `isGranted(in:)`, for a settings screen that lists them.
-- `GitHubConnectionView(phase:tileSize:glyph:)` (or `systemImage:`) with `GitHubConnectionPhase` (`.idle`, `.waiting`,
-  `.connected`, `.failed`): the animated header of the sheet, the app's tile joined to GitHub's.
 - `ScopeLabel(scope:)`: an OAuth scope name in GitHub's style.
 - `URL.gitHubAvatar(size:)`: an avatar URL that asks GitHub for the image at twice `size`, for ComponentKit's
   `Avatar(name:url:size:)`.
+- `GitHubConnectionView(phase:tileSize:glyph:)` (or `systemImage:`) with `GitHubConnectionPhase` (`.idle`, `.waiting`,
+  `.connected`, `.failed`): the animated header of the sheet, the app's tile joined to GitHub's.
 
-## Platform notes
-
-- **macOS** (14 and later) and **iOS and iPadOS** (17 and later): the sheet is 540 points wide, and as wide as the
-  screen on a phone.
-- **Linux and Windows:** builds on v57/SwiftUI as part of Git's desktop app there. Not tested on its own.
-- **Android:** not yet.
+```swift
+FormCard("GitHub") {
+  ForEach(GitHubPermission.allCases) { permission in
+    HStack {
+      Text(permission.title)
+      ScopeLabel(scope: permission.scope)
+      Spacer()
+      Image(systemName: permission.isGranted(in: account.permissions) ? "checkmark" : "xmark")
+    }
+  }
+}
+```
 
 ## Testing
 
@@ -90,4 +142,9 @@ GitHubUI has no tests of its own. Its logic lives in GitHubKit (`swift test --fi
 sheet, give it a `GitHubAccount` with a `MemoryTokenStore`. In Git's Debug builds, `--github-sign-in` opens it over the
 selected repository at launch.
 
-See also: [GitHubKit](GitHubKit.md), and the user guide's [Fetch, Pull, Push and GitHub](Syncing-and-GitHub.md).
+## Related
+
+- [GitHubKit](GitHubKit.md): `GitHubAccount`, the token stores and `GitHubPermissions`, which the sheet works on.
+- [ComponentKit](https://github.com/v57/Component/blob/main/docs/ComponentKit.md): the sheet's controls,
+  `kitSheet(item:)` and `FormCard`.
+- The user guide's [Fetch, Pull, Push and GitHub](Syncing-and-GitHub.md).

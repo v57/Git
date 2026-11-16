@@ -10,6 +10,18 @@ keeps the token so one sign-in serves every v57 app on the user's devices. Git, 
 GitHubKit has no UI (the sign-in sheet is [GitHubUI](GitHubUI.md)) and does not depend on [GitKit](GitKit.md). It
 covers only the calls listed below, not the whole GitHub API.
 
+## Platforms
+
+<!-- platforms: macos ios linux windows -->
+
+- **macOS** (14 and later) and **iOS and iPadOS** (17 and later): everything. The token is in the keychain (see
+  [Keeping the token](#keeping-the-token)).
+- **Linux and Windows:** builds, on v57/SwiftUI's `CryptoKit` stand-in and FoundationNetworking. `KeychainTokenStore`
+  keeps the credential with VaultKit's `VaultKeychain` (on Windows, the Credential Manager), on this device only; the
+  access group and iCloud do nothing there. Git's Linux and Windows app uses it; the device flow there is not
+  separately tested.
+- **Android:** not yet.
+
 ## Getting started
 
 ```swift
@@ -78,7 +90,20 @@ if let api = account.api {
 - `DeviceCode` (`userCode`, `verificationURL`, `expiresAt`, `interval`) and `DeviceGrant` (`token`, `scopes`).
 - `GitHubPermissions(repositories:organizations:workflows:)`: what to ask for and what was granted, as OAuth scopes
   (`repo` or `public_repo`, `read:org`, `workflow`). `.recommended`, `.none`, `init(scopes:)`, `scopes`,
-  `includes(_:)`, `union(_:)`. GitHub may grant fewer scopes than requested; `permissions` shows what it granted.
+  `includes(_:)`, `union(_:)`. `repositories` is `.none`, `.publicOnly` or `.all`. GitHub may grant fewer scopes than
+  requested; `permissions` shows what it granted.
+
+Hand the token to GitKit whenever it changes, and ask for more only when something needs it:
+
+```swift
+account.onCredentialChange = { credential in
+  GitCredentials.set(credential.map { GitCredential(username: $0.login, password: $0.token) }, for: "github.com")
+}
+let needed = GitHubPermissions(repositories: .all, organizations: false, workflows: true)
+if !account.permissions.includes(needed) {
+  account.signIn(requesting: account.permissions.union(needed))
+}
+```
 
 ### Keeping the token
 
@@ -96,7 +121,14 @@ if let api = account.api {
     one per login.
 - `MemoryTokenStore`: keeps the credential in memory, for tests and previews.
 
-### REST and GraphQL calls
+```swift
+// One sign-in per vault account; Personal's is the shared one.
+let store = KeychainTokenStore.forAccount(accountID)
+let others = KeychainTokenStore.signIns(of: otherAccountIDs)  // sign-ins this account could use
+if let first = others.first { try account.signIn(with: first.credential) }
+```
+
+### Repositories and other REST calls
 
 `GitHubAPI(token:transport:)`. Without a token, calls are anonymous: public repositories only, and GitHub's lower rate
 limit.
@@ -118,9 +150,22 @@ limit.
   `discussionCategories(owner:repository:)` (the repository's GraphQL id and its categories),
   `createDiscussion(repositoryID:categoryID:title:body:)`.
 
+```swift
+let api = GitHubAPI(token: token)
+let name = NewRepository.normalizedName("My App")
+let created = try await api.createOrAdoptRepository(
+  NewRepository(name: name, isPrivate: true, organization: nil), owner: "user")
+let release = try await api.createRelease(
+  owner: "user", repository: created.name, tag: "v1.0", name: "1.0", body: nil, generateNotes: true)
+_ = try await api.uploadReleaseAsset(
+  owner: "user", repository: created.name, releaseID: release.id, name: "MyApp.zip", data: zip)
+```
+
 Models: `GitHubUser`, `GitHubOrganization`, `GitHubRepository` (`fullName`, `owner`, `cloneURL`, `sshURL`,
 `defaultBranch`, …), `GitHubTreeEntry`, `GitHubRelease`, `GitHubReleaseAsset`, `GitHubIssue`,
 `GitHubDiscussionCategory`, `GitHubDiscussion`.
+
+### Committing without git (Git Data API)
 
 A commit through the Git Data API:
 
@@ -142,14 +187,15 @@ try await api.updateBranch(owner: "user", name: "notes", branch: "main", to: com
 - `HTTPTransport`: `send(_:)` of a `URLRequest`. `URLSession` conforms; pass a fake in tests. Every request carries
   the app's bundle identifier and version as its User-Agent.
 
-## Platform notes
-
-- **macOS** (14 and later) and **iOS and iPadOS** (17 and later): everything. The token is in the keychain as above.
-- **Linux and Windows:** builds, on v57/SwiftUI's `CryptoKit` stand-in and FoundationNetworking. `KeychainTokenStore`
-  keeps the credential with VaultKit's `VaultKeychain` (on Windows, the Credential Manager), on this device only; the
-  access group and iCloud do nothing there. Git's Linux and Windows app uses it; the device flow there is not
-  separately tested.
-- **Android:** not yet.
+```swift
+do {
+  _ = try await api.user()
+} catch GitHubError.unauthorized {
+  // The token was revoked: sign in again.
+} catch {
+  print(error.localizedDescription)  // GitHub's own explanation, as a sentence
+}
+```
 
 ## Testing
 
@@ -167,5 +213,11 @@ After changing GitHubKit, check that it still builds for iOS:
 swift build --target GitHubKit --triple arm64-apple-ios17.0-simulator --sdk "$(xcrun --sdk iphonesimulator --show-sdk-path)"
 ```
 
-See also: [GitHubUI](GitHubUI.md) for the sign-in sheet, and the user guide's
-[Fetch, Pull, Push and GitHub](Syncing-and-GitHub.md) and [Privacy and Security](Privacy-and-Security.md).
+## Related
+
+- [GitHubUI](GitHubUI.md): the sign-in sheet on top of `GitHubAccount`.
+- [GitKit](GitKit.md): `GitCredentials`, where an app hands the token so git and [GitEngine](GitEngine.md) push with it.
+- [VaultKit](https://github.com/v57/Vault/blob/main/docs/VaultKit.md): the iCloud switch (`VaultICloud`) and, off
+  Apple platforms, the keychain `KeychainTokenStore` uses.
+- The user guide's [Fetch, Pull, Push and GitHub](Syncing-and-GitHub.md) and
+  [Privacy and Security](Privacy-and-Security.md).
