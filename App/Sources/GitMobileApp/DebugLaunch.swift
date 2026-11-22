@@ -11,7 +11,8 @@
   ///
   /// - `GIT_DEBUG_REMOTE`: repositories on another machine (GitRemote's `DebugRemotes`); one with a `group` becomes a
   ///   vault project in that group in this device's vault, as the Mac's projects are.
-  /// - `GIT_DEBUG_SELECT`: the repository opened at launch (its name), or `none`. Else the first debug remote.
+  /// - `GIT_DEBUG_SELECT`: the repository opened at launch (its name), `sample` (Try a Sample Repository's, made when
+  ///   missing) or `none`. Else the first debug remote.
   /// - `GIT_DEBUG_CLONE`: an HTTPS or SSH URL (`GIT_DEBUG_SSH_KEY`: a private key file for it, on a simulator) cloned to this device at launch (unless a folder of its name is there), then
   ///   opened.
   /// - `GIT_DEBUG_SHEET`: `clone`, `create`, `addRemote` or `settings`, shown at launch.
@@ -60,13 +61,23 @@
       }
       let select = environment["GIT_DEBUG_SELECT"]
       if select == "none" { return nil }
+      if select == "sample" {
+        let local = LocalRepositories.shared
+        if let made = local.repositories.first(where: { $0.name == SampleRepository.name }) {
+          return RepositorySource.local(made).id
+        }
+        return (try? await local.createSample()).map { RepositorySource.local($0).id }
+      }
       let all = sources + repositories.map(RepositorySource.remote)
       if let select { return all.first { $0.name == select }?.id }
       return repositories.first.map { RepositorySource.remote($0).id }
     }
 
     /// Shows `GIT_DEBUG_SHOW`, runs `GIT_DEBUG_PERFORM`, and keeps writing the state.
-    static func attach(to model: RepositoryModel, pane: Binding<RepositoryScreen.Pane>) async {
+    static func attach(
+      to model: RepositoryModel, pane: Binding<RepositoryScreen.Pane>, diff: Binding<DiffRoute?>,
+      commit: Binding<Commit?>
+    ) async {
       if let parts = environment["GIT_DEBUG_CREDENTIAL"]?.split(separator: ":", maxSplits: 2), parts.count == 3 {
         GitCredentials.set(GitCredential(username: String(parts[1]), password: String(parts[2])), for: String(parts[0]))
       }
@@ -84,8 +95,17 @@
       for step in (environment["GIT_DEBUG_PERFORM"] ?? "").split(separator: ";").map(String.init) {
         await perform(step, on: model)
       }
-      switch environment["GIT_DEBUG_SHOW"] {
+      let show = (environment["GIT_DEBUG_SHOW"] ?? "").split(separator: ":", maxSplits: 1).map(String.init)
+      switch show.first {
       case "history"?: pane.wrappedValue = .history
+      case "diff"? where show.count > 1:
+        let changes = (model.status?.unstaged ?? []) + (model.status?.staged ?? [])
+        if let change = changes.first(where: { $0.path == show[1] }) { diff.wrappedValue = DiffRoute(change) }
+      case "commit"?:
+        pane.wrappedValue = .history
+        if model.commits.isEmpty { await model.reloadHistory() }
+        let index = show.count > 1 ? Int(show[1]) ?? 0 : 0
+        if model.commits.indices.contains(index) { commit.wrappedValue = model.commits[index] }
       default: break
       }
     }

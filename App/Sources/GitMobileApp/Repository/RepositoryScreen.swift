@@ -13,6 +13,11 @@ struct RepositoryScreen: View {
   @State private var model: RepositoryModel
   @State private var pane = Pane.changes
   @State private var showsNewBranch = false
+  #if DEBUG
+    /// `GIT_DEBUG_SHOW`'s `diff:<path>` and `commit:<index>`, pushed once the repository is open.
+    @State private var debugDiff: DiffRoute?
+    @State private var debugCommit: Commit?
+  #endif
   @Environment(\.kitIdiom) private var idiom
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.openURL) private var openURL
@@ -63,6 +68,10 @@ struct RepositoryScreen: View {
     .navigationBarBackButtonHidden(true)
     .navigationDestination(for: DiffRoute.self) { route in DiffScreen(model: model, opened: route) }
     .navigationDestination(for: Commit.self) { commit in CommitScreen(model: model, commit: commit) }
+    #if DEBUG
+      .navigationDestination(item: $debugDiff) { DiffScreen(model: model, opened: $0) }
+      .navigationDestination(item: $debugCommit) { CommitScreen(model: model, commit: $0) }
+    #endif
     .kitSheet(isPresented: $showsNewBranch) { NewBranchSheet(model: model) }
     .kitNotice(item: $model.failure, title: \.title, message: \.message) { failure in
       // The security level kept a remote off HTTPS and its move to SSH didn't work: what to do instead.
@@ -81,7 +90,7 @@ struct RepositoryScreen: View {
       await model.open()
       Task { await model.autoFetchIfDue() }
       #if DEBUG
-        await DebugLaunch.attach(to: model, pane: $pane)
+        await DebugLaunch.attach(to: model, pane: $pane, diff: $debugDiff, commit: $debugCommit)
       #endif
       await model.keepFresh()
     }
