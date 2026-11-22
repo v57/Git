@@ -20,7 +20,7 @@ public enum RefusalChoices {
 
   /// Whether adding this device's key on GitHub would let the move work.
   public static func offersAddKey(_ refusal: GitNetworkRefusal) -> Bool {
-    refusal.keyRefused && refusal.httpsHosts.contains { $0.lowercased() == "github.com" } && deviceKey != nil
+    refusal.keyRefused && refusal.missingRemotes.isEmpty && refusal.httpsHosts.contains { $0.lowercased() == "github.com" } && deviceKey != nil
   }
 
   /// The notice's buttons: Add Key on GitHub, and Use HTTPS This Time (the default) with `retry`.

@@ -306,10 +306,16 @@ private struct Route {
     var refusals: [String] = []
     var https: [(remote: String, host: String)] = []
     var keyRefused = false
+    var missing: [String] = []
     remotes: for name in names {
       if !request.allowsHTTPS {
         do {
           try await RemoteMover(context: context).moveToSSH(name, progress: request.progress)
+        } catch let error as GitEngineError where error.kind == .notFound && MissingRemote.says(error.message) {
+          // The host let the key in and has no such repository: HTTPS would find none either.
+          refusals.append("\(name) points to a repository that isn’t there: \(error.localizedDescription.sentence)")
+          missing.append(name)
+          continue
         } catch {
           refusals.append(
             "\(name) stays on HTTPS, which \(level.title) refuses: \(error.localizedDescription.sentence) Nothing was changed.")
@@ -339,7 +345,7 @@ private struct Route {
     guard !refusals.isEmpty else { return (allowed, nil) }
     let refusal = GitNetworkRefusal(
       refusals.joined(separator: "\n\n"), httpsRemotes: https.map(\.remote), httpsHosts: https.map(\.host),
-      keyRefused: keyRefused)
+      keyRefused: keyRefused, missingRemotes: missing)
     return (allowed, refusal)
   }
 

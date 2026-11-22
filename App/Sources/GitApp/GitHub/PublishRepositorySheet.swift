@@ -7,8 +7,13 @@ import SwiftUI
 
 /// Publishes a repository that has no remote: creates it on GitHub (private or public, for the
 /// user or one of their organizations), adds it as `origin` and pushes the current branch.
+///
+/// For a remote GitHub said it doesn't have (`RepositorySession.unpublishedGitHubRemote`: an `origin` set before the
+/// repository was made there), it creates that one, with the owner and name its address gives, and pushes to it.
 struct PublishRepositorySheet: View {
   let session: RepositorySession
+  /// The remote to create on GitHub, read when the sheet opens; nil to add `origin`.
+  private let existing: MissingRemote?
   @Environment(GitHubAccount.self) private var account
   @Environment(\.kitDismiss) private var dismiss
   @State private var name: String
@@ -22,11 +27,17 @@ struct PublishRepositorySheet: View {
 
   init(session: RepositorySession) {
     self.session = session
-    _name = State(initialValue: NewRepository.normalizedName(session.repository.name))
+    existing = session.unpublishedGitHubRemote
+    _name = State(initialValue: existing?.gitHub?.name ?? NewRepository.normalizedName(session.repository.name))
   }
 
-  private var owner: String { organization ?? account.user?.login ?? "" }
-  private var repositoryName: String { NewRepository.normalizedName(name) }
+  private var owner: String { existing?.gitHub?.owner ?? organization ?? account.user?.login ?? "" }
+  /// The address's owner, when it isn't the signed-in user: an organization, created under `/orgs`.
+  private var existingOrganization: String? {
+    guard let owner = existing?.gitHub?.owner else { return nil }
+    return owner.caseInsensitiveCompare(account.user?.login ?? "") == .orderedSame ? nil : owner
+  }
+  private var repositoryName: String { existing?.gitHub?.name ?? NewRepository.normalizedName(name) }
   private var branch: String { session.status?.branch ?? "the current branch" }
 
   /// A private repository needs the `repo` scope; `public_repo` can only create public ones.
@@ -36,30 +47,46 @@ struct PublishRepositorySheet: View {
 
   private var canPublish: Bool {
     account.isSignedIn && !repositoryName.isEmpty && creating == nil && !needsPrivateAccess
-      && session.status?.branch != nil && session.headCommit != nil
+      && session.status?.branch != nil && session.headCommit != nil && (existing == nil || account.user != nil)
+  }
+
+  private var meta: String {
+    if let existing {
+      return String(localized: "Creates github.com/\(owner)/\(repositoryName), where \(existing.name) points, and pushes \(branch) to it.")
+    }
+    return String(localized: "Creates github.com/\(owner)/\(repositoryName) and pushes \(branch) to it as origin.")
   }
 
   var body: some View {
     KitSheet(
-      title: "Publish to GitHub", meta: "Creates github.com/\(owner)/\(repositoryName) and pushes \(branch) to it as origin.",
+      title: "Publish to GitHub", meta: meta,
       systemImage: "icloud.and.arrow.up", status: creating == nil ? .idle : .working, width: 480
     ) {
       if account.isSignedIn {
         FormCard(footer: footerText) {
-          FormRow("Owner", systemImage: "person", hue: .indigo) {
-            KitPicker(
-              "Owner", selection: $organization,
-              segments: [KitSegment(account.user?.login ?? "", value: String?.none, systemImage: "person")]
-                + account.organizations.map {
-                  KitSegment($0.login, value: Optional($0.login), systemImage: "building.2")
-                })
-          }
-          if !account.permissions.organizations {
-            GrantHint(text: "Only organizations where your membership is public are listed.") {
-              grant(.organizations)
+          if let existing {
+            // The remote's address names both: the repository goes where it points.
+            FormRow(
+              "Repository", help: "From \(existing.name)’s address", systemImage: "folder", hue: .indigo
+            ) {
+              Text(verbatim: "\(owner)/\(repositoryName)").foregroundStyle(.secondary)
             }
+          } else {
+            FormRow("Owner", systemImage: "person", hue: .indigo) {
+              KitPicker(
+                "Owner", selection: $organization,
+                segments: [KitSegment(account.user?.login ?? "", value: String?.none, systemImage: "person")]
+                  + account.organizations.map {
+                    KitSegment($0.login, value: Optional($0.login), systemImage: "building.2")
+                  })
+            }
+            if !account.permissions.organizations {
+              GrantHint(text: "Only organizations where your membership is public are listed.") {
+                grant(.organizations)
+              }
+            }
+            FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
           }
-          FormRow("Name", systemImage: "character.cursor.ibeam", field: TextField("Name", text: $name))
           FormRow(
             "Description", help: "Optional", systemImage: "text.alignleft",
             field: TextField("Description", text: $description))
@@ -135,9 +162,10 @@ struct PublishRepositorySheet: View {
     let repository = NewRepository(
       name: repositoryName,
       description: description.trimmingCharacters(in: .whitespacesAndNewlines),
-      isPrivate: isPrivate, organization: organization)
+      isPrivate: isPrivate, organization: existing == nil ? organization : existingOrganization)
     let session = session
     let owner = owner
+    let existing = existing
     error = nil
     creating = Task {
       defer { creating = nil }
@@ -147,7 +175,11 @@ struct PublishRepositorySheet: View {
         dismiss()
         // Pushing shows in the toolbar; a failure shows in the window's alert, and the remote
         // stays so Push retries it.
-        Task { await session.publish(to: created.cloneURL.absoluteString) }
+        if existing != nil {
+          Task { await session.push() }
+        } else {
+          Task { await session.publish(to: created.cloneURL.absoluteString) }
+        }
       } catch {
         guard !Task.isCancelled else { return }
         if case GitHubError.unauthorized = error { account.signOut() }
@@ -166,5 +198,15 @@ private struct GrantHint: View {
     FormRow("Needs a permission", help: text, systemImage: "key", hue: .orange) {
       Button("Grant…", action: grant).buttonStyle(.kit)
     }
+  }
+}
+
+extension RepositorySession {
+  /// A remote GitHub said it doesn't have, which Publish creates: the one the current branch tracks, else `origin`,
+  /// else the first.
+  var unpublishedGitHubRemote: MissingRemote? {
+    let gitHub = missingRemotes.filter { $0.gitHub != nil }
+    let tracked = status?.upstream?.split(separator: "/").first.map(String.init)
+    return gitHub.first { $0.name == tracked } ?? gitHub.first { $0.name == "origin" } ?? gitHub.first
   }
 }

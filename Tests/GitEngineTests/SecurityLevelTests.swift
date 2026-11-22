@@ -42,13 +42,16 @@ import Testing
   }
 
   enum Login {
-    case works, refused, unreachable
+    /// `missing`: the host lets the key in and has no such repository, as GitHub says for one never created.
+    case works, refused, unreachable, missing
 
     func connector(_ served: ServedRepository) -> GitSSH.Connector {
       switch self {
       case .works: return served.connector
       case .refused: return { _, _ in throw GitEngineError(.authentication, "The server didn't accept this key.") }
       case .unreachable: return { _, _ in throw GitEngineError(.network, "Couldn't reach the server.") }
+      case .missing:
+        return { _, _ in try SSHRemoteTests.ProcessChannel(command: "echo 'ERROR: Repository not found.' >&2; exit 1") }
       }
     }
   }
@@ -514,6 +517,58 @@ import Testing
       #expect(second.retryOverHTTPS == nil)
     }
     #expect(try git(["config", "remote.origin.url"], in: folder) == https + "\n")
+  }
+
+  /// A remote whose host has no such repository (an `origin` set before the repository was made on GitHub): the
+  /// session says which remote is missing, offers neither HTTPS nor a key, and forgets it once a push works.
+  @MainActor @Test func aSessionTellsAMissingRepositoryFromARefusedKey() async throws {
+    let scene = try Scene()
+    let https = httpsAddress(scene.served)
+    let folder = try scene.served.clone(url: https)
+    try commit("mine.txt", "mine\n", in: folder)
+    let session = RepositorySession(repository: scene.repository(folder))
+    for level in [GitSecurityLevel.sshOnly, .vaultKeyOnly] {
+      session.failure = nil
+      await at(level, scene.served, login: .missing) { #expect(await !session.push()) }
+      let failure = try #require(session.failure)
+      #expect(failure.missingRemote == MissingRemote(name: "origin", url: https))
+      #expect(failure.refusal?.keyRefused == false)
+      #expect(failure.refusal?.offersHTTPS == false)
+      #expect(failure.retryOverHTTPS == nil)
+      #expect(session.missingRemotes.map(\.name) == ["origin"])
+      #expect(try git(["config", "remote.origin.url"], in: folder) == https + "\n")
+    }
+    // A key the host doesn't know is still the key.
+    session.failure = nil
+    await at(.vaultKeyOnly, scene.served, login: .refused) { #expect(await !session.push()) }
+    #expect(session.failure?.missingRemote == nil)
+    #expect(session.failure?.refusal?.keyRefused == true)
+    // Once it's there, a push works and the mark goes.
+    session.failure = nil
+    try await at(.vaultKeyOnly, scene.served) { #expect(await session.push()) }
+    #expect(session.missingRemotes.isEmpty)
+  }
+
+  /// Without the app's engine, git's own words: `fatal: repository '…' not found` over HTTP.
+  @MainActor @Test func aSessionReadsGitsRepositoryNotFound() async throws {
+    let scene = try Scene()
+    let folder = try scene.served.clone()
+    try commit("mine.txt", "mine\n", in: folder)
+    let missing = "ssh://git@example.invalid/nowhere/missing.git"
+    try git(["remote", "set-url", "origin", missing], in: folder)
+    let script = scene.served.fixture.sibling("missing-ssh")
+    try Data("#!/bin/sh\necho 'ERROR: Repository not found.' >&2\nexit 128\n".utf8).write(to: script)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: script.path)
+    let session = RepositorySession(
+      repository: Repository(
+        url: folder, runner: GitRunner(extraEnvironment: gitEnvironment.merging(["GIT_SSH_COMMAND": script.path]) { $1 })))
+    #expect(await !session.push())
+    #expect(session.failure?.missingRemote == MissingRemote(name: "origin", url: missing))
+    #expect(session.missingRemotes.first?.hosted == HostedRepository(url: "https://example.invalid/nowhere/missing"))
+    // Another address is another repository: the mark goes on the next refresh.
+    try git(["remote", "set-url", "origin", scene.served.url], in: folder)
+    await session.refresh()
+    #expect(session.missingRemotes.isEmpty)
   }
 
   func refusal(_ level: GitSecurityLevel, _ scene: Scene, ssh: SSHClientAddress? = nil, _ action: () async throws -> Void) async -> String {

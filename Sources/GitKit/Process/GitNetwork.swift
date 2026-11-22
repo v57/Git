@@ -131,12 +131,19 @@ public struct GitNetworkRefusal: Error, LocalizedError, CustomStringConvertible,
   public var httpsHosts: [String]
   /// Whether a server refused this device's key while checking the SSH address.
   public var keyRefused: Bool
+  /// The remotes whose server let the key in and said it has no such repository (`MissingRemote`): neither HTTPS
+  /// nor another key would help.
+  public var missingRemotes: [String]
 
-  public init(_ message: String, httpsRemotes: [String] = [], httpsHosts: [String] = [], keyRefused: Bool = false) {
+  public init(
+    _ message: String, httpsRemotes: [String] = [], httpsHosts: [String] = [], keyRefused: Bool = false,
+    missingRemotes: [String] = []
+  ) {
     self.message = message
     self.httpsRemotes = httpsRemotes
     self.httpsHosts = httpsHosts
     self.keyRefused = keyRefused
+    self.missingRemotes = missingRemotes
   }
 
   /// Whether HTTPS for this action is an alternative worth offering.

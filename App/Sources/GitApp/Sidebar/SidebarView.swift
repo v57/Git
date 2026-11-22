@@ -241,11 +241,15 @@ private struct RepositorySections: View {
         "Remotes", meta: remotesMeta(remotes), systemImage: "cloud", hue: .blue, status: remoteStatus
       ) {
         ForEach(remotes, id: \.self) { remote in
-          SidebarRow(remote, systemImage: "cloud") {
-            if let date = session.lastFetched { Text("fetched \(date.kitFormatted(.ago))") }
+          if let missing = session.missingRemote(named: remote) {
+            missingRemoteRow(missing)
+          } else {
+            SidebarRow(remote, systemImage: "cloud") {
+              if let date = session.lastFetched { Text("fetched \(date.kitFormatted(.ago))") }
+            }
+            .action { if GitSecurity.refusal(for: session.repository) == nil { Task { await session.fetch() } } }
+            .kitHelp("\(remote)", meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
           }
-          .action { if GitSecurity.refusal(for: session.repository) == nil { Task { await session.fetch() } } }
-          .kitHelp("\(remote)", meta: "Fetch \(remote)", systemImage: "cloud", hue: .blue)
         }
       } accessory: {
         Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
@@ -359,9 +363,36 @@ private struct RepositorySections: View {
     }
   }
 
+  /// A remote whose server said it has no such repository: "not on GitHub yet", and a click publishes it there.
+  private func missingRemoteRow(_ missing: MissingRemote) -> some View {
+    let place = missing.hosted?.displayName ?? missing.url
+    let publishes = missing.gitHub != nil && session.unpublishedGitHubRemote == missing
+    return SidebarRow(missing.name, systemImage: "icloud.slash") {
+      Text(MissingRemoteNotice.status(missing)).foregroundStyle(.orange)
+    }
+    .action {
+      if publishes { state.isPublishPresented = true }
+    }
+    .kitHelp(
+      "\(missing.name)",
+      meta: publishes ? "\(place) isn’t on GitHub yet: Publish on GitHub" : "\(place) wasn’t found on the last fetch or push",
+      systemImage: "icloud.slash", hue: .orange)
+    .kitContextMenu {
+      if publishes {
+        Button("Publish on GitHub…", systemImage: "icloud.and.arrow.up") { state.isPublishPresented = true }
+      }
+      Button("Fetch", systemImage: "arrow.clockwise") { Task { await session.fetch() } }
+        .disabled(session.isBusy || GitSecurity.refusal(for: session.repository) != nil)
+      Button("Copy Address", systemImage: "doc.on.doc") { KitPasteboard.copy(missing.url) }
+    }
+  }
+
   private func remotesMeta(_ remotes: [String]) -> [String] {
     if let activity = session.activity, Self.remoteActivities.contains(activity) {
       return [session.progress ?? activity.title]
+    }
+    if remotes.count == 1, let missing = session.missingRemote(named: remotes[0]) {
+      return [remotes[0], MissingRemoteNotice.status(missing)]
     }
     let fetched =
       session.lastFetched.map { String(localized: "fetched \($0.kitFormatted(.ago))") } ?? String(localized: "never fetched")

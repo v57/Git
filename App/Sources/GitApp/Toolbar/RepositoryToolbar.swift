@@ -107,6 +107,9 @@ private struct SyncButtons: View {
   private var ahead: Int { session.status?.ahead ?? summary?.ahead ?? 0 }
   private var hasUpstream: Bool { session.status.map { $0.upstream != nil } ?? summary?.hasUpstream ?? false }
   private var hasRemote: Bool { summary.map(\.hasUpstream) ?? !session.remotes.isEmpty }
+  /// The remote GitHub said it doesn't have: Push becomes Publish, which creates it there first.
+  private var unpublished: MissingRemote? { session.unpublishedGitHubRemote }
+  private var publishes: Bool { !hasUpstream || unpublished != nil }
   private var canPush: Bool {
     summary.map { $0.branch != nil && $0.headOID != nil } ?? (session.status?.branch != nil && session.headCommit != nil)
   }
@@ -133,8 +136,8 @@ private struct SyncButtons: View {
       status: session.activity == .pulling ? session.workStatus : .idle)
     .effect(.receive("arrow.down.circle.fill"), on: pulled)
     Button {
-      // Without a remote, Publish creates one on GitHub first.
-      if !hasRemote {
+      // Without a remote, or with one GitHub doesn't have, Publish creates it on GitHub first.
+      if !hasRemote || unpublished != nil {
         state.isPublishPresented = true
       } else {
         Task { await count(session.push(), into: $pushed) }
@@ -142,7 +145,7 @@ private struct SyncButtons: View {
     } label: {
       Label {
         HStack(spacing: 5) {
-          Text(session.activity == .pushing ? "Pushing…" : hasUpstream ? "Push" : "Publish")
+          Text(session.activity == .pushing ? "Pushing…" : publishes ? "Publish" : "Push")
           if ahead > 0 { Count(ahead, .attention).transition(.opacity) }
         }
       } icon: {
@@ -152,7 +155,7 @@ private struct SyncButtons: View {
     }
     .disabled(!canPush || session.isBusy || refusal != nil)
     .kitHelp(
-      hasUpstream ? "Push" : "Publish", shortcut: "⌘P", meta: refusal.map { "\($0)" } ?? pushHelp,
+      publishes ? "Publish" : "Push", shortcut: "⌘P", meta: refusal.map { "\($0)" } ?? pushHelp,
       systemImage: "arrow.up.to.line", hue: .blue,
       status: session.activity == .pushing ? session.workStatus : .idle)
     .effect(.send("arrow.up.circle.fill"), on: pushed)
@@ -197,6 +200,9 @@ private struct SyncButtons: View {
     let branch = session.status?.branch ?? String(localized: "this branch")
     if session.headCommit == nil { return "Commit something first" }
     if session.remotes.isEmpty { return "Create a repository on GitHub and push \(branch) to it" }
+    if let unpublished, let repository = unpublished.gitHub {
+      return "Create \(repository.displayName) on GitHub and push \(branch) to it"
+    }
     if !hasUpstream { return "Push \(branch) and track it" }
     switch ahead {
     case ...0: return "Push"

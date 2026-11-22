@@ -1,4 +1,5 @@
 import Foundation
+import GitKit
 
 /// A remote reached over SSH: `git@github.com:owner/repo.git` or `ssh://git@github.com:22/owner/repo.git`.
 public struct GitSSHAddress: Sendable, Hashable {
@@ -191,8 +192,11 @@ final class ChannelBytes: @unchecked Sendable {
     let outcome = try await channel.finished()
     guard let status = outcome.status, status != 0 else { return }
     let message = outcome.errorOutput.trimmingCharacters(in: .whitespacesAndNewlines)
+    // The login got in, so the key isn't what's wrong: the host has no repository there (or none this login sees).
+    let kind: GitEngineError.Kind =
+      hasAdvertised ? .network : MissingRemote.says(message) ? .notFound : .authentication
     throw GitEngineError(
-      hasAdvertised ? .network : .authentication,
+      kind,
       message.isEmpty ? "\(host) stopped with status \(status)." : "\(host): \(message)")
   }
 }

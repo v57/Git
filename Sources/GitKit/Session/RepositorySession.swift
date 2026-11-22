@@ -56,15 +56,19 @@ public final class RepositorySession {
     public var refusal: GitNetworkRefusal?
     /// Runs the same action again over HTTPS, this time only, when `refusal` offers it.
     public var retryOverHTTPS: (@MainActor @Sendable () async -> Void)?
+    /// The remote whose server said it has no such repository, when that's why: the app offers to create it (Publish
+    /// on GitHub) instead of advice about keys.
+    public var missingRemote: MissingRemote?
 
     public init(
       title: String, message: String, refusal: GitNetworkRefusal? = nil,
-      retryOverHTTPS: (@MainActor @Sendable () async -> Void)? = nil
+      retryOverHTTPS: (@MainActor @Sendable () async -> Void)? = nil, missingRemote: MissingRemote? = nil
     ) {
       self.title = title
       self.message = message
       self.refusal = refusal
       self.retryOverHTTPS = retryOverHTTPS
+      self.missingRemote = missingRemote
     }
   }
 
@@ -75,21 +79,28 @@ public final class RepositorySession {
     public var lineCounts: [FileChange.ID: LineCounts]
     public var branches: [Branch]
     public var remotes: [String]
+    /// `missingRemotes`; nil in snapshots saved before it.
+    public var missingRemotes: [MissingRemote]?
 
     public init(
       status: WorkingTreeStatus, lineCounts: [FileChange.ID: LineCounts] = [:], branches: [Branch] = [],
-      remotes: [String] = []
+      remotes: [String] = [], missingRemotes: [MissingRemote]? = nil
     ) {
       self.status = status
       self.lineCounts = lineCounts
       self.branches = branches
       self.remotes = remotes
+      self.missingRemotes = missingRemotes
     }
   }
 
   /// The loaded state to save; nil before the first load.
   public var snapshot: Snapshot? {
-    status.map { Snapshot(status: $0, lineCounts: lineCounts, branches: branches, remotes: remotes) }
+    status.map {
+      Snapshot(
+        status: $0, lineCounts: lineCounts, branches: branches, remotes: remotes,
+        missingRemotes: missingRemotes.isEmpty ? nil : missingRemotes)
+    }
   }
 
   /// Shows a saved snapshot until the first refresh replaces it. Nothing once the session has loaded.
@@ -99,6 +110,7 @@ public final class RepositorySession {
     lineCounts = snapshot.lineCounts
     branches = snapshot.branches
     remotes = snapshot.remotes
+    missingRemotes = snapshot.missingRemotes ?? []
   }
 
   public let repository: Repository
@@ -109,6 +121,10 @@ public final class RepositorySession {
   /// Lines added and removed per changed file, keyed by `FileChange.id`.
   public private(set) var lineCounts: [FileChange.ID: LineCounts] = [:]
   public private(set) var remotes: [String] = []
+  /// Remotes whose server said, on the last fetch, pull or push, that it has no such repository: not created there
+  /// yet. A successful fetch, pull or push forgets them, and so does a refresh for a remote gone or given another
+  /// address. Nothing asks the server on its own.
+  public private(set) var missingRemotes: [MissingRemote] = []
   public private(set) var worktrees: [Worktree] = []
   /// The commit HEAD points to.
   public private(set) var headCommit: Commit?
@@ -275,6 +291,7 @@ public final class RepositorySession {
       self.branches = (try? await branches) ?? []
       self.stashes = (try? await stashes) ?? []
       self.remotes = (try? await remotes) ?? []
+      await dropChangedMissingRemotes()
       self.worktrees = (try? await worktrees) ?? []
       self.unpushed = (try? await unpushed) ?? []
       self.headCommit = (try? await head)?.first
@@ -297,6 +314,54 @@ public final class RepositorySession {
       _ = try? await tags
       report(error, title: String(localized: "Couldn't read the repository"))
     }
+  }
+
+  // MARK: Missing remotes
+
+  /// The missing remote `name`, if its server said so.
+  public func missingRemote(named name: String) -> MissingRemote? {
+    missingRemotes.first { $0.name == name }
+  }
+
+  /// Forgets marks for remotes that are gone or point somewhere else now.
+  private func dropChangedMissingRemotes() async {
+    guard !missingRemotes.isEmpty else { return }
+    var kept: [MissingRemote] = []
+    for missing in missingRemotes where remotes.contains(missing.name) {
+      if (try? await repository.remoteURL(missing.name)) == missing.url { kept.append(missing) }
+    }
+    if kept != missingRemotes { missingRemotes = kept }
+  }
+
+  /// The remote a fetch, pull or push failed on because its server has no such repository, or nil when `error` says
+  /// something else (a refused key or token, the network). A refusal names it; git's words are matched to the remote
+  /// whose address they quote, else the current branch's push remote.
+  private func missingRemote(in error: any Error) async -> MissingRemote? {
+    let repository = repository
+    var name: String?
+    if let refusal = error as? GitNetworkRefusal {
+      name = refusal.missingRemotes.first
+    } else if MissingRemote.says(Self.text(of: error)) {
+      let names = (try? await repository.remotes()) ?? []
+      let message = Self.text(of: error).lowercased()
+      for candidate in names {
+        guard let url = try? await repository.remoteURL(candidate) else { continue }
+        let bare = url.lowercased().replacingOccurrences(of: ".git", with: "")
+        if message.contains(bare) || HostedRepository(url: url).map({ message.contains("\($0.owner)/\($0.name)".lowercased()) }) == true {
+          name = candidate
+          break
+        }
+      }
+      if name == nil {
+        if let branch = try? await repository.status().branch, let remote = try? await repository.pushRemote(for: branch) {
+          name = remote
+        } else if names.count == 1 {
+          name = names[0]
+        }
+      }
+    }
+    guard let name, let url = try? await repository.remoteURL(name) else { return nil }
+    return MissingRemote(name: name, url: url)
   }
 
   // MARK: History
@@ -355,10 +420,14 @@ public final class RepositorySession {
       progress = nil
     }
     var succeeded = true
+    let isNetwork = Self.networkActivities.contains(activity)
     do {
       try await work(repository)
+      if isNetwork { missingRemotes = [] }
     } catch let refusal as GitNetworkRefusal {
       succeeded = false
+      let missing = await missingRemote(in: refusal)
+      if let missing { remember(missing) }
       // Over HTTPS this time, if the user picks it: the same work, which reads `allowsHTTPS` from the task.
       var retry: (@MainActor @Sendable () async -> Void)?
       if refusal.offersHTTPS, !GitNetwork.allowsHTTPS {
@@ -368,13 +437,30 @@ public final class RepositorySession {
           }
         }
       }
-      failure = Failure(title: failureTitle, message: refusal.message, refusal: refusal, retryOverHTTPS: retry)
+      failure = Failure(
+        title: failureTitle, message: refusal.message, refusal: refusal, retryOverHTTPS: retry, missingRemote: missing)
     } catch {
       succeeded = false
-      report(error, title: failureTitle)
+      if isNetwork, let missing = await missingRemote(in: error) {
+        remember(missing)
+        failure = Failure(title: failureTitle, message: Self.text(of: error), missingRemote: missing)
+      } else {
+        report(error, title: failureTitle)
+      }
     }
     await refresh()
     return succeeded
+  }
+
+  private static let networkActivities: Set<Activity> = [.fetching, .pulling, .pushing]
+
+  private static func text(of error: any Error) -> String {
+    (error as? GitError)?.message ?? error.localizedDescription
+  }
+
+  private func remember(_ missing: MissingRemote) {
+    missingRemotes.removeAll { $0.name == missing.name }
+    missingRemotes.append(missing)
   }
 
   private func progressHandler() -> @Sendable (String) -> Void {

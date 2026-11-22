@@ -51,7 +51,7 @@ struct RepositoryCommands: Commands {
       Button("Pull") { run { await $0.pull() } }
         .keyboardShortcut("p", modifiers: [.command, .shift])
         .disabled(session?.status?.upstream == nil || networkOff)
-      if session?.remotes.isEmpty == true {
+      if session?.remotes.isEmpty == true || session?.unpublishedGitHubRemote != nil {
         Button("Publish to GitHub…") { state?.isPublishPresented = true }
           .keyboardShortcut("p")
           .disabled(session?.status?.branch == nil || session?.headCommit == nil || session?.isBusy == true)

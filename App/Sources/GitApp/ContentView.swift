@@ -225,8 +225,14 @@ struct RepositoryScreen: View {
       .onChange(of: session.repository.url) { search = session.logQuery.search ?? "" }
       .kitSheet(isPresented: $state.isPublishPresented) { PublishRepositorySheet(session: session) }
       .kitNotice(
-        item: .init(get: { session.failure }, set: { session.failure = $0 }), title: \.title, message: \.shownMessage
+        item: .init(get: { session.failure }, set: { session.failure = $0 }), title: \.title,
+        message: { $0.shownMessage(branch: session.status?.branch, canPublish: session.unpublishedGitHubRemote != nil) }
       ) { failure in
+        // The server has no such repository: create it on GitHub rather than blame the key.
+        if failure.missingRemote?.gitHub != nil, session.unpublishedGitHubRemote != nil {
+          return [KitConfirmationButton("Publish on GitHub…", isDefault: true) { state.isPublishPresented = true }]
+        }
+        if failure.missingRemote != nil { return [] }
         // The security level kept a remote off HTTPS and its move to SSH didn't work: what to do instead.
         if let refusal = failure.refusal {
           return RefusalChoices.buttons(refusal, retry: failure.retryOverHTTPS, openURL: openURL)
@@ -303,16 +309,21 @@ struct RepositoryScreen: View {
     switch state.mode {
     case .changes:
       let count = summary?.changeCount ?? 0
-      return [branch, count == 0 ? String(localized: "clean") : String(localized: "\(count) changed files")]
+      return [branch, count == 0 ? String(localized: "clean") : String(localized: "\(count) changed files")] + missing
     case .history, .stashes:
       var parts = [branch]
       if let ahead = summary?.ahead, ahead > 0 { parts.append(String(localized: "\(ahead) commits to push")) }
       if let behind = summary?.behind, behind > 0 { parts.append(String(localized: "\(behind) to pull")) }
-      if parts.count == 1 {
+      if parts.count == 1 && missing.isEmpty {
         parts.append(summary?.hasUpstream == true ? String(localized: "up to date") : String(localized: "not published"))
       }
-      return parts
+      return parts + missing
     }
+  }
+
+  /// "not on GitHub yet", when the last fetch, pull or push found the remote's repository missing.
+  private var missing: [String] {
+    session.missingRemotes.first.map { [MissingRemoteNotice.status($0)] } ?? []
   }
 }
 
@@ -357,6 +368,12 @@ enum OperationText {
 }
 
 extension RepositorySession.Failure {
-  /// The message, with what the notice's choices do when the security level refused.
-  fileprivate var shownMessage: String { refusal.map(RefusalChoices.message) ?? message }
+  /// The message, with what the notice's choices do when the security level refused, or what's missing when the
+  /// server has no such repository.
+  fileprivate func shownMessage(branch: String?, canPublish: Bool) -> String {
+    if let missingRemote {
+      return MissingRemoteNotice.message(missingRemote, branch: branch, canPublish: canPublish)
+    }
+    return refusal.map(RefusalChoices.message) ?? message
+  }
 }
