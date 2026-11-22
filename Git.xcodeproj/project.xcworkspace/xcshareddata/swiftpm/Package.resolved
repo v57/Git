@@ -7,7 +7,7 @@
       "location" : "https://github.com/v57/ChannelSwift.git",
       "state" : {
         "branch" : "main",
-        "revision" : "cbc8f108e6d0de1e7cf866a4a9dff099e1868f37"
+        "revision" : "9d062241f7d4311490a6ece2ea6a458b6ee86828"
       }
     },
     {
@@ -16,7 +16,7 @@
       "location" : "https://github.com/v57/Code.git",
       "state" : {
         "branch" : "main",
-        "revision" : "9190c84084c2a508ca2f827fa5039627ffbd6976"
+        "revision" : "51be6dc796ba9fd9ce39edf588bce17d3fa5e1a5"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "https://github.com/v57/Component.git",
       "state" : {
         "branch" : "main",
-        "revision" : "8d3427fad4c5f5592da0423c718c638ed1d2d2c7"
+        "revision" : "4b882d4a127e3fc8580ef486d543bf9363fc40e7"
       }
     },
     {
@@ -34,7 +34,7 @@
       "location" : "https://github.com/v57/Dev.git",
       "state" : {
         "branch" : "main",
-        "revision" : "ac38cad51b1381df2336b26b2179f074c590d3d3"
+        "revision" : "251cad708701721257c37b010dbccda1305a686c"
       }
     },
     {
@@ -43,7 +43,7 @@
       "location" : "https://github.com/v57/HubService.git",
       "state" : {
         "branch" : "main",
-        "revision" : "4cb8f0aa9e9554c509e8320830cd15cca57c604a"
+        "revision" : "85743b4a015071fd722340e2c68277e8c21a4f14"
       }
     },
     {
@@ -52,7 +52,7 @@
       "location" : "https://github.com/v57/Platform.git",
       "state" : {
         "branch" : "main",
-        "revision" : "00113a68bf6713ea23a688a69c4e3cfaa31c6586"
+        "revision" : "bafe36f4a0694af4a0649cafa8063a00819cf214"
       }
     },
     {
@@ -61,7 +61,7 @@
       "location" : "https://github.com/v57/SSH.git",
       "state" : {
         "branch" : "main",
-        "revision" : "3a0e44b9197d8a1bb028e039a72815d68f213c02"
+        "revision" : "cc34b6dd6b002deb3c455e0a2e37d17c27879d4e"
       }
     },
     {
@@ -70,7 +70,7 @@
       "location" : "https://github.com/v57/UpdateKit.git",
       "state" : {
         "branch" : "main",
-        "revision" : "13ae36142ba3f01fbbc089c0025b1e6a3659cc09"
+        "revision" : "36ab97535a05bedbc24a73de376d7840ea63cf18"
       }
     },
     {
@@ -79,7 +79,7 @@
       "location" : "https://github.com/v57/Vault.git",
       "state" : {
         "branch" : "main",
-        "revision" : "616dc2972a205a911ac7c727f614ee0591c42989"
+        "revision" : "18aa6c902ccee6a533ab9a17495f9b9162aca4af"
       }
     }
   ],
