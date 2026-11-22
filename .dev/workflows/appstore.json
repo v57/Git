@@ -1,0 +1,35 @@
+{
+  "continueOnFailure" : false,
+  "id" : "appstore",
+  "name" : "Release (App Store)",
+  "steps" : [
+    {
+      "id" : "check-ios",
+      "kind" : "release",
+      "name" : "Check · iOS",
+      "parallel" : false,
+      "platform" : "ios",
+      "releaseStep" : "check",
+      "runner" : "mac"
+    },
+    {
+      "id" : "archive-ios",
+      "kind" : "release",
+      "name" : "Archive · iOS",
+      "parallel" : false,
+      "platform" : "ios",
+      "releaseStep" : "archive",
+      "runner" : "mac"
+    },
+    {
+      "id" : "appstore-ios",
+      "kind" : "release",
+      "name" : "App Store Connect · iOS",
+      "parallel" : false,
+      "platform" : "ios",
+      "releaseStep" : "appstore",
+      "runner" : "mac"
+    }
+  ],
+  "trigger" : {}
+}

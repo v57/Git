@@ -1,34 +1,164 @@
 {
-  "build": { "scheme": "Git", "project": "Git.xcodeproj" },
-  "appearances": ["light", "dark"],
-  "variables": { "DEMO": "$ROOT/.build/screenshots-demo" },
-  "watch": ["App", "Sources", "Tools/screenshots"],
-  "mac": { "window": [1440, 900] },
+  "build": {
+    "scheme": "Git",
+    "project": "Git.xcodeproj"
+  },
+  "appearances": [
+    "light",
+    "dark"
+  ],
+  "variables": {
+    "DEMO": "$ROOT/.build/screenshots-demo"
+  },
+  "watch": [
+    "App",
+    "Sources",
+    "Tools/screenshots"
+  ],
+  "mac": {
+    "window": [
+      1440,
+      900
+    ]
+  },
+  "ios": {
+    "devices": [
+      "iPhone 18 Pro Max",
+      "iPad Pro 13-inch (M5)"
+    ]
+  },
   "scenes": [
     {
       "id": "01-history",
-      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "history", "--all-branches", "--select-commit", "2"],
+      "platforms": [
+        "mac"
+      ],
+      "arguments": [
+        "--in-memory",
+        "--add-folder",
+        "$DEMO/Projects",
+        "--mode",
+        "history",
+        "--all-branches",
+        "--select-commit",
+        "2"
+      ],
       "caption": "Every branch at a glance"
     },
     {
       "id": "02-changes",
-      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "changes", "--select-change", "Sources/Atlas/TripStore.swift"],
+      "platforms": [
+        "mac"
+      ],
+      "arguments": [
+        "--in-memory",
+        "--add-folder",
+        "$DEMO/Projects",
+        "--mode",
+        "changes",
+        "--select-change",
+        "Sources/Atlas/TripStore.swift"
+      ],
       "caption": "Stage a whole file, a hunk or a single line"
     },
     {
       "id": "03-conflicts",
-      "arguments": ["--in-memory", "--add-folder", "$DEMO/Merging", "--mode", "changes", "--select-change", "Sources/Atlas/TripStore.swift"],
+      "platforms": [
+        "mac"
+      ],
+      "arguments": [
+        "--in-memory",
+        "--add-folder",
+        "$DEMO/Merging",
+        "--mode",
+        "changes",
+        "--select-change",
+        "Sources/Atlas/TripStore.swift"
+      ],
       "caption": "Resolve conflicts side by side"
     },
     {
       "id": "04-branches",
-      "arguments": ["--in-memory", "--add-folder", "$DEMO/Projects", "--mode", "history", "--show-branches"],
+      "platforms": [
+        "mac"
+      ],
+      "arguments": [
+        "--in-memory",
+        "--add-folder",
+        "$DEMO/Projects",
+        "--mode",
+        "history",
+        "--show-branches"
+      ],
       "caption": "Switch branches without losing your place"
     },
     {
       "id": "05-welcome",
-      "arguments": ["--in-memory", "--welcome", "--add-folder", "$DEMO/Projects"],
+      "platforms": [
+        "mac"
+      ],
+      "arguments": [
+        "--in-memory",
+        "--welcome",
+        "--add-folder",
+        "$DEMO/Projects"
+      ],
       "caption": "Every repository on your Mac in one list"
+    },
+    {
+      "id": "11-changes-ios",
+      "platforms": [
+        "iphone",
+        "ipad"
+      ],
+      "arguments": [],
+      "environment": {
+        "GIT_DEBUG_SELECT": "sample"
+      },
+      "delay": 4,
+      "caption": "Stage and commit wherever you are"
+    },
+    {
+      "id": "12-history-ios",
+      "platforms": [
+        "iphone",
+        "ipad"
+      ],
+      "arguments": [],
+      "environment": {
+        "GIT_DEBUG_SELECT": "sample",
+        "GIT_DEBUG_SHOW": "history"
+      },
+      "delay": 3,
+      "caption": "Every commit, by everyone"
+    },
+    {
+      "platforms": [
+        "iphone",
+        "ipad"
+      ],
+      "arguments": [],
+      "delay": 4,
+      "id": "13-diff-ios",
+      "environment": {
+        "GIT_DEBUG_SELECT": "sample",
+        "GIT_DEBUG_SHOW": "diff:Sources/Atlas/TripStore.swift"
+      },
+      "caption": "Read every change line by line"
+    },
+    {
+      "platforms": [
+        "iphone",
+        "ipad"
+      ],
+      "arguments": [],
+      "delay": 4,
+      "id": "14-commit-ios",
+      "environment": {
+        "GIT_DEBUG_SELECT": "sample",
+        "GIT_DEBUG_SHOW": "commit:0"
+      },
+      "caption": "Every commit, with its files and diff"
     }
   ]
 }
