@@ -227,6 +227,14 @@ private struct RepositorySections: View {
       .branchDeletion($pendingDelete, session: session)
       .kitSticky(top: .titleWhileVisible, bottom: .title)
     }
+    // Branches a fetch brought that have no local branch yet and aren't merged, newest first.
+    let remoteOnly = remoteOnlyBranches.filter { matches($0.name) }
+    if !remoteOnly.isEmpty {
+      KitSection("Remote Branches", meta: remoteBranchesMeta, hue: .blue, glyph: { BranchGlyph() }) {
+        ForEach(remoteOnly.prefix(filter.isEmpty ? 12 : 100)) { branch in remoteBranchRow(branch) }
+      }
+      .kitSticky(top: .titleWhileVisible, bottom: .title)
+    }
     let remotes = session.remotes.filter(matches)
     if !remotes.isEmpty {
       KitSection(
@@ -311,6 +319,44 @@ private struct RepositorySections: View {
     let local = session.localBranches
     let merged = local.count { !$0.isCurrent && $0.aheadOfHead == 0 && ($0.behindHead ?? 0) > 0 }
     return ["\(local.count) local", merged > 0 ? "\(merged) merged" : ""]
+  }
+
+  /// Remote branches with no local branch of their name, leaving out those HEAD already holds (merged, then moved on).
+  private var remoteOnlyBranches: [Branch] {
+    let local = Set(session.localBranches.map(\.name))
+    return session.remoteBranches
+      .filter { !local.contains($0.localName) && !($0.aheadOfHead == 0 && ($0.behindHead ?? 0) > 0) }
+      .sorted { ($0.date ?? .distantPast) > ($1.date ?? .distantPast) }
+  }
+
+  private var remoteBranchesMeta: [String] {
+    let count = remoteOnlyBranches.count
+    return session.remotes.count == 1
+      ? [String(localized: "\(count) on \(session.remotes[0])")]
+      : [String(localized: "\(count) not checked out")]
+  }
+
+  /// The branch's own name; its remote, on the right, only when the repository has several.
+  private func remoteBranchRow(_ branch: Branch) -> some View {
+    let current = session.currentBranch?.name ?? "HEAD"
+    let remote = String(branch.name.dropLast(branch.localName.count + 1))
+    let updated = branch.date.map { " · " + String(localized: "updated \($0.kitFormatted(.ago))") } ?? ""
+    return SidebarRow(branch.localName, glyph: { BranchGlyph() }) {
+      if session.remotes.count > 1 { Text(remote) }
+    }
+    .action { Task { await session.switchTo(branch) } }
+    .disabled(session.isBusy)
+    .kitHelp("\(branch.name)", meta: "Check out as \(branch.localName)\(updated)", hue: .blue)
+    .kitContextMenu {
+      Button("Check Out as \(branch.localName)", systemImage: "arrow.right.circle") {
+        Task { await session.switchTo(branch) }
+      }
+      Button("Merge into \(current)", systemImage: "arrow.triangle.merge") { Task { await session.merge(branch) } }
+        .mergePreview(branch, into: current)
+        .disabled((branch.aheadOfHead ?? 1) == 0)
+      Divider()
+      Button("Copy Name", systemImage: "doc.on.doc") { KitPasteboard.copy(branch.name) }
+    }
   }
 
   private func remotesMeta(_ remotes: [String]) -> [String] {
