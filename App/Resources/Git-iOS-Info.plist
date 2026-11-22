@@ -33,5 +33,9 @@
 	</array>
 	<key>NSFaceIDUsageDescription</key>
 	<string>Confirms it's you before this device's SSH key signs in to a server.</string>
+	<!-- ComponentKit's QR scanner is linked even where no screen shows it, and App Store Connect rejects a build that
+	     references the camera without a reason (ITMS-90683). -->
+	<key>NSCameraUsageDescription</key>
+	<string>Git uses the camera only when you choose to scan a QR code.</string>
 </dict>
 </plist>
