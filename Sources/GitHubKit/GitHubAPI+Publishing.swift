@@ -137,7 +137,11 @@ extension GitHubAPI {
         "GET", "/repos/\(Self.pathComponent(owner))/\(Self.pathComponent(repository))/releases/tags/\(Self.pathComponent(tag))")
       return release
     } catch GitHubError.api(status: 404, _) {
-      return nil
+      // A draft has no tag yet, so the tag lookup never finds it: the newest releases (drafts included for someone
+      // with push access) are searched by the tag they'll get, or a second run made a second draft.
+      let recent: [GitHubRelease] = try await send(
+        "GET", "/repos/\(Self.pathComponent(owner))/\(Self.pathComponent(repository))/releases?per_page=100")
+      return recent.first { $0.draft && $0.tagName == tag }
     }
   }
 
