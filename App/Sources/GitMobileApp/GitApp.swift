@@ -335,6 +335,11 @@ struct RepositoriesSidebar: View {
           }
         }
       } accessory: {
+        // Each repository's own Fetch, for all the list shows: here one at a time, on the other devices as their
+        // groups' Fetch All does.
+        Button("Fetch All", systemImage: "arrow.clockwise") { fetchAll() }
+          .labelStyle(.iconOnly)
+          .disabled((local.isEmpty && fetchableRemote.isEmpty) || status.isFetchingAll || !groups.activity.isEmpty)
         Button("Add", systemImage: "plus") { showsAddMenu = true }
           .labelStyle(.iconOnly)
           .kitMenu(isPresented: $showsAddMenu) {
@@ -367,29 +372,23 @@ struct RepositoriesSidebar: View {
         }
       }
     } bottomBar: {
-      // Each repository's own Fetch, for all the list shows: here one at a time, on the other devices as their
-      // groups' Fetch All does.
-      Button("Fetch All", systemImage: "arrow.clockwise") { fetchAll() }
-        .disabled((local.isEmpty && fetchableRemote.isEmpty) || status.isFetchingAll || !groups.activity.isEmpty)
-      Button("Clone", systemImage: "square.and.arrow.down") { sheet = .clone }
+      // Fetch All is in the first section's header and Clone in its + menu: beside an unfolded iPhone Duo's page the
+      // bar is 296pt, where more buttons cut the devices' count to its first letters.
+      Button("Settings", systemImage: "gearshape") { sheet = .settings }
     }
     .activity(activityLines)
     .status {
       HStack(spacing: 6) {
         StatusDot(hue: deviceCount > 0 ? .green : .gray)
         Text(deviceCount == 0 ? "No devices" : "\(deviceCount) devices")
-        Spacer(minLength: 0)
-        // The kit's icon button: `.labelStyle(.iconOnly)` around `.kitPlain` lost to the style's own label style.
-        Button("Settings", systemImage: "gearshape") { sheet = .settings }
-          .buttonStyle(.kitIcon)
       }
     }
     .onChange(of: selection) { _, opened in
-      if let opened { recents.note(opened) }
+      if let opened { recents.note(Self.recentKey(opened)) }
     }
     // A repository deleted from this device leaves Recent too.
-    .onChange(of: local.map { RepositorySource.local($0).id }) { _, ids in
-      recents.keep { !$0.hasPrefix("local:") || ids.contains($0) }
+    .onChange(of: local.map { Self.recentKey(RepositorySource.local($0).id) }) { _, keys in
+      recents.keep { !$0.hasPrefix("local:") || keys.contains($0) }
     }
     // Pull to refresh reads the listed repositories on their devices (G-008).
     .refreshable { await groups.refresh(remote.filter { !groups.removed.contains($0.id) }) }
@@ -467,7 +466,14 @@ struct RepositoriesSidebar: View {
     let sources =
       local.map(RepositorySource.local)
       + remote.filter { !groups.removed.contains($0.id) }.map(RepositorySource.remote)
-    return ids.compactMap { id in sources.first { $0.id == id } }.filter { matches($0.name) }
+    return ids.compactMap { key in sources.first { Self.recentKey($0.id) == key } }.filter { matches($0.name) }
+  }
+
+  /// What Recent keeps for a repository. A local one's id is its whole path, and the app's folder moves when the app
+  /// is installed again (and may on an update), which emptied Recent: its folder's name, which is what the Files app
+  /// shows, stays.
+  private static func recentKey(_ id: RepositorySource.ID) -> String {
+    id.hasPrefix("local:") ? "local:" + URL(fileURLWithPath: String(id.dropFirst("local:".count))).lastPathComponent : id
   }
 
   /// A recent repository's row, as its own row below but without the selection's value: one row is the picked one.
