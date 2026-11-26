@@ -302,7 +302,7 @@ struct RepositoriesSidebar: View {
       columnVisibility: $columnVisibility
     ) {
       KitSection(
-        idiom == .phone ? "On This iPhone" : "On This iPad",
+        KitDevice.name == "iPhone" ? "On This iPhone" : "On This iPad",
         meta: [String(localized: "\(local.count) repositories")], systemImage: "internaldrive",
         hue: .orange
       ) {
