@@ -24,7 +24,8 @@
   "ios": {
     "devices": [
       "iPhone 18 Pro Max",
-      "iPad Pro 13-inch (M5)"
+      "iPad Pro 13-inch (M5)",
+      "iPhone Duo"
     ]
   },
   "scenes": [
