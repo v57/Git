@@ -1,4 +1,6 @@
 import ComponentKit
+import GitHubKit
+import GitHubUI
 import GitKit
 import GitRemote
 import GitUI
@@ -39,14 +41,17 @@ struct SidebarView: View {
     #endif
   }
   @State private var filter = ""
+  /// The repositories opened last, for the Recent section.
+  @State private var recents = KitRecents(key: "RecentRepositories")
   @KitStorage(VaultProjectsLayout.gitKey) private var projectsLayout = VaultProjectsLayout.separate
 
   var body: some View {
     @Bindable var library = library
     let repositories = repositories
-    RepositorySidebar(shown: shown, filter: $filter, columns: $columns) {
+    RepositorySidebar(shown: shown, filter: $filter, columns: $columns, select: { open($0) }) {
       // The window's account, while there is more than Personal.
       VaultAccountPicker(meta: String(localized: "\(repositories.count) repositories"))
+      RecentRepositoriesSection(recents: recents, repositories: repositories, selection: $selection, filter: filter)
       // A long list keeps its title at the top while it scrolls by (the kit's sticky sections).
       RepositoryList(selection: $selection, selected: $selected, shown: shown, filter: filter)
         .kitSticky(top: .titleWhileVisible, bottom: .none)
@@ -58,17 +63,16 @@ struct SidebarView: View {
           filter: filter)
       }
     } bottomBar: {
+      SidebarBarButtons(repositories: repositories, shown: shown)
       AddRepositoryButton()
     }
-    .overlay {
-      if repositories.isEmpty, library.remoteRepositories.isEmpty {
-        EmptyState(
-          systemImage: "externaldrive.badge.plus", title: "No Repositories",
-          message: "Drop a folder here. Every Git repository inside it is added, or a new one is started in it."
-        ) {
-          Button("Add Folder…") { library.isImporterPresented = true }.buttonStyle(.kitPrimary)
-        }
-      }
+    .onChange(of: selection) { _, opened in
+      if let opened { recents.note(opened) }
+    }
+    // A repository taken off the list leaves Recent too.
+    .onChange(of: repositories.map(\.path)) { old, new in
+      let removed = Set(old).subtracting(new)
+      if !removed.isEmpty { recents.keep { !removed.contains($0) } }
     }
     .kitDropTarget(isDropTargeted || showsDropTarget, cornerRadius: KitMetrics.radiusCard)
     // The kit's: a drop over a repository row the list doesn't take comes here too.
@@ -122,6 +126,12 @@ struct SidebarView: View {
     if !result.folders.isEmpty { importFolders(result.folders) }
   }
 
+  /// Opens a repository from a status line.
+  private func open(_ key: String) {
+    selection = key
+    if library.showsAllRepositories { withKitAnimation { library.showsAllRepositories = false } }
+  }
+
   private func importFolders(_ urls: [URL]) {
     Task {
       let added = await library.importFolders(urls, into: context)
@@ -147,17 +157,25 @@ private struct RepositorySidebar<Content: View, BottomBar: View>: View {
   let shown: String?
   @Binding var filter: String
   @Binding var columns: NavigationSplitViewVisibility
+  /// Opens a repository (a status line's click).
+  let select: @MainActor (String) -> Void
   let content: Content
   let bottomBar: BottomBar
   @Environment(RepositoryLibrary.self) private var library
+  @Environment(GitHubAccount.self) private var gitHub
+  @State private var gitHubSignIn: GitHubSignInRequest?
+  /// The failed fetches, pulls and pushes whose line was clicked: each key's outcome count then.
+  @State private var dismissedFailures: [String: Int] = [:]
 
   init(
     shown: String?, filter: Binding<String>, columns: Binding<NavigationSplitViewVisibility>,
+    select: @escaping @MainActor (String) -> Void,
     @ViewBuilder content: () -> Content, @ViewBuilder bottomBar: () -> BottomBar
   ) {
     self.shown = shown
     _filter = filter
     _columns = columns
+    self.select = select
     self.content = content()
     self.bottomBar = bottomBar()
   }
@@ -168,6 +186,25 @@ private struct RepositorySidebar<Content: View, BottomBar: View>: View {
     } bottomBar: {
       bottomBar
     }
+    .activity(activity)
+    .kitSheet(item: $gitHubSignIn) { GitHubSignInSheet(account: gitHub, permissions: $0.permissions) }
+  }
+
+  /// What Git is doing now: the fetches, pulls and pushes under way or failed, then GitHub when it needs a sign-in.
+  /// Read here, so git's progress lines update this view alone and not the lists.
+  private var activity: [SidebarActivity] {
+    var lines = library.activityLines(shown: shown, dismissed: dismissedFailures, select: select) { seen in
+      dismissedFailures.merge(seen) { _, new in new }
+    }
+    // The sheet shows a running or failed sign-in itself.
+    if gitHubSignIn == nil,
+      let line = gitHub.attentionLine(signIn: {
+        gitHubSignIn = GitHubSignInRequest(permissions: gitHub.isSignedIn ? gitHub.permissions : .recommended)
+      })
+    {
+      lines.append(line)
+    }
+    return lines
   }
 
   /// The sidebar's one selection is the open repository's screen; the open repository is the

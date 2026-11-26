@@ -154,6 +154,7 @@ enum RepositorySource: Hashable, Identifiable {
         let (newStatus, newBranches) = try await (status, branches)
         let moved = newBranches.map(\.sha) != self.branches.map(\.sha) || newStatus.headOID != self.status?.headOID
         if newStatus != self.status { self.status = newStatus }
+        LibraryStatus.shared.note(newStatus, of: source.id)
         if newBranches != self.branches { self.branches = newBranches }
         let counts = await backend.lineCounts(newStatus)
         if counts != lineCounts { lineCounts = counts }
@@ -320,6 +321,14 @@ enum RepositorySource: Hashable, Identifiable {
       case .push: "arrow.up"
       }
     }
+
+    var remoteAction: RemoteAction {
+      switch self {
+      case .fetch: .fetch
+      case .pull: .pull
+      case .push: .push
+      }
+    }
   }
 
   var syncAction: SyncAction {
@@ -330,8 +339,16 @@ enum RepositorySource: Hashable, Identifiable {
   }
 
   func sync(_ action: SyncAction) async {
+    // The repository list's card shows it too (the sidebar beside this screen on iPad).
+    let id = source.id
+    let library = LibraryStatus.shared
+    guard !isBusy, library.begin(action.remoteAction, id: id, name: source.name) else { return }
+    defer { library.end(id) }
     let report: @Sendable (String) -> Void = { [weak self] line in
-      Task { @MainActor in self?.progress = line }
+      Task { @MainActor in
+        self?.progress = line
+        library.progress(line, of: id)
+      }
     }
     switch action {
     case .fetch: await sync(action, String(localized: "Fetching…"), String(localized: "Couldn’t Fetch")) { try await $0.fetch(progress: report) }

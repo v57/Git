@@ -271,6 +271,11 @@ struct RepositoriesSidebar: View {
   @State private var isRemoteOpen = false
   /// One switch with the Mac's Show Hidden.
   @KitStorage("ShowsHiddenRepositories") private var showsHidden = false
+  /// The repositories opened last, for the Recent section.
+  @State private var recents = KitRecents(key: "RecentRepositories")
+  /// What the open repositories' screens read, and the fetches running (`LibraryStatus`).
+  @State private var status = LibraryStatus.shared
+  @Environment(GitHubAccount.self) private var account
   @Environment(\.kitIdiom) private var idiom
 
   /// What the groups' menus act on: all but the removed.
@@ -301,6 +306,7 @@ struct RepositoriesSidebar: View {
       selection: $selection, searchText: $search, searchPrompt: "Search Repositories",
       columnVisibility: $columnVisibility
     ) {
+      recentSection
       KitSection(
         KitDevice.name == "iPhone" ? "On This iPhone" : "On This iPad",
         meta: [String(localized: "\(local.count) repositories")], systemImage: "internaldrive",
@@ -308,22 +314,25 @@ struct RepositoriesSidebar: View {
       ) {
         ForEach(local.filter { matches($0.name) }, id: \.url) { repository in
           let source = RepositorySource.local(repository)
-          SidebarRow(value: source.id, repository.name, subtitle: "Files › Git") {
+          SidebarRow(value: source.id, repository.name, subtitle: localSubtitle(source.id)) {
             Avatar(name: repository.name, kind: .thing, size: 32)
           } trailing: {
-            chevron
+            HStack(spacing: 8) {
+              localMarks(source.id)
+              chevron
+            }
           }
           .kitContextMenu {
             Button("Delete…", systemImage: "trash", role: .destructive) { pendingRemoval = source }
           }
         }
         if local.isEmpty {
-          Text("Clone a repository or create one: it lives in the Files app, under Git.")
-            .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
-          // On iPhone this list is the first screen, so the sample is offered here too.
-          Button("Try a Sample Repository", systemImage: "shippingbox") { SampleRepository.open { selection = $0 } }
-            .buttonStyle(.kitPlain)
-            .padding(.horizontal, 10).padding(.bottom, 8)
+          // On iPhone this list is the first screen, so the first steps (the sample too) are offered here.
+          SectionEmptyActions("Clone a repository or create one: it lives in the Files app, under Git.") {
+            Button("Clone Repository…", systemImage: "square.and.arrow.down") { sheet = .clone }
+            Button("New Repository…", systemImage: "plus.square") { sheet = .create }
+            Button("Try a Sample Repository", systemImage: "shippingbox") { SampleRepository.open { selection = $0 } }
+          }
         }
       } accessory: {
         Button("Add", systemImage: "plus") { showsAddMenu = true }
@@ -334,45 +343,7 @@ struct RepositoriesSidebar: View {
             Button("Try a Sample Repository", systemImage: "shippingbox") { SampleRepository.open { selection = $0 } }
           }
       }
-      VaultProjectsSection(
-        listed.filter { matches($0.name) && isShown($0) }, selection: projectSelection, key: "remoteProjects",
-        collapsedGroups: $collapsedGroups
-      ) {
-        titleMenu
-      }
-      .title("On Your Devices")
-      // A search still shows what it finds, and an empty list says why.
-      .isExpanded(.init(get: { isRemoteOpen || !search.isEmpty || listed.projects().isEmpty }, set: { isRemoteOpen = $0 }))
-      .renamableGroups { group, name in
-        var group = group
-        group.name = name
-        Vault.shared.save(group)
-      }
-      .groupMenu { group, rename in groupMenu(group, rename: rename) }
-      .groupTrailing(whenOpen: true) { _, projects in groupCounts(projects) }
-      .groupStatus { _, projects in
-        members(projects).contains { groups.activity[$0.id] != nil } ? .working : .idle
-      }
-      .rowDimmed { groups.hidden.contains($0.id) }
-      .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
-      .trailing { project in
-        HStack(spacing: 8) {
-          if let repository = remote.first(where: { $0.id == project.id }) { lastSeen(repository) }
-          chevron
-        }
-      }
-      .accessory {
-        Button("Open on a Mac", systemImage: "plus") { sheet = .addRemote }
-          .labelStyle(.iconOnly)
-      }
-      .emptyState {
-        Text(
-          tree.projects().isEmpty
-            ? "Projects on the devices of your Hub appear here, in their groups. Open a folder on any SSH host with Open on a Mac."
-            : search.isEmpty ? "All hidden or removed." : "No repositories match “\(search)”."
-        )
-        .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
-      }
+      devicesSection
       if !opened.isEmpty {
         KitSection(
           "Opened on a Mac",
@@ -396,8 +367,13 @@ struct RepositoriesSidebar: View {
         }
       }
     } bottomBar: {
-      EmptyView()
+      // Each repository's own Fetch, for all the list shows: here one at a time, on the other devices as their
+      // groups' Fetch All does.
+      Button("Fetch All", systemImage: "arrow.clockwise") { fetchAll() }
+        .disabled((local.isEmpty && fetchableRemote.isEmpty) || status.isFetchingAll || !groups.activity.isEmpty)
+      Button("Clone", systemImage: "square.and.arrow.down") { sheet = .clone }
     }
+    .activity(activityLines)
     .status {
       HStack(spacing: 6) {
         StatusDot(hue: deviceCount > 0 ? .green : .gray)
@@ -407,6 +383,13 @@ struct RepositoriesSidebar: View {
         Button("Settings", systemImage: "gearshape") { sheet = .settings }
           .buttonStyle(.kitIcon)
       }
+    }
+    .onChange(of: selection) { _, opened in
+      if let opened { recents.note(opened) }
+    }
+    // A repository deleted from this device leaves Recent too.
+    .onChange(of: local.map { RepositorySource.local($0).id }) { _, ids in
+      recents.keep { !$0.hasPrefix("local:") || ids.contains($0) }
     }
     // Pull to refresh reads the listed repositories on their devices (G-008).
     .refreshable { await groups.refresh(remote.filter { !groups.removed.contains($0.id) }) }
@@ -420,6 +403,172 @@ struct RepositoriesSidebar: View {
     ) {
       if let source = pendingRemoval { remove(source) }
     }
+  }
+
+  // MARK: Recent, statuses and the activity card
+
+  /// The repositories opened last, hidden while there are none.
+  @ViewBuilder private var recentSection: some View {
+    let recent = recentSources
+    if !recent.isEmpty {
+      KitSection("Recent", meta: [String(localized: "\(recent.count) repositories")], systemImage: "clock", hue: .gray) {
+        ForEach(recent) { source in recentRow(source) }
+      }
+    }
+  }
+
+  /// On Your Devices: the vault's projects on the user's other devices, in their groups.
+  private var devicesSection: some View {
+    VaultProjectsSection(
+      listed.filter { matches($0.name) && isShown($0) }, selection: projectSelection, key: "remoteProjects",
+      collapsedGroups: $collapsedGroups
+    ) {
+      titleMenu
+    }
+    .title("On Your Devices")
+    // A search still shows what it finds, and an empty list says why.
+    .isExpanded(.init(get: { isRemoteOpen || !search.isEmpty || listed.projects().isEmpty }, set: { isRemoteOpen = $0 }))
+    .renamableGroups { group, name in
+      var group = group
+      group.name = name
+      Vault.shared.save(group)
+    }
+    .groupMenu { group, rename in groupMenu(group, rename: rename) }
+    .groupTrailing(whenOpen: true) { _, projects in groupCounts(projects) }
+    .groupStatus { _, projects in
+      members(projects).contains { groups.activity[$0.id] != nil } ? .working : .idle
+    }
+    .rowDimmed { groups.hidden.contains($0.id) }
+    .rowSubtitle { project in remote.first { $0.id == project.id }.map(subtitle) }
+    .trailing { project in
+      HStack(spacing: 8) {
+        if let repository = remote.first(where: { $0.id == project.id }) { lastSeen(repository) }
+        chevron
+      }
+    }
+    .accessory {
+      Button("Open on a Mac", systemImage: "plus") { sheet = .addRemote }
+        .labelStyle(.iconOnly)
+    }
+    .emptyState {
+      Text(
+        tree.projects().isEmpty
+          ? "Projects on the devices of your Hub appear here, in their groups. Open a folder on any SSH host with Open on a Mac."
+          : search.isEmpty ? "All hidden or removed." : "No repositories match “\(search)”."
+      )
+      .kitFont(.caption).foregroundStyle(.kitSecondary).padding(10)
+    }
+  }
+
+  /// The repositories opened last that the list still has.
+  private var recentSources: [RepositorySource] {
+    let ids = recents.ids
+    guard !ids.isEmpty else { return [] }
+    let sources =
+      local.map(RepositorySource.local)
+      + remote.filter { !groups.removed.contains($0.id) }.map(RepositorySource.remote)
+    return ids.compactMap { id in sources.first { $0.id == id } }.filter { matches($0.name) }
+  }
+
+  /// A recent repository's row, as its own row below but without the selection's value: one row is the picked one.
+  @ViewBuilder private func recentRow(_ source: RepositorySource) -> some View {
+    switch source {
+    case .local(let repository):
+      SidebarRow(repository.name, subtitle: localSubtitle(source.id)) {
+        Avatar(name: repository.name, kind: .thing, size: 32)
+      } trailing: {
+        HStack(spacing: 8) {
+          localMarks(source.id)
+          chevron
+        }
+      }
+      .action { selection = source.id }
+    case .remote(let repository):
+      SidebarRow(repository.name, subtitle: subtitle(repository)) {
+        Avatar(name: repository.name, imageData: repository.icon, kind: .thing, size: 32)
+      } trailing: {
+        HStack(spacing: 8) {
+          lastSeen(repository)
+          chevron
+        }
+      }
+      .action { selection = source.id }
+    }
+  }
+
+  /// Its branch once its screen read it (since launch), else where its folder is.
+  private func localSubtitle(_ id: RepositorySource.ID) -> String {
+    let summary = status.summaries[id]
+    return summary?.branch ?? summary?.headOID.map { String($0.prefix(7)) } ?? String(localized: "Files › Git")
+  }
+
+  /// What's running in a repository on this device, else its changes and commits to push and pull as its screen last
+  /// read them.
+  @ViewBuilder private func localMarks(_ id: RepositorySource.ID) -> some View {
+    if let sync = status.syncs[id] {
+      Text("\(sync.action.title)ing…").kitFont(.caption).foregroundStyle(.kitSecondary)
+    } else if let summary = status.summaries[id] {
+      SyncCounts(changes: summary.changeCount, ahead: summary.ahead, behind: summary.behind)
+    }
+  }
+
+  /// The repositories on other devices that Fetch All reaches: the listed ones, unless the security level turns
+  /// their network actions off.
+  private var fetchableRemote: [RemoteRepository] {
+    guard GitSecurity.level.otherDeviceRefusal == nil else { return [] }
+    return remote.filter { !groups.removed.contains($0.id) && !groups.hidden.contains($0.id) }
+  }
+
+  private func fetchAll() {
+    let onDevices = fetchableRemote
+    Task { await status.fetchAll(local) }
+    if !onDevices.isEmpty { Task { await groups.run(.fetch, on: onDevices) } }
+  }
+
+  /// The card above the bar: the fetches, pulls and pushes running here and on the other devices, what Fetch All
+  /// couldn't fetch (until its line is tapped), and GitHub when it needs a sign-in.
+  private var activityLines: [SidebarActivity] {
+    var lines: [SidebarActivity] = []
+    let actions: [RemoteAction] = [.fetch, .pull, .push]
+    for action in actions {
+      let running = status.syncs.filter { $0.value.action == action }.sorted { $0.key < $1.key }
+      guard let first = running.first else { continue }
+      let names = running.map(\.value.name)
+      let progress = running.count == 1 ? first.value.progress : nil
+      lines.append(
+        SidebarActivity(
+          id: "here-" + action.rawValue, action.running(names),
+          detail: running.count == 1 ? progress : names.joined(separator: ", "), systemImage: action.systemImage,
+          hue: .blue, status: .working(progress: progress.flatMap(GitProgress.fraction))
+        ) {
+          if running.count == 1 { selection = first.key }
+        })
+    }
+    for action in actions {
+      let running = remote.filter { groups.activity[$0.id] == action }
+      guard let first = running.first else { continue }
+      let names = running.map(\.name)
+      lines.append(
+        SidebarActivity(
+          id: "devices-" + action.rawValue, action.running(names),
+          detail: running.count == 1 ? first.targets.map(\.name).joined(separator: ", ") : names.joined(separator: ", "),
+          systemImage: action.systemImage, hue: .blue, status: .working))
+    }
+    let failed = status.failed.sorted { $0.key < $1.key }
+    if let first = failed.first {
+      lines.append(
+        SidebarActivity(
+          id: "failed", RemoteAction.fetch.failed,
+          detail: failed.count == 1
+            ? "\(first.value.name): \(first.value.message)" : failed.map(\.value.name).joined(separator: ", "),
+          systemImage: RemoteAction.fetch.systemImage, hue: .red, status: .failed
+        ) {
+          status.dismissFailures(failed.map(\.key))
+          if failed.count == 1 { selection = first.key }
+        })
+    }
+    if let line = account.attentionLine(signIn: { sheet = .settings }) { lines.append(line) }
+    return lines
   }
 
   /// Its branch when its device last said (the vault's status), then the devices it is on, as Code lists its

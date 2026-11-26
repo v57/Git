@@ -186,7 +186,8 @@ struct RepositoryList: View {
       status: library.isImporting ? .working : .idle,
       // Folded, a search still shows what it finds.
       isExpanded: .init(
-        get: { !isCollapsed || (projectsLayout == .folding && !filter.isEmpty) }, set: { isCollapsed = !$0 })
+        get: { !isCollapsed || (projectsLayout == .folding && !filter.isEmpty) || repositories.isEmpty },
+        set: { isCollapsed = !$0 })
     ) {
       if groupsByFolder {
         ReorderableOutline(
@@ -222,6 +223,13 @@ struct RepositoryList: View {
           count: more, isShowing: $showsMore, reason: moreReason,
           help: moreHelp(more),
           hideHelp: "Hide the repositories the filters leave out")
+      }
+      if repositories.isEmpty {
+        SectionEmptyActions("Drop a folder here: every Git repository inside it is added, or a new one is started in it.") {
+          Button("Add Folder…", systemImage: "folder") { library.isImporterPresented = true }
+          Button("Clone Repository…", systemImage: "arrow.down") { library.isClonePresented = true }
+          Button("New Repository…", systemImage: "plus.square") { library.isCreateRequested = true }
+        }
       }
       if hiddenCount > 0 && filter.isEmpty {
         Button(showsHidden ? "Hide Hidden Repositories" : "Show \(hiddenCount) Hidden") {
