@@ -16,7 +16,7 @@
       "location" : "https://github.com/v57/Code.git",
       "state" : {
         "branch" : "main",
-        "revision" : "51be6dc796ba9fd9ce39edf588bce17d3fa5e1a5"
+        "revision" : "703f8f5dce3aa23c086cbe2d9b9991517befb344"
       }
     },
     {
@@ -25,7 +25,7 @@
       "location" : "https://github.com/v57/Component.git",
       "state" : {
         "branch" : "main",
-        "revision" : "4b882d4a127e3fc8580ef486d543bf9363fc40e7"
+        "revision" : "b8cd7afd466c2bcae7c77f3542ca731108c453fc"
       }
     },
     {
@@ -34,7 +34,7 @@
       "location" : "https://github.com/v57/Dev.git",
       "state" : {
         "branch" : "main",
-        "revision" : "251cad708701721257c37b010dbccda1305a686c"
+        "revision" : "c9991e382cf010fa26518525133817e668e9b41d"
       }
     },
     {
@@ -52,7 +52,7 @@
       "location" : "https://github.com/v57/Platform.git",
       "state" : {
         "branch" : "main",
-        "revision" : "bafe36f4a0694af4a0649cafa8063a00819cf214"
+        "revision" : "79601aa071e97408f21032318fa6d33bdc59d729"
       }
     },
     {
@@ -79,7 +79,7 @@
       "location" : "https://github.com/v57/Vault.git",
       "state" : {
         "branch" : "main",
-        "revision" : "18aa6c902ccee6a533ab9a17495f9b9162aca4af"
+        "revision" : "7be9a6894521e86f4c835984f17c029b2122c8f6"
       }
     }
   ],
